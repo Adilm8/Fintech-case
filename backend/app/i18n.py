@@ -23,7 +23,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "iik.cyrillic": {
         "ru": "В ИИК найдены кириллические буквы вместо латинских — проверьте раскладку.",
-        "kk": "ЖСК-да латын әріптерінің орнына кириллица табылды — пернетақта тілін тексеріңіз.",
+        "kk": "ЖСК-да латын әріптерінің орнына кириллица әріптері бар — пернетақта тілін тексеріңіз.",
         "en": "The IIK contains Cyrillic letters instead of Latin ones — check your keyboard layout.",
     },
     "iik.length": {
@@ -33,7 +33,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "iik.uppercase": {
         "ru": "ИИК должен быть записан только заглавными латинскими буквами и цифрами.",
-        "kk": "ЖСК тек бас латын әріптері мен цифрлардан тұруы тиіс.",
+        "kk": "ЖСК тек латын алфавитінің бас әріптері мен цифрлардан тұруы тиіс.",
         "en": "The IIK must contain only uppercase Latin letters and digits.",
     },
     "iik.prefix_kz": {
@@ -43,7 +43,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "iik.alnum": {
         "ru": "ИИК должен содержать только заглавные латинские буквы и цифры без пробелов.",
-        "kk": "ЖСК бос орынсыз тек бас латын әріптері мен цифрлардан тұруы тиіс.",
+        "kk": "ЖСК бос орынсыз тек латын алфавитінің бас әріптері мен цифрлардан тұруы тиіс.",
         "en": "The IIK must contain only uppercase Latin letters and digits without spaces.",
     },
     "iik.check_digits": {
@@ -58,7 +58,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "iik.bank_code_digits": {
         "ru": "В ИИК указан неверный код банка — символы 5–7 должны быть цифрами.",
-        "kk": "ЖСК-да банк коды қате — 5–7-таңбалар цифр болуы тиіс.",
+        "kk": "ЖСК-да банк коды қате көрсетілген — 5–7-таңбалар цифрлар болуы тиіс.",
         "en": "The bank code in the IIK is invalid — characters 5–7 must be digits.",
     },
     "iik.unknown_bank_code": {
@@ -78,12 +78,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "rule.iik_bank_code_vs_bik": {
         "ru": "Код банка в номере счёта не совпадает с указанным БИК.",
-        "kk": "Шот нөміріндегі банк коды көрсетілген БСК (БИК) кодымен сәйкес келмейді.",
+        "kk": "Шот нөміріндегі банк коды көрсетілген БСК-ға (БИК) сәйкес келмейді.",
         "en": "The bank code in the account number does not match the specified BIK.",
     },
     "rule.bcc_account_not_found": {
         "ru": "Счёт в BCC не найден.",
-        "kk": "BCC-де мұндай шот табылмады.",
+        "kk": "Шот BCC-де табылмады.",
         "en": "This BCC account was not found.",
     },
     # --- Risk scoring rule messages ---
@@ -127,7 +127,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "analyst.mixed_script_name": {
         "ru": "Обнаружены подозрительные символы в названии на позициях: {positions}.",
-        "kk": "Атаудағы күдікті таңбалар келесі орындарда табылды: {positions}.",
+        "kk": "Алушы атауында күдікті таңбалар табылды (орындары: {positions}).",
         "en": "Suspicious characters detected in recipient name at positions: {positions}.",
     },
     "rule.bin_name_mismatch_history": {
@@ -156,15 +156,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "rule.iik_changed": {
         "ru": "У этого поставщика указан новый номер счёта, на который вы раньше не платили.",
-        "kk": "Бұл жеткізушіде сіз бұрын төлем жасамаған жаңа шот нөмірі көрсетілген.",
+        "kk": "Бұл жеткізушінің жаңа шот нөмірі көрсетілген, сіз оған бұрын төлем жасамағансыз.",
         "en": "This supplier has a new account number that you have not paid before.",
     },
     "rule.bank_changed": {
         "ru": "Сменился банк поставщика: раньше платежи шли в {old_bank}, а теперь в {new_bank}.",
-        "kk": (
-            "Жеткізушінің банкі ауысқан: бұрын төлемдер {old_bank} банкіне жіберілсе, "
-            "қазір {new_bank} банкіне бағытталған."
-        ),  # review-kk
+        "kk": "Жеткізушінің банкі өзгерген: бұрын төлемдер мына банкке жіберілген — {old_bank}, қазір — {new_bank}.",
         "en": "The supplier's bank changed: previous payments went to {old_bank}, now to {new_bank}.",
     },
     "rule.entity_type_mismatch_legal_iin": {
@@ -179,12 +176,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "rule.kbe_mismatch_legal_iin": {
         "ru": "Указан КБе 17 (юрлицо), но вместо БИН введён ИИН физлица.",
-        "kk": "17 КБе (заңды тұлға) көрсетілген, бірақ БСН орнына жеке тұлғаның ЖСН-і енгізілген.",
+        "kk": "КБе 17 (заңды тұлға) көрсетілген, бірақ БСН орнына жеке тұлғаның ЖСН-і енгізілген.",
         "en": "KBe 17 (legal entity) was specified, but an individual's IIN was entered instead of a BIN.",
     },
     "rule.kbe_mismatch_individual_bin": {
         "ru": "Указан КБе 19 (физлицо/ИП), но вместо ИИН введён БИН юрлица.",
-        "kk": "19 КБе (жеке тұлға/ЖК) көрсетілген, бірақ ЖСН орнына заңды тұлғаның БСН-і енгізілген.",
+        "kk": "КБе 19 (жеке тұлға/ЖК) көрсетілген, бірақ ЖСН орнына заңды тұлғаның БСН-і енгізілген.",
         "en": "KBe 19 (individual/IE) was specified, but a corporate BIN was entered instead of an IIN.",
     },
     "rule.knp_unusual": {
@@ -246,9 +243,9 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "частый признак подмены счёта."
         ),
         "kk": (
-            "Төлем мақсатында шұғылдық немесе деректемелердің ауысуы туралы сөздер бар — "
-            "бұл шотты ауыстырудың жиі белгісі."
-        ),  # review-kk
+            "Төлем мақсатында шұғылдық немесе деректемелердің өзгеруі туралы сөздер бар — "
+            "бұл шотты алмастырудың жиі белгісі."
+        ),
         "en": (
             "The payment purpose mentions urgency or changed requisites — "
             "a common sign of invoice fraud."
@@ -266,7 +263,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "rule.duplicate_invoice": {
         "ru": "Возможна повторная оплата счёта № {invoice_no} (уже встречался {prev_date}).",
-        "kk": "№ {invoice_no} шотты қайта төлеу қаупі бар ({prev_date} күні бұрын кездескен).",
+        "kk": "№ {invoice_no} төлем шотын қайта төлеу мүмкін (бұрын {prev_date} кездескен).",
         "en": "Possible duplicate payment for invoice #{invoice_no} (previously seen on {prev_date}).",
     },
     "rule.new_recipient_accumulated": {
@@ -275,8 +272,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "(операций: {count})."
         ),
         "kk": (
-            "Жаңа алушыға 7 күн ішіндегі жинақталған сома {total_kzt} болды "
-            "(операция саны: {count})."
+            "Жаңа алушыға 7 күнде жинақталған жалпы сома {total_kzt} құрады (операциялар: {count})."
         ),
         "en": (
             "Accumulated amount to this new recipient over 7 days reached {total_kzt} "
@@ -289,8 +285,8 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "({ratio}× от обычной суммы) — возможно дробление платежа."
         ),
         "kk": (
-            "72 сағат ішінде осы алушыға {total_kzt} сомасына {count} төлем жиналды "
-            "(әдеттегіден {ratio} есе) — төлемді бөлшектеу белгісі болуы мүмкін."
+            "72 сағат ішінде осы алушыға жалпы сомасы {total_kzt} болатын {count} төлем жасалды "
+            "(әдеттегіден {ratio} есе көп) — төлемді бөлшектеу белгісі болуы мүмкін."
         ),
         "en": (
             "{count} payments to this recipient within 72 hours total {total_kzt} "
@@ -310,7 +306,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "headline.green_trusted": {
         "ru": "Счёт подтверждён директором",
-        "kk": "Шот директормен расталған",
+        "kk": "Шотты директор растаған",
         "en": "Account confirmed by director",
     },
     "headline.green_budget": {
@@ -330,12 +326,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "headline.red": {
         "ru": "Похоже на подмену",
-        "kk": "Деректемелер ауыстырылғанға ұқсайды",  # review-kk
+        "kk": "Деректемелер алмастырылған сияқты",
         "en": "Likely requisite substitution",
     },
     "headline.grey": {
         "ru": "Нет истории для сравнения",
-        "kk": "Салыстыру үшін тарих жоқ",
+        "kk": "Салыстыратын төлем тарихы жоқ",
         "en": "No payment history to compare",
     },
     "headline.invalid": {
@@ -366,12 +362,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "next_action.amount_only": {
         "ru": "Сумма необычно большая для этого поставщика: проверьте счёт и договор.",
-        "kk": "Бұл жеткізуші үшін сома әдеттен тыс үлкен: шот пен шартты тексеріңіз.",
+        "kk": "Бұл жеткізуші үшін сома әдеттен тыс үлкен: төлем шоты мен шартты тексеріңіз.",
         "en": "The amount is unusually large for this supplier: check the invoice and contract.",
     },
     "next_action.duplicate_invoice": {
         "ru": "Возможна повторная оплата счёта: сверьте номер счёта с уже проведёнными платежами.",
-        "kk": "Шотты қайта төлеу қаупі бар: шот нөмірін бұрынғы төлемдермен салыстырыңыз.",
+        "kk": "Төлем шотын қайта төлеу мүмкін: төлем шотының нөмірін бұрын өткізілген төлемдермен салыстырыңыз.",
         "en": "Possible duplicate invoice payment: check the invoice number against prior payments.",
     },
     "next_action.yellow": {
@@ -380,8 +376,8 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "а не из письма с новыми реквизитами, и подтвердите счёт."
         ),
         "kk": (
-            "Жаңа деректемелер келген хаттағы емес, шарттағы нөмір бойынша "
-            "жеткізушіге хабарласып, шотты растаңыз."
+            "Жаңа деректемелер келген хаттағы емес, шарттағы телефон нөмірі бойынша "
+            "жеткізушіге хабарласып, шот деректемелерін растаңыз."
         ),
         "en": (
             "Call the supplier using the phone number from your contract, "
@@ -395,7 +391,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         ),
         "kk": (
             "Төлемге қол қоймаңыз. Жаңа деректемелер келген хаттағы емес, "
-            "шарттағы нөмір бойынша жеткізушіге хабарласыңыз."
+            "шарттағы телефон нөмірі бойынша жеткізушіге хабарласыңыз."
         ),
         "en": (
             "Do not sign this payment. Call the supplier using the phone number from your contract, "
@@ -404,7 +400,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "next_action.grey": {
         "ru": "Проверьте БИН поставщика в реестре и подтвердите реквизиты по телефону из договора.",
-        "kk": "Жеткізушінің БСН-ін тізілімнен тексеріп, деректемелерді шарттағы телефон арқылы растаңыз.",
+        "kk": "Жеткізушінің БСН-ін тізілімнен тексеріп, деректемелерді шарттағы телефон нөмірі арқылы растаңыз.",
         "en": "Verify the supplier's BIN in the registry and confirm requisites by the phone number from your contract.",
     },
     "next_action.grey_above_p90": {
@@ -413,8 +409,8 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "подтвердите реквизиты по телефону из договора и согласуйте с директором."
         ),
         "kk": (
-            "Жаңа жеткізушіге ірі алғашқы төлем: БСН-ді тізілімнен тексеріп, "
-            "деректемелерді шарттағы телефон арқылы растап, директормен келісіңіз."
+            "Жаңа жеткізушіге ірі алғашқы төлем: БСН-ін тізілімнен тексеріп, "
+            "деректемелерді шарттағы телефон нөмірі арқылы растап, директормен келісіңіз."
         ),
         "en": (
             "Large first payment to a new supplier: verify the BIN in the registry, "
@@ -457,12 +453,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "error.invalid_payment_cannot_approve": {
         "ru": "Платёж с ошибкой в реквизитах нельзя одобрить.",
-        "kk": "Деректемелерінде қате бар төлемді мақұлдауға болмайды.",
+        "kk": "Деректемелерінде қате бар төлемді келісуге болмайды.",
         "en": "A payment with invalid requisites cannot be approved.",
     },
     "error.trust_not_allowed": {
         "ru": "Доверие недоступно для этого платежа",
-        "kk": "Бұл төлем үшін шотқа сенім білдіру қолжетімсіз.",  # review-kk
+        "kk": "Бұл төлем үшін шотқа сенім білдіру мүмкін емес.",
         "en": "Account trust is not available for this payment.",
     },
     "error.trust_comment_required": {
@@ -482,7 +478,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "(не менее 10 символов)."
         ),
         "kk": (
-            "Қызыл деңгейлі төлемді мақұлдау үшін директордың түсініктемесі міндетті "
+            "Қорытындысы «қызыл» төлемді келісу үшін директордың түсініктемесі міндетті "
             "(кемінде 10 таңба)."
         ),
         "en": "A director comment of at least 10 characters is required to approve a red-verdict payment.",
@@ -500,7 +496,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     # --- Request validation messages (422) ---
     "val.json_invalid": {
         "ru": "Некорректный формат JSON в теле запроса.",
-        "kk": "Сұрау денесіндегі JSON пішімі қате.",
+        "kk": "Сұрау мәтініндегі JSON пішімі дұрыс емес.",
         "en": "Invalid JSON format in request body.",
     },
     "val.missing": {
@@ -520,7 +516,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "val.finite_number": {
         "ru": "значение должно быть конечным числом (без NaN и бесконечности).",
-        "kk": "мәні нақты сан болуы тиіс (NaN және шексіздіксіз).",
+        "kk": "мәні ақырлы сан болуы тиіс (NaN және шексіздікке жол берілмейді).",
         "en": "value must be a finite number (no NaN or infinity).",
     },
     "val.string_too_short": {
@@ -535,12 +531,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "val.number_invalid": {
         "ru": "укажите корректное число.",
-        "kk": "дұрыс санды көрсетіңіз.",
+        "kk": "жарамды сан көрсетіңіз.",
         "en": "please provide a valid number.",
     },
     "val.string_type": {
         "ru": "значение должно быть строкой.",
-        "kk": "мәні мәтін жолы болуы тиіс.",
+        "kk": "мәні мәтін болуы тиіс.",
         "en": "value must be a string.",
     },
     "val.bool_parsing": {
@@ -550,7 +546,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "val.literal_error": {
         "ru": "недопустимое значение (ожидается: {expected}).",
-        "kk": "жарамсыз мән (күтілетіні: {expected}).",
+        "kk": "жарамсыз мән (мүмкін мәндер: {expected}).",
         "en": "invalid value (expected: {expected}).",
     },
     "val.recipient_name_required": {
@@ -560,7 +556,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "val.amount_finite": {
         "ru": "Сумма платежа должна быть конечным числом.",
-        "kk": "Төлем сомасы нақты сан болуы тиіс.",
+        "kk": "Төлем сомасы ақырлы сан болуы тиіс.",
         "en": "Payment amount must be a finite number.",
     },
     "val.value_error_fallback": {
@@ -570,7 +566,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "val.generic": {
         "ru": "некорректное значение.",
-        "kk": "қате мән.",
+        "kk": "жарамсыз мән.",
         "en": "invalid value.",
     },
     # --- Localized Evidence labels & templates ---
@@ -593,17 +589,17 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "ev.bik_expected": {
         "ru": "8-символьный БИК банка РК",
-        "kk": "ҚР банкінің 8 таңбалы БСК коды",
+        "kk": "ҚР банкінің 8 таңбалы БСК",
         "en": "8-character Kazakhstan bank BIK",
     },
     "ev.bank_code_bik": {
         "ru": "код {code} ({bik})",
-        "kk": "код {code} ({bik})",
+        "kk": "{code} коды ({bik})",
         "en": "code {code} ({bik})",
     },
     "ev.bank_code_only": {
         "ru": "код {code}",
-        "kk": "код {code}",
+        "kk": "{code} коды",
         "en": "code {code}",
     },
     "ev.bcc_active_expected": {
@@ -643,7 +639,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "ev.account_for_bin": {
         "ru": "счёт для БИН {bin}",
-        "kk": "{bin} БСН-ге арналған шот",
+        "kk": "БСН {bin} үшін шот",
         "en": "account for BIN {bin}",
     },
     "ev.used_for_other": {
@@ -653,7 +649,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "ev.trusted_for_other": {
         "ru": "доверен для {name} (БИН {bin})",
-        "kk": "{name} (БСН {bin}) үшін сенім білдірілген",
+        "kk": "{name} (БСН {bin}) үшін сенімді деп белгіленген",
         "en": "trusted for {name} (BIN {bin})",
     },
     "ev.legal_bin": {
@@ -713,7 +709,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "ev.bin_young_expected": {
         "ru": "регистрация компании от {months} месяцев",
-        "kk": "компанияның тіркелгеніне кемінде {months} ай",
+        "kk": "компания кемінде {months} ай бұрын тіркелген",
         "en": "company registered at least {months} months ago",
     },
     "ev.bin_young_actual": {
@@ -723,22 +719,22 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "ev.urgent_expected": {
         "ru": "обычное назначение платежа",
-        "kk": "қалыпты төлем мақсаты",
+        "kk": "әдеттегі төлем мақсаты",
         "en": "standard payment purpose",
     },
     "ev.trusted_default": {
         "ru": "Подтверждено директором",
-        "kk": "Директормен расталған",
+        "kk": "Директор растаған",
         "en": "Confirmed by director",
     },
     "ev.duplicate_invoice_expected": {
         "ru": "уникальный номер счёта",
-        "kk": "бірегей шот нөмірі",
+        "kk": "төлем шотының бірегей нөмірі",
         "en": "unique invoice number",
     },
     "ev.duplicate_invoice_actual": {
         "ru": "счёт № {invoice_no}",
-        "kk": "№ {invoice_no} шот",
+        "kk": "№ {invoice_no} төлем шоты",
         "en": "invoice #{invoice_no}",
     },
     "ev.accum_expected_fallback": {
@@ -758,7 +754,7 @@ MESSAGES: dict[str, dict[Lang, str]] = {
     },
     "ev.analyst_bcc_expected": {
         "ru": "счёт на БИН {bin}",
-        "kk": "{bin} БСН-ге рәсімделген шот",
+        "kk": "БСН {bin} бойынша рәсімделген шот",
         "en": "account for BIN {bin}",
     },
     "ev.analyst_bcc_actual": {
@@ -788,12 +784,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "намеренно сохранены в наборе без подгонки детектора."
         ),
         "kk": (
-            "Ашық ескерту: бағалау жинағы синтетикалық және тексеру ережелерін жазған сол топпен "
-            "бір клиенттің синтетикалық төлем тарихы негізінде жасалған. Көрсеткіштер қозғалтқыштың "
+            "Ашық ескерту: бағалау жинағы синтетикалық, ол тексеру ережелерін әзірлеген сол топпен "
+            "бір клиенттің синтетикалық төлем тарихы негізінде жасалған. Көрсеткіштер тексеру жүйесінің "
             "үлгіленген сценарийлердегі жұмысын бейнелейді, нақты банктік алаяқтық статистикасын "
-            "көрсетпейді және нақты тарихи деректердегі тексеруді алмастырмайды. Белгілі соқыр аймақтар "
-            "(тарихсыз сыртқы банктегі таза дроп, деректемесіз соманы орташа арттыру, ОПФ/КБе жоқ ЖСН-дроп "
-            "және алғашқы расталмаған шот ауыстыру) жинақта әдейі сақталған."
+            "көрсетпейді және нақты тарихи өндірістік деректерде тексеруді алмастырмайды. Белгілі соқыр аймақтар "
+            "(тарихсыз сыртқы банктегі таза дроп, деректемелерді өзгертпей соманы орташа арттыру, ҰҚН/КБе жоқ ЖСН-дроп "
+            "және алғашқы расталмаған шот ауыстыру) жинақта детекторды бейімдемей, әдейі сақталған."
         ),
         "en": (
             "Synthetic evaluation notice: this dataset is synthetic and generated by the same team "
@@ -810,12 +806,12 @@ MESSAGES: dict[str, dict[Lang, str]] = {
 KIND_LABELS: dict[str, dict[Lang, str]] = {
     "legit_same": {
         "ru": "Повторный платёж постоянному поставщику",
-        "kk": "Тұрақты жеткізушіге қайталама төлем",
+        "kk": "Тұрақты жеткізушіге қайталанатын төлем",
         "en": "Repeat payment to known supplier",
     },
     "legit_name_formatting_variant": {
         "ru": "Вариант написания ОПФ/кавычек",
-        "kk": "ОПФ және тырнақша нұсқасы",
+        "kk": "ҰҚН (ОПФ) және тырнақша жазылу нұсқасы",
         "en": "Legal-form / formatting name variant",
     },
     "legit_seasonal_amount": {
@@ -840,7 +836,7 @@ KIND_LABELS: dict[str, dict[Lang, str]] = {
     },
     "legit_rebrand_same_account": {
         "ru": "Смена названия при том же счёте",
-        "kk": "Бұрынғы шотпен атауды ауыстыру",
+        "kk": "Шотты сақтап, атауды ауыстыру",
         "en": "Supplier rebrand on same account",
     },
     "legit_urgent_known_supplier": {
@@ -855,17 +851,17 @@ KIND_LABELS: dict[str, dict[Lang, str]] = {
     },
     "attack_iik_swap_same_bin": {
         "ru": "Подмена ИИК при том же БИН",
-        "kk": "Бірдей БСН кезінде ЖСК-ны ауыстыру",
+        "kk": "Сол БСН кезінде ЖСК-ны алмастыру",
         "en": "IIK swap under same supplier BIN",
     },
     "attack_lookalike_name": {
         "ru": "Двойник названия поставщика (другой БИН)",
-        "kk": "Жеткізуші атауының көшірмесі (басқа БСН)",
+        "kk": "Жеткізуші атауына ұқсас атау (басқа БСН)",
         "en": "Lookalike supplier name (different BIN)",
     },
     "attack_unicode_and_digit_evasion": {
         "ru": "Обход через Unicode, confusables и цифры",
-        "kk": "Unicode, confusables және цифрлармен айналып өту",
+        "kk": "Unicode, ұқсас таңбалар және цифрлар арқылы айналып өту",
         "en": "Unicode, confusables, and digit-for-letter evasion",
     },
     "attack_bcc_other_owner": {
@@ -880,17 +876,17 @@ KIND_LABELS: dict[str, dict[Lang, str]] = {
     },
     "attack_amount_inflation": {
         "ru": "Завышение суммы платежа",
-        "kk": "Төлем сомасын арттыру",
+        "kk": "Төлем сомасын шектен тыс арттыру",
         "en": "Payment amount inflation",
     },
     "attack_iik_reused_other_supplier": {
         "ru": "Чужой ИИК из истории другого поставщика",
-        "kk": "Басқа жеткізушінің тарихындағы ЖСК",
+        "kk": "Басқа жеткізушінің тарихынан алынған ЖСК",
         "en": "IIK reused from another supplier",
     },
     "attack_duplicate_invoice": {
         "ru": "Повторная оплата по дубликату счёта",
-        "kk": "Қайталанатын шот нөмірімен төлем",
+        "kk": "Төлем шотының телнұсқасы бойынша қайта төлеу",
         "en": "Duplicate invoice payment",
     },
     "attack_structuring_72h": {
@@ -913,7 +909,11 @@ KIND_LABELS: dict[str, dict[Lang, str]] = {
 FIELD_LABELS: dict[str, dict[Lang, str]] = {
     "payer_id": {"ru": "Плательщик", "kk": "Төлеуші", "en": "Payer"},
     "recipient_name": {"ru": "Название получателя", "kk": "Алушының атауы", "en": "Recipient name"},
-    "recipient_bin": {"ru": "БИН/ИИН получателя", "kk": "Алушының БСН/ЖСН", "en": "Recipient BIN/IIN"},
+    "recipient_bin": {
+        "ru": "БИН/ИИН получателя",
+        "kk": "Алушының БСН/ЖСН",
+        "en": "Recipient BIN/IIN",
+    },
     "recipient_iik": {"ru": "ИИК получателя", "kk": "Алушының ЖСК", "en": "Recipient IIK"},
     "recipient_bik": {"ru": "БИК банка", "kk": "Банктің БСК", "en": "Bank BIK"},
     "amount_kzt": {"ru": "Сумма платежа", "kk": "Төлем сомасы", "en": "Payment amount"},
@@ -934,7 +934,7 @@ FIELD_LABELS: dict[str, dict[Lang, str]] = {
     "trust_account": {"ru": "Доверие счёту", "kk": "Шотқа сенім", "en": "Trust account"},
     "check_request": {"ru": "Данные платежа", "kk": "Төлем деректері", "en": "Payment details"},
     "lang": {"ru": "Язык ответа", "kk": "Жауап тілі", "en": "Response language"},
-    "limit": {"ru": "Лимит записей", "kk": "Жазбалар шегі", "en": "Record limit"},
+    "limit": {"ru": "Лимит записей", "kk": "Жазбалар лимиті", "en": "Record limit"},
 }
 
 
