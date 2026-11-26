@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { AppShell } from "@/components/AppShell";
+import { ProdShell } from "@/components/prod/ProdShell";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LangProvider } from "@/i18n";
 import { ru } from "@/i18n/ru";
+import { IS_PROD } from "@/lib/mode";
 import "./globals.css";
 
 const inter = Inter({
@@ -34,7 +36,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <LangProvider>
           <TooltipProvider>
-            <AppShell>{children}</AppShell>
+            {IS_PROD ? (
+              <ProdShell>{children}</ProdShell>
+            ) : (
+              <AppShell>{children}</AppShell>
+            )}
             <Toaster />
           </TooltipProvider>
         </LangProvider>

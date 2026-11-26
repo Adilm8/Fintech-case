@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { AlertCircle, Loader2, SearchCheck } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+import { AlertCircle, AlertTriangle, Loader2, SearchCheck } from "lucide-react";
+import { InvoiceUpload } from "@/components/InvoiceUpload";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,12 @@ import {
   isNetworkUnreachableError,
 } from "@/lib/api";
 import { localizeBackendText } from "@/lib/format";
+import {
+  applyMappedInvoiceValues,
+  mapInvoiceToFormValues,
+  needsManualConfirmation,
+  type InvoiceExtraction,
+} from "@/lib/invoice";
 import { notify } from "@/lib/toast";
 import type { CheckRequest, CheckResult, ComparisonField } from "@/lib/types";
 import { cn } from "cn";
@@ -110,6 +117,15 @@ export function NewPaymentDialog({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [invoiceResetKey, setInvoiceResetKey] = useState(0);
+  const [invoiceRequiresConfirmation, setInvoiceRequiresConfirmation] =
+    useState(false);
+  const [invoiceConfirmed, setInvoiceConfirmed] = useState(false);
+  const [isExtractingInvoice, setIsExtractingInvoice] = useState(false);
+  const confirmHintId = useId();
+
+  const isConfirmationBlocked =
+    invoiceRequiresConfirmation && !invoiceConfirmed;
 
   const getFieldInvalidReasons = (
     compField: "bin" | "iik" | "bik",
@@ -149,18 +165,55 @@ export function NewPaymentDialog({
       next.add(field);
       return next;
     });
+    if (invoiceConfirmed) {
+      setInvoiceConfirmed(false);
+    }
     if (formError) setFormError(null);
+  };
+
+  const handleInvoiceExtracted = (extraction: InvoiceExtraction) => {
+    const mapped = mapInvoiceToFormValues(extraction);
+    const { updatedKeys } = applyMappedInvoiceValues(EMPTY_FORM, mapped);
+
+    if (updatedKeys.length > 0) {
+      setForm((prev) => applyMappedInvoiceValues(prev, mapped).next);
+      setEditedFields((prev) => {
+        const next = new Set(prev);
+        for (const key of updatedKeys) {
+          next.add(key);
+        }
+        return next;
+      });
+    }
+
+    setInvoiceRequiresConfirmation(needsManualConfirmation(extraction));
+    setInvoiceConfirmed(false);
+    if (formError) setFormError(null);
+  };
+
+  const handleInvoiceClear = () => {
+    setInvoiceRequiresConfirmation(false);
+    setInvoiceConfirmed(false);
   };
 
   const handleClose = (nextOpen: boolean) => {
     if (!nextOpen && !isSubmitting) {
       setFormError(null);
+      if (isExtractingInvoice) {
+        setIsExtractingInvoice(false);
+        setInvoiceRequiresConfirmation(false);
+        setInvoiceConfirmed(false);
+        setInvoiceResetKey((k) => k + 1);
+      }
     }
     onOpenChange(nextOpen);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isExtractingInvoice || isConfirmationBlocked) {
+      return;
+    }
     setFormError(null);
 
     const recipient_name = form.recipient_name.trim();
@@ -219,6 +272,9 @@ export function NewPaymentDialog({
       if (!isEditMode) {
         setForm(EMPTY_FORM);
       }
+      setInvoiceRequiresConfirmation(false);
+      setInvoiceConfirmed(false);
+      setInvoiceResetKey((k) => k + 1);
       setFormError(null);
       onOpenChange(false);
       const itemId = onPaymentCreated(payload, result);
@@ -277,7 +333,7 @@ export function NewPaymentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
           {formError && (
             <Alert variant="destructive" className="bg-red-50/90 border-red-300">
               <AlertCircle className="size-4" />
@@ -286,6 +342,16 @@ export function NewPaymentDialog({
               </AlertDescription>
             </Alert>
           )}
+
+          <InvoiceUpload
+            key={invoiceResetKey}
+            disabled={isSubmitting}
+            confirmed={invoiceConfirmed}
+            onExtracted={handleInvoiceExtracted}
+            onConfirmedChange={setInvoiceConfirmed}
+            onClear={handleInvoiceClear}
+            onLoadingChange={setIsExtractingInvoice}
+          />
 
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
@@ -432,6 +498,22 @@ export function NewPaymentDialog({
             </div>
           </div>
 
+          {isConfirmationBlocked && (
+            <p
+              id={confirmHintId}
+              role="status"
+              className="flex items-start gap-2 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-xs font-medium text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100"
+            >
+              <AlertTriangle
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+              />
+              <span className="min-w-0 flex-1 break-words">
+                {t.invoice.submitBlockedHint}
+              </span>
+            </p>
+          )}
+
           <DialogFooter>
             <Button
               type="button"
@@ -444,12 +526,17 @@ export function NewPaymentDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={
+                isSubmitting || isExtractingInvoice || isConfirmationBlocked
+              }
+              aria-describedby={
+                isConfirmationBlocked ? confirmHintId : undefined
+              }
               className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
                   <span>{t.queue.submitChecking}</span>
                 </>
               ) : (
