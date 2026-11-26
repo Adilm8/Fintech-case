@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.audit import append_audit_entry, read_audit_entries
+from app.explain import router as explain_router
 from app.i18n import DEFAULT_LANG, Lang, field_label, resolve_lang, t
 from app.invoice_ai.env import load_env_file
 from app.invoice_ai.service import router as invoice_router
@@ -91,6 +92,7 @@ app = FastAPI(
 
 load_env_file()
 app.include_router(invoice_router)
+app.include_router(explain_router)
 
 app.add_middleware(
     CORSMiddleware,

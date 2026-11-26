@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
-_ALLOWED_PREFIXES = ("ANTHROPIC_", "INVOICE_AI_")
+_ALLOWED_PREFIXES = ("ANTHROPIC_", "INVOICE_AI_", "EXPLAIN_AI_")
 
 
 def load_env_file(path: Path = _ENV_FILE) -> None:
