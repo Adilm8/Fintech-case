@@ -32,6 +32,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,6 +49,7 @@ import {
   ApiError,
   decideApproval,
   getErrorMessage,
+  getFieldErrors,
   isNetworkUnreachableError,
 } from "@/lib/api";
 import {
@@ -126,6 +135,10 @@ function PendingApprovalCard({
   const [submittingDecision, setSubmittingDecision] =
     useState<ApprovalDecision | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
+  const [commentFieldError, setCommentFieldError] = useState<string | null>(
+    null
+  );
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
 
   const summary = getApprovalSummary(
     approval,
@@ -152,6 +165,7 @@ function PendingApprovalCard({
 
   const handleDecision = async (decision: ApprovalDecision) => {
     setCardError(null);
+    setCommentFieldError(null);
     setSubmittingDecision(decision);
     try {
       await decideApproval(
@@ -164,15 +178,23 @@ function PendingApprovalCard({
         lang,
         { analyst: analystMode }
       );
+      setRejectDialogOpen(false);
       await onDecided(decision, summary.recipientName);
     } catch (err) {
       const message = getErrorMessage(err);
+      const fieldErrors = getFieldErrors(err);
       if (isNetworkUnreachableError(err)) {
+        setRejectDialogOpen(false);
         onNetworkError(message);
         notify.error(t.common.serverErrorTitle, message);
       } else if (err instanceof ApiError && err.status === 409) {
+        setRejectDialogOpen(false);
         await onConflictError(message);
       } else {
+        setRejectDialogOpen(false);
+        if (fieldErrors.director_comment) {
+          setCommentFieldError(fieldErrors.director_comment);
+        }
         setCardError(message);
         notify.error(t.director.saveErrorTitle, message);
       }
@@ -316,7 +338,12 @@ function PendingApprovalCard({
               id={`director-comment-${approval.id}`}
               rows={3}
               aria-required={commentRequiredForApprove}
-              className="w-full min-h-24"
+              aria-invalid={Boolean(commentFieldError)}
+              className={cn(
+                "w-full min-h-24",
+                commentFieldError &&
+                  "border-rose-500 bg-rose-50/60 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
+              )}
               placeholder={
                 commentRequiredForApprove
                   ? interpolate(t.director.commentPlaceholderRequired, {
@@ -328,8 +355,14 @@ function PendingApprovalCard({
               onChange={(e) => {
                 setComment(e.target.value);
                 if (cardError) setCardError(null);
+                if (commentFieldError) setCommentFieldError(null);
               }}
             />
+            {commentFieldError && (
+              <p className="text-xs font-medium text-rose-800 break-words">
+                {commentFieldError}
+              </p>
+            )}
             {commentRequiredForApprove && (
               <p className="text-xs text-muted-foreground">
                 {t.director.rejectNoCommentHint}
@@ -390,7 +423,7 @@ function PendingApprovalCard({
               variant="destructive"
               size="lg"
               disabled={submittingDecision !== null}
-              onClick={() => handleDecision("rejected")}
+              onClick={() => setRejectDialogOpen(true)}
               className="min-h-11 w-full gap-2 sm:w-auto"
             >
               {submittingDecision === "rejected" ? (
@@ -406,6 +439,57 @@ function PendingApprovalCard({
               )}
             </Button>
           </div>
+
+          <Dialog
+            open={rejectDialogOpen}
+            onOpenChange={(nextOpen) => {
+              if (submittingDecision === null) {
+                setRejectDialogOpen(nextOpen);
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t.director.rejectConfirmTitle}</DialogTitle>
+                <DialogDescription>
+                  {interpolate(t.director.rejectConfirmDescription, {
+                    recipient: summary.recipientName,
+                    amount: summary.amountDisplay,
+                  })}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setRejectDialogOpen(false)}
+                  disabled={submittingDecision !== null}
+                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
+                >
+                  {t.common.cancel}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => void handleDecision("rejected")}
+                  disabled={submittingDecision !== null}
+                  className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
+                >
+                  {submittingDecision === "rejected" ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>{t.director.rejecting}</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="size-4" />
+                      <span>{t.director.rejectConfirmAction}</span>
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {approval.check.ruleset_version && (
             <div className="pt-1 text-right font-mono text-[11px] text-muted-foreground/75">

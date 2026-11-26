@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppData } from "@/components/AppShell";
 import { PaymentCheckView } from "@/components/PaymentCheckView";
@@ -23,6 +23,14 @@ function HomeContent() {
   } = useAppData();
 
   const adHocId = searchParams.get("id")?.trim() || null;
+  const openNewInitially = searchParams.get("new") === "1";
+
+  useEffect(() => {
+    if (openNewInitially && !adHocId) {
+      window.dispatchEvent(new Event("business-shield:open-new-payment"));
+      router.replace("/");
+    }
+  }, [openNewInitially, adHocId, router]);
 
   if (adHocId) {
     return <PaymentCheckView paymentId={adHocId} />;
@@ -36,6 +44,7 @@ function HomeContent() {
       approvalsError={approvalsError}
       isLoading={isLoading}
       hasError={Boolean(apiError)}
+      openNewInitially={openNewInitially}
       onSelectPayment={(item) => {
         router.push(getPaymentCheckHref(item.id));
       }}

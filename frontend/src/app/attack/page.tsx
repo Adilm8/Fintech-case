@@ -1,8 +1,10 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   Building2,
   ChevronDown,
@@ -291,7 +293,10 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
       setIsChecking(true);
       setCheckError(null);
 
-      checkPayment(parsedPayload, lang, { signal: controller.signal })
+      checkPayment(parsedPayload, lang, {
+        signal: controller.signal,
+        historyAction: "attack_sim",
+      })
         .then((res) => {
           if (requestSeqRef.current !== seq) return;
           setLiveResult(res);
@@ -1137,6 +1142,13 @@ export default function AttackConsolePage() {
             <p className="max-w-md text-sm text-muted-foreground">
               {t.attack.noBasePayments}
             </p>
+            <Link
+              href="/"
+              className="mt-1 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+            >
+              <ArrowLeft className="size-4" />
+              <span>{t.attack.goToPayments}</span>
+            </Link>
           </CardContent>
         </Card>
       ) : (

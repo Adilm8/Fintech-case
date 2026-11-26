@@ -5,8 +5,10 @@ import {
   type Dictionary,
   type Lang,
 } from "@/i18n";
+import { recordSessionCheck } from "./check-history";
 import type {
   Approval,
+  AuditEntry,
   CheckRequest,
   CheckResult,
   CreateApprovalRequest,
@@ -25,18 +27,21 @@ export class ApiError extends Error {
   status: number;
   isNetworkError: boolean;
   detail?: unknown;
+  fieldErrors?: Record<string, string>;
 
   constructor(options: {
     message: string;
     status: number;
     isNetworkError?: boolean;
     detail?: unknown;
+    fieldErrors?: Record<string, string>;
   }) {
     super(options.message);
     this.name = "ApiError";
     this.status = options.status;
     this.isNetworkError = Boolean(options.isNetworkError);
     this.detail = options.detail;
+    this.fieldErrors = options.fieldErrors;
   }
 }
 
@@ -52,6 +57,13 @@ export function getErrorMessage(err: unknown, fallback?: string): string {
     return err.message;
   }
   return fallback ?? getDictionary(getCurrentLang()).errors.generic;
+}
+
+export function getFieldErrors(err: unknown): Record<string, string> {
+  if (err instanceof ApiError && err.fieldErrors) {
+    return err.fieldErrors;
+  }
+  return {};
 }
 
 function appendLangParam(path: string, lang: Lang): string {
@@ -124,9 +136,74 @@ function extractValidationMessage(
   return null;
 }
 
+function extractFieldErrors(
+  body: unknown,
+  detail: unknown,
+  dict: Dictionary
+): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  if (
+    body &&
+    typeof body === "object" &&
+    "errors" in body &&
+    Array.isArray((body as { errors: unknown }).errors)
+  ) {
+    for (const item of (body as { errors: unknown[] }).errors) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as {
+        field?: unknown;
+        message?: unknown;
+        message_ru?: unknown;
+      };
+      const field = typeof rec.field === "string" ? rec.field.trim() : "";
+      const msg =
+        (typeof rec.message === "string" && rec.message.trim()) ||
+        (typeof rec.message_ru === "string" && rec.message_ru.trim()) ||
+        "";
+      if (field && msg && !out[field]) {
+        out[field] = msg;
+      }
+    }
+  }
+
+  if (Object.keys(out).length === 0 && Array.isArray(detail)) {
+    for (const item of detail) {
+      if (!item || typeof item !== "object" || !("loc" in item)) continue;
+      const loc = (item as { loc: unknown }).loc;
+      if (!Array.isArray(loc) || loc.length === 0) continue;
+      const field = String(loc[loc.length - 1] ?? "").trim();
+      if (!field || field === "body" || field === "query" || field === "path") {
+        continue;
+      }
+      const rawMsg =
+        "msg" in item && typeof (item as { msg: unknown }).msg === "string"
+          ? (item as { msg: string }).msg.trim()
+          : "";
+      const mapped = mapLocToMessage(loc, dict);
+      if (!out[field]) {
+        out[field] = rawMsg || mapped;
+      }
+    }
+  }
+
+  return out;
+}
+
 export interface ApiRequestOptions {
   signal?: AbortSignal;
   analyst?: boolean;
+  recordHistory?: boolean;
+  historyAction?: string;
+}
+
+export interface CheckPaymentOptions extends ApiRequestOptions {
+  /**
+   * When true, sends `?commit=true` so the backend records the payment intent
+   * in short-term memory (duplicate invoice / structuring / accumulation).
+   * Defaults to false (pure dry run).
+   */
+  commit?: boolean;
 }
 
 async function requestJson<T>(
@@ -196,9 +273,12 @@ async function requestJson<T>(
 
     if (response.status === 422) {
       const validationMessage = extractValidationMessage(detail, dict, 422);
+      const fieldErrors = extractFieldErrors(body, detail, dict);
       throw new ApiError({
         status: 422,
         detail,
+        fieldErrors:
+          Object.keys(fieldErrors).length > 0 ? fieldErrors : undefined,
         message: validationMessage || dict.errors.validationDefault,
       });
     }
@@ -223,10 +303,13 @@ async function requestJson<T>(
 export async function checkPayment(
   payload: CheckRequest,
   lang: Lang = getCurrentLang(),
-  options?: ApiRequestOptions
+  options?: CheckPaymentOptions
 ): Promise<CheckResult> {
-  return requestJson<CheckResult>(
-    "/api/payments/check",
+  const path = options?.commit
+    ? "/api/payments/check?commit=true"
+    : "/api/payments/check";
+  const result = await requestJson<CheckResult>(
+    path,
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -234,6 +317,10 @@ export async function checkPayment(
     lang,
     options
   );
+  if (options?.recordHistory !== false) {
+    recordSessionCheck(payload, result, options?.historyAction ?? "check");
+  }
+  return result;
 }
 
 interface RawQueueItem extends CheckRequest {
@@ -271,16 +358,32 @@ export async function getQueue(
 }
 
 export async function getHistory(
-  lang: Lang = getCurrentLang()
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
 ): Promise<HistoryEntry[]> {
   const raw = await requestJson<
     { payments: (HistoryEntry & { paid_at?: string })[] } | HistoryEntry[]
-  >("/api/history", { method: "GET" }, lang);
+  >("/api/history", { method: "GET" }, lang, options);
   const list = Array.isArray(raw) ? raw : raw.payments;
   return list.map((p) => ({
     ...p,
-    date: p.date ?? (p as { paid_at?: string }).paid_at,
+    date: p.date ?? p.paid_at,
+    paid_at: p.paid_at ?? p.date,
   }));
+}
+
+export async function getAuditLog(
+  limit = 100,
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
+): Promise<AuditEntry[]> {
+  const safeLimit = Math.max(1, Math.min(1000, Math.round(limit)));
+  return requestJson<AuditEntry[]>(
+    `/api/audit?limit=${safeLimit}`,
+    { method: "GET" },
+    lang,
+    options
+  );
 }
 
 interface RawApproval extends Omit<Approval, "request"> {

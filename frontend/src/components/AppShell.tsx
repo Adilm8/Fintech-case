@@ -1,5 +1,7 @@
 "use client";
 
+import { SiteFooter } from "@/components/info/SiteFooter";
+
 import {
   createContext,
   useCallback,
@@ -14,6 +16,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { ShortcutsHelpDialog } from "@/components/ShortcutsHelpDialog";
 import {
   Alert,
   AlertAction,
@@ -110,8 +113,51 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [resetCounter, setResetCounter] = useState(0);
   const [homeResetNonce, setHomeResetNonce] = useState(0);
   const [analystModeState, setAnalystModeState] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const hasLoadedOnceRef = useRef(false);
   const lastRecheckedLocalLangRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      return target.isContentEditable;
+    };
+
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isEditableTarget(event.target)) return;
+
+      if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen((prev) => !prev);
+        return;
+      }
+
+      if (
+        !event.shiftKey &&
+        (event.key.toLowerCase() === "n" || event.code === "KeyN")
+      ) {
+        if (document.querySelector('[data-slot="dialog-content"]')) {
+          return;
+        }
+        const onQueueHome =
+          pathname === "/" &&
+          typeof window !== "undefined" &&
+          !new URLSearchParams(window.location.search).has("id");
+        if (!onQueueHome) {
+          event.preventDefault();
+          router.push("/?new=1");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [pathname, router]);
 
   const isDirectorRoute = pathname.startsWith("/approvals");
   const effectiveAnalystMode = isDirectorRoute && analystModeState;
@@ -228,7 +274,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       const customPromise = Promise.all(
         snapshot.customItems.map(async (item) => {
           try {
-            const refreshed = await checkPayment(item.request, lang);
+            const refreshed = await checkPayment(item.request, lang, {
+              recordHistory: false,
+            });
             return { ...item, result: refreshed };
           } catch {
             return item;
@@ -239,7 +287,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       const overridesPromise = Promise.all(
         overrideEntries.map(async ([key, item]) => {
           try {
-            const refreshed = await checkPayment(item.request, lang);
+            const refreshed = await checkPayment(item.request, lang, {
+              recordHistory: false,
+            });
             return [key, { ...item, result: refreshed }] as const;
           } catch {
             return [key, item] as const;
@@ -482,6 +532,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           onResetDemo={handleResetDemo}
           isResetting={isResetting}
           onHomeReset={() => setHomeResetNonce((count) => count + 1)}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
         />
 
         <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-5 sm:px-6 sm:py-6 sm:space-y-6">
@@ -512,6 +563,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {children}
         </main>
+        <SiteFooter />
+        <ShortcutsHelpDialog
+          open={shortcutsOpen}
+          onOpenChange={setShortcutsOpen}
+        />
       </div>
     </AppDataContext.Provider>
   );

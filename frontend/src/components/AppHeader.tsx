@@ -9,6 +9,8 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
+  History,
+  Keyboard,
   Loader2,
   Radar,
   RotateCcw,
@@ -36,6 +38,7 @@ interface AppHeaderProps {
   onResetDemo: () => Promise<void> | void;
   isResetting: boolean;
   onHomeReset?: () => void;
+  onOpenShortcuts?: () => void;
 }
 
 export function AppHeader({
@@ -43,6 +46,7 @@ export function AppHeader({
   onResetDemo,
   isResetting,
   onHomeReset,
+  onOpenShortcuts,
 }: AppHeaderProps) {
   const pathname = usePathname();
   const { t, lang, setLang } = useT();
@@ -82,6 +86,13 @@ export function AppHeader({
       icon: ClipboardCheck,
       active: pathname.startsWith("/approvals"),
       badge: pendingCount,
+    },
+    {
+      href: "/history",
+      label: t.nav.history,
+      icon: History,
+      active: pathname.startsWith("/history"),
+      badge: null as number | null,
     },
     {
       href: "/attack",
@@ -162,6 +173,29 @@ export function AppHeader({
                 );
               })}
             </div>
+
+            {onOpenShortcuts && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={onOpenShortcuts}
+                      aria-label={t.nav.shortcutsTooltip}
+                      title={t.nav.shortcutsTooltip}
+                      className="hidden size-9 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:inline-flex"
+                    />
+                  }
+                >
+                  <Keyboard className="size-4" />
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {t.nav.shortcutsTooltip}
+                </TooltipContent>
+              </Tooltip>
+            )}
 
             <Tooltip>
               <TooltipTrigger

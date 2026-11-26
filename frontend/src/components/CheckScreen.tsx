@@ -11,11 +11,13 @@ import {
   PauseCircle,
   RefreshCw,
   Send,
+  ShieldAlert,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
 import { ComparisonTable } from "@/components/ComparisonTable";
+import { ExplainButton } from "@/components/ExplainButton";
 import { NewPaymentDialog } from "@/components/NewPaymentDialog";
 import { ReasonsList } from "@/components/ReasonsList";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -39,6 +41,7 @@ import {
   checkPayment,
   createApproval,
   getErrorMessage,
+  getFieldErrors,
   isNetworkUnreachableError,
 } from "@/lib/api";
 import {
@@ -51,12 +54,14 @@ import {
   pickHeadline,
   VERDICT_STYLES,
 } from "@/lib/format";
+import { hasIdentitySignal } from "@/lib/identitySignals";
 import { notify } from "@/lib/toast";
 import type {
   Approval,
   CheckRequest,
   CheckResult,
   SignPaymentPayload,
+  Verdict,
 } from "@/lib/types";
 import { cn } from "cn";
 
@@ -101,10 +106,13 @@ export function CheckScreen({
       : result;
 
   const [isRechecking, setIsRechecking] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
   const [recheckError, setRecheckError] = useState<string | null>(null);
+  const [signError, setSignError] = useState<string | null>(null);
   const [demoActionStatus, setDemoActionStatus] = useState<
     "signed" | "postponed" | null
   >(null);
+  const [canUndoPostpone, setCanUndoPostpone] = useState(false);
   const [accountantAck, setAccountantAck] = useState(false);
   const [signedWithAck, setSignedWithAck] = useState(false);
 
@@ -113,6 +121,7 @@ export function CheckScreen({
   const [accountantNote, setAccountantNote] = useState("");
   const [isSendingApproval, setIsSendingApproval] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [noteFieldError, setNoteFieldError] = useState<string | null>(null);
 
   const [sentApprovalId, setSentApprovalId] = useState<string | null>(null);
   const [localApproval, setLocalApproval] = useState<Approval | null>(null);
@@ -120,10 +129,26 @@ export function CheckScreen({
   const lastFetchedLangRef = useRef(lang);
   const baseCheckIdRef = useRef(result.check_id);
   const onNetworkErrorRef = useRef(onNetworkError);
+  const postponeUndoTimerRef = useRef<number | null>(null);
+  const previousStatusBeforePostponeRef = useRef<"signed" | "postponed" | null>(
+    null
+  );
+  const signInFlightRef = useRef(false);
+  const signCommittedRef = useRef(false);
+  const approvalInFlightRef = useRef(false);
+  const approvalCommittedRef = useRef(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [paymentId]);
+
+  useEffect(() => {
+    return () => {
+      if (postponeUndoTimerRef.current !== null) {
+        window.clearTimeout(postponeUndoTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     baseCheckIdRef.current = result.check_id;
@@ -138,7 +163,7 @@ export function CheckScreen({
     lastFetchedLangRef.current = lang;
     let active = true;
 
-    checkPayment(request, lang)
+    checkPayment(request, lang, { recordHistory: false })
       .then((updated) => {
         if (!active) return;
         setOverride({ baseCheckId: baseCheckIdRef.current, result: updated });
@@ -170,8 +195,17 @@ export function CheckScreen({
   const showProminentTrustedBanner = hasTrustedInfo && verdict === "green";
   const showSecondaryTrustedNote = hasTrustedInfo && verdict !== "green";
   const invalidFields = extractInvalidFieldMap(verdict, currentResult.signals);
+  const hasRecipientIdentityDoubt = hasIdentitySignal(currentResult.signals);
+  const isYellowOrGrey = verdict === "yellow" || verdict === "grey";
+  const requiresDirectorForIdentity =
+    isYellowOrGrey &&
+    hasRecipientIdentityDoubt &&
+    !isApprovedByDirector &&
+    !isPendingApproval &&
+    !isRejectedByDirector;
   const requiresAccountantAck =
-    (verdict === "yellow" || verdict === "grey") &&
+    isYellowOrGrey &&
+    !hasRecipientIdentityDoubt &&
     !isApprovedByDirector &&
     !isPendingApproval &&
     !isRejectedByDirector;
@@ -188,11 +222,18 @@ export function CheckScreen({
     setIsRechecking(true);
     setRecheckError(null);
     try {
-      const updated = await checkPayment(request, lang);
+      const updated = await checkPayment(request, lang, {
+        historyAction: "recheck",
+      });
       lastFetchedLangRef.current = lang;
       setOverride({ baseCheckId: result.check_id, result: updated });
       setAccountantAck(false);
       setDemoActionStatus(null);
+      setCanUndoPostpone(false);
+      if (postponeUndoTimerRef.current !== null) {
+        window.clearTimeout(postponeUndoTimerRef.current);
+        postponeUndoTimerRef.current = null;
+      }
       setSignedWithAck(false);
       onResultUpdate?.(updated);
       notify.success(t.toast.recheckTitle, t.toast.recheckDescription);
@@ -209,42 +250,114 @@ export function CheckScreen({
     }
   };
 
-  const handleSignDemo = () => {
-    if (!canSign) return;
-    const ack = requiresAccountantAck && accountantAck;
-    const signPayload: SignPaymentPayload = {
-      check_id: currentResult.check_id,
-      verdict,
-      request,
-      accountant_ack: ack,
-      approval_id: effectiveApproval?.id ?? null,
-    };
+  const handleSignDemo = async () => {
+    if (
+      !canSign ||
+      isSigning ||
+      signInFlightRef.current ||
+      demoActionStatus === "signed"
+    ) {
+      return;
+    }
 
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent<SignPaymentPayload>("business-shield:sign", {
-          detail: signPayload,
+    signInFlightRef.current = true;
+    setIsSigning(true);
+    setRecheckError(null);
+    setSignError(null);
+
+    try {
+      let effectiveCheckId = currentResult.check_id;
+      let effectiveVerdict: Verdict = verdict;
+
+      if (!signCommittedRef.current) {
+        const committed = await checkPayment(request, lang, { commit: true });
+        signCommittedRef.current = true;
+        effectiveCheckId = committed.check_id;
+        effectiveVerdict = committed.verdict;
+        lastFetchedLangRef.current = lang;
+        setOverride({ baseCheckId: result.check_id, result: committed });
+        onResultUpdate?.(committed);
+      }
+
+      const ack = requiresAccountantAck && accountantAck;
+      const signPayload: SignPaymentPayload = {
+        check_id: effectiveCheckId,
+        verdict: effectiveVerdict,
+        request,
+        accountant_ack: ack,
+        approval_id: effectiveApproval?.id ?? null,
+      };
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent<SignPaymentPayload>("business-shield:sign", {
+            detail: signPayload,
+          })
+        );
+      }
+      onSigned?.(signPayload);
+
+      setSignedWithAck(ack);
+      setDemoActionStatus("signed");
+      notify.success(
+        t.toast.signedTitle,
+        interpolate(t.toast.signedDescription, {
+          amount: formatMoney(request.amount_kzt),
+          recipient: request.recipient_name,
         })
       );
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setSignError(message);
+      setRecheckError(message);
+      if (isNetworkUnreachableError(err)) {
+        onNetworkError?.(message);
+        notify.error(t.common.serverErrorTitle, message);
+      } else {
+        notify.error(t.check.actionErrorTitle, message);
+      }
+    } finally {
+      signInFlightRef.current = false;
+      setIsSigning(false);
     }
-    onSigned?.(signPayload);
+  };
 
-    setRecheckError(null);
-    setSignedWithAck(ack);
-    setDemoActionStatus("signed");
-    notify.success(
-      t.toast.signedTitle,
-      interpolate(t.toast.signedDescription, {
-        amount: formatMoney(request.amount_kzt),
-        recipient: request.recipient_name,
-      })
-    );
+  const handleUndoPostpone = () => {
+    if (postponeUndoTimerRef.current !== null) {
+      window.clearTimeout(postponeUndoTimerRef.current);
+      postponeUndoTimerRef.current = null;
+    }
+    setCanUndoPostpone(false);
+    setDemoActionStatus(previousStatusBeforePostponeRef.current);
+    previousStatusBeforePostponeRef.current = null;
+    notify.info(t.toast.postponeUndoneTitle, t.toast.postponeUndoneDescription);
   };
 
   const handlePostponeDemo = () => {
     setRecheckError(null);
+    if (postponeUndoTimerRef.current !== null) {
+      window.clearTimeout(postponeUndoTimerRef.current);
+    }
+    if (demoActionStatus !== "postponed") {
+      previousStatusBeforePostponeRef.current = demoActionStatus;
+    }
     setDemoActionStatus("postponed");
-    notify.warning(t.toast.postponedTitle, t.toast.postponedDescription);
+    setCanUndoPostpone(true);
+    postponeUndoTimerRef.current = window.setTimeout(() => {
+      setCanUndoPostpone(false);
+      postponeUndoTimerRef.current = null;
+    }, 5000);
+
+    notify.warning(t.toast.postponedTitle, {
+      description: t.toast.postponedDescription,
+      duration: 5000,
+      action: {
+        label: t.common.undo,
+        onClick: () => {
+          handleUndoPostpone();
+        },
+      },
+    });
   };
 
   const handleOpenFixRequisites = () => {
@@ -260,13 +373,28 @@ export function CheckScreen({
   };
 
   const handleSendToDirector = async () => {
-    if (isSendingApproval || isPendingApproval || sentApprovalId !== null) {
+    if (
+      approvalInFlightRef.current ||
+      isSendingApproval ||
+      isPendingApproval ||
+      sentApprovalId !== null
+    ) {
       return;
     }
 
+    approvalInFlightRef.current = true;
     setDialogError(null);
+    setNoteFieldError(null);
     setIsSendingApproval(true);
     try {
+      if (!approvalCommittedRef.current) {
+        const committed = await checkPayment(request, lang, { commit: true });
+        approvalCommittedRef.current = true;
+        lastFetchedLangRef.current = lang;
+        setOverride({ baseCheckId: result.check_id, result: committed });
+        onResultUpdate?.(committed);
+      }
+
       const created = await createApproval(
         {
           request,
@@ -278,6 +406,7 @@ export function CheckScreen({
       setLocalApproval(created);
       setDialogOpen(false);
       setAccountantNote("");
+      setNoteFieldError(null);
       onApprovalCreated?.(created);
       notify.success(t.toast.sentToDirectorTitle, {
         description: t.toast.sentToDirectorDescription,
@@ -288,15 +417,20 @@ export function CheckScreen({
       });
     } catch (err) {
       const message = getErrorMessage(err);
+      const fieldErrors = getFieldErrors(err);
       if (isNetworkUnreachableError(err)) {
-        setDialogOpen(false);
+        setDialogError(message);
         onNetworkError?.(message);
         notify.error(t.common.serverErrorTitle, message);
       } else {
+        if (fieldErrors.accountant_note) {
+          setNoteFieldError(fieldErrors.accountant_note);
+        }
         setDialogError(message);
         notify.error(t.check.actionErrorTitle, message);
       }
     } finally {
+      approvalInFlightRef.current = false;
       setIsSendingApproval(false);
     }
   };
@@ -364,11 +498,21 @@ export function CheckScreen({
           <Button
             type="button"
             size="lg"
-            onClick={handleSignDemo}
+            disabled={isSigning || demoActionStatus === "signed"}
+            onClick={() => void handleSignDemo()}
             className="hidden md:inline-flex min-h-11 w-full gap-2"
           >
-            <ShieldCheck className="size-4" />
-            <span>{t.check.actionSign}</span>
+            {isSigning ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                <span>{t.check.actionSigning}</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="size-4" />
+                <span>{t.check.actionSign}</span>
+              </>
+            )}
           </Button>
           <p className="text-xs text-[#006B49]">
             {t.check.approvedAllowedHint}
@@ -440,11 +584,21 @@ export function CheckScreen({
         <Button
           type="button"
           size="lg"
-          onClick={handleSignDemo}
+          disabled={isSigning || demoActionStatus === "signed"}
+          onClick={() => void handleSignDemo()}
           className="hidden md:inline-flex min-h-11 w-full gap-2"
         >
-          <ShieldCheck className="size-4" />
-          <span>{t.check.actionSign}</span>
+          {isSigning ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              <span>{t.check.actionSigning}</span>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="size-4" />
+              <span>{t.check.actionSign}</span>
+            </>
+          )}
         </Button>
       );
     }
@@ -478,6 +632,46 @@ export function CheckScreen({
       );
     }
 
+    if (requiresDirectorForIdentity) {
+      return (
+        <div className="space-y-2.5">
+          <Button
+            type="button"
+            size="lg"
+            onClick={openDirectorDialog}
+            className="hidden md:inline-flex min-h-11 w-full gap-2"
+          >
+            <Send className="size-4" />
+            <span>{t.check.actionSendToDirector}</span>
+          </Button>
+
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50/90 px-3 py-2.5 text-xs font-medium text-amber-950"
+          >
+            <ShieldAlert
+              aria-hidden="true"
+              className="mt-0.5 size-4 shrink-0 text-amber-700"
+            />
+            <span className="min-w-0 flex-1 leading-snug break-words">
+              {t.check.directorRequiredIdentity}
+            </span>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            disabled
+            className="min-h-11 w-full gap-2"
+          >
+            <ShieldCheck className="size-4" />
+            <span>{t.check.actionSign}</span>
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-2.5">
         <Button
@@ -494,6 +688,7 @@ export function CheckScreen({
           <Checkbox
             id="accountant-ack-checkbox"
             checked={accountantAck}
+            disabled={isSigning || demoActionStatus === "signed"}
             onCheckedChange={(checked) => setAccountantAck(Boolean(checked))}
             className="mt-0.5"
           />
@@ -516,12 +711,23 @@ export function CheckScreen({
           type="button"
           variant="outline"
           size="lg"
-          disabled={!accountantAck}
-          onClick={handleSignDemo}
+          disabled={
+            !accountantAck || isSigning || demoActionStatus === "signed"
+          }
+          onClick={() => void handleSignDemo()}
           className="min-h-11 w-full gap-2"
         >
-          <ShieldCheck className="size-4" />
-          <span>{t.check.actionSign}</span>
+          {isSigning ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              <span>{t.check.actionSigning}</span>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="size-4" />
+              <span>{t.check.actionSign}</span>
+            </>
+          )}
         </Button>
       </div>
     );
@@ -551,11 +757,21 @@ export function CheckScreen({
         <Button
           type="button"
           size="lg"
-          onClick={handleSignDemo}
+          disabled={isSigning || demoActionStatus === "signed"}
+          onClick={() => void handleSignDemo()}
           className="min-h-11 w-full gap-2"
         >
-          <ShieldCheck className="size-4" />
-          <span>{t.check.actionSign}</span>
+          {isSigning ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              <span>{t.check.actionSigning}</span>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="size-4" />
+              <span>{t.check.actionSign}</span>
+            </>
+          )}
         </Button>
       );
     }
@@ -593,11 +809,21 @@ export function CheckScreen({
         <Button
           type="button"
           size="lg"
-          onClick={handleSignDemo}
+          disabled={isSigning || demoActionStatus === "signed"}
+          onClick={() => void handleSignDemo()}
           className="min-h-11 w-full gap-2"
         >
-          <ShieldCheck className="size-4" />
-          <span>{t.check.actionSign}</span>
+          {isSigning ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              <span>{t.check.actionSigning}</span>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="size-4" />
+              <span>{t.check.actionSign}</span>
+            </>
+          )}
         </Button>
       );
     }
@@ -636,7 +862,8 @@ export function CheckScreen({
         !isPendingApproval &&
         !isApprovedByDirector &&
         !isRejectedByDirector)) &&
-    demoActionStatus === null;
+    demoActionStatus === null &&
+    signError === null;
 
   return (
     <div
@@ -801,6 +1028,16 @@ export function CheckScreen({
             verdict={verdict}
           />
 
+          {(verdict === "yellow" ||
+            verdict === "red" ||
+            verdict === "grey") && (
+            <ExplainButton
+              check={currentResult}
+              lang={lang}
+              labels={t.explain}
+            />
+          )}
+
           <Card
             className={cn(
               "min-w-0",
@@ -811,6 +1048,17 @@ export function CheckScreen({
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.check.actionsEyebrow}
               </div>
+              {signError && (
+                <Alert
+                  variant="destructive"
+                  className="rounded-xl border-red-300 bg-red-50/90 py-2.5"
+                >
+                  <AlertCircle className="size-4" />
+                  <AlertDescription className="text-xs break-words">
+                    {signError}
+                  </AlertDescription>
+                </Alert>
+              )}
               {renderActionButtons()}
               {demoActionStatus === "signed" && (
                 <div
@@ -825,9 +1073,27 @@ export function CheckScreen({
               {demoActionStatus === "postponed" && (
                 <div
                   role="status"
-                  className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950"
                 >
-                  {t.check.postponedStatusNote}
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div>{t.check.postponedStatusNote}</div>
+                    {canUndoPostpone && (
+                      <div className="text-[11px] font-normal text-amber-800">
+                        {t.check.postponedUndoHint}
+                      </div>
+                    )}
+                  </div>
+                  {canUndoPostpone && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUndoPostpone}
+                      className="h-7 shrink-0 border-amber-400 bg-card px-2.5 text-xs font-semibold text-amber-950 hover:bg-amber-100"
+                    >
+                      {t.common.undo}
+                    </Button>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -882,16 +1148,32 @@ export function CheckScreen({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="accountant_note">
+              <Label
+                htmlFor="accountant_note"
+                className={cn(noteFieldError && "text-rose-900")}
+              >
                 {t.check.accountantNoteLabel}
               </Label>
               <Textarea
                 id="accountant_note"
                 rows={3}
+                aria-invalid={Boolean(noteFieldError)}
                 placeholder={t.check.accountantNotePlaceholder}
+                className={cn(
+                  noteFieldError &&
+                    "border-rose-500 bg-rose-50/60 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
+                )}
                 value={accountantNote}
-                onChange={(e) => setAccountantNote(e.target.value)}
+                onChange={(e) => {
+                  setAccountantNote(e.target.value);
+                  if (noteFieldError) setNoteFieldError(null);
+                }}
               />
+              {noteFieldError && (
+                <p className="text-xs font-medium text-rose-800 break-words">
+                  {noteFieldError}
+                </p>
+              )}
             </div>
           </div>
 

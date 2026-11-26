@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowUpDown,
   ArrowUpRight,
+  ChevronDown,
   ChevronRight,
   ClipboardCheck,
   FileText,
   Inbox,
   Plus,
+  RefreshCw,
   Search,
   SearchX,
   Wallet,
@@ -29,6 +32,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { useT } from "@/i18n";
 import {
@@ -36,6 +44,14 @@ import {
   findApprovalForPayment,
 } from "@/lib/approvals";
 import { VERDICT_STYLES } from "@/lib/format";
+import {
+  getQueuePreferencesSnapshot,
+  getServerQueuePreferencesSnapshot,
+  subscribeQueuePreferences,
+  updateQueuePreferences,
+  type QueueSort,
+  type VerdictFilter,
+} from "@/lib/preferences";
 import type {
   Approval,
   CheckRequest,
@@ -52,6 +68,8 @@ interface PaymentQueueScreenProps {
   isLoading: boolean;
   hasError?: boolean;
   prefillRequest?: CheckRequest | null;
+  openNewInitially?: boolean;
+  onConsumeOpenNew?: () => void;
   onClearPrefill?: () => void;
   onSelectPayment: (item: QueueItem) => void;
   onSelectPaymentById?: (id: string) => void;
@@ -68,7 +86,13 @@ const VERDICT_ORDER: readonly Verdict[] = [
   "invalid",
 ] as const;
 
-type VerdictFilter = "all" | Verdict;
+const RISK_PRIORITY: Record<Verdict, number> = {
+  red: 0,
+  invalid: 1,
+  yellow: 2,
+  grey: 3,
+  green: 4,
+};
 
 /**
  * Counts payments requiring accountant/director attention before signing.
@@ -114,6 +138,8 @@ export function PaymentQueueScreen({
   isLoading,
   hasError = false,
   prefillRequest,
+  openNewInitially = false,
+  onConsumeOpenNew,
   onClearPrefill,
   onSelectPayment,
   onSelectPaymentById,
@@ -121,11 +147,35 @@ export function PaymentQueueScreen({
   onRefreshQueue,
   onNetworkError,
 }: PaymentQueueScreenProps) {
-  const { t, formatMoney, interpolate } = useT();
+  const { t, lang, mounted, formatMoney, interpolate } = useT();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>("all");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const storedPrefs = useSyncExternalStore(
+    subscribeQueuePreferences,
+    getQueuePreferencesSnapshot,
+    getServerQueuePreferencesSnapshot
+  );
+  const prefs = mounted ? storedPrefs : getServerQueuePreferencesSnapshot();
+  const searchQuery = prefs.searchQuery;
+  const verdictFilter = prefs.verdictFilter;
+  const sortOrder = prefs.sort;
+
+  const setSearchQuery = (next: string) => {
+    updateQueuePreferences({ searchQuery: next });
+  };
+  const setVerdictFilter = (
+    next: VerdictFilter | ((prev: VerdictFilter) => VerdictFilter)
+  ) => {
+    updateQueuePreferences((prev) => ({
+      ...prev,
+      verdictFilter:
+        typeof next === "function" ? next(prev.verdictFilter) : next,
+    }));
+  };
+  const setSortOrder = (next: QueueSort) => {
+    updateQueuePreferences({ sort: next });
+  };
+
+  const [dialogOpen, setDialogOpen] = useState(openNewInitially);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -134,17 +184,43 @@ export function PaymentQueueScreen({
   const isDialogOpen = dialogOpen || Boolean(prefillRequest);
 
   useEffect(() => {
+    if (openNewInitially) {
+      onConsumeOpenNew?.();
+    }
+  }, [openNewInitially, onConsumeOpenNew]);
+
+  useEffect(() => {
+    const handleOpenNewEvent = () => {
+      setDialogOpen(true);
+    };
+    window.addEventListener(
+      "business-shield:open-new-payment",
+      handleOpenNewEvent
+    );
+    return () => {
+      window.removeEventListener(
+        "business-shield:open-new-payment",
+        handleOpenNewEvent
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDialogOpen) return;
-      if (
-        event.key === "/" &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        !isEditableElement(event.target)
-      ) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isEditableElement(event.target)) return;
+      if (document.querySelector('[data-slot="dialog-content"]')) return;
+
+      if (event.key === "/") {
         event.preventDefault();
         searchInputRef.current?.focus();
+      } else if (
+        !event.shiftKey &&
+        (event.key.toLowerCase() === "n" || event.code === "KeyN")
+      ) {
+        event.preventDefault();
+        setDialogOpen(true);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -224,20 +300,55 @@ export function PaymentQueueScreen({
   );
 
   const filteredQueue = useMemo(() => {
-    return queue.filter((item) => {
+    const filtered = queue.filter((item) => {
       if (verdictFilter !== "all" && item.result.verdict !== verdictFilter) {
         return false;
       }
       return matchesSearchQuery(item, searchQuery);
     });
-  }, [queue, verdictFilter, searchQuery]);
+
+    if (sortOrder === "default") {
+      return filtered;
+    }
+
+    const locale = lang === "en" ? "en" : lang === "kk" ? "kk" : "ru";
+    return [...filtered].sort((a, b) => {
+      if (sortOrder === "risk_desc") {
+        const rankDiff =
+          (RISK_PRIORITY[a.result.verdict] ?? 9) -
+          (RISK_PRIORITY[b.result.verdict] ?? 9);
+        if (rankDiff !== 0) return rankDiff;
+        if (b.result.score !== a.result.score) {
+          return b.result.score - a.result.score;
+        }
+        return (b.request.amount_kzt || 0) - (a.request.amount_kzt || 0);
+      }
+      if (sortOrder === "amount_desc") {
+        return (b.request.amount_kzt || 0) - (a.request.amount_kzt || 0);
+      }
+      if (sortOrder === "amount_asc") {
+        return (a.request.amount_kzt || 0) - (b.request.amount_kzt || 0);
+      }
+      if (sortOrder === "name_asc") {
+        return a.request.recipient_name.localeCompare(
+          b.request.recipient_name,
+          locale,
+          { sensitivity: "base" }
+        );
+      }
+      return 0;
+    });
+  }, [queue, verdictFilter, searchQuery, sortOrder, lang]);
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 || verdictFilter !== "all";
 
   const resetFilters = () => {
-    setSearchQuery("");
-    setVerdictFilter("all");
+    updateQueuePreferences((prev) => ({
+      ...prev,
+      searchQuery: "",
+      verdictFilter: "all",
+    }));
   };
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
@@ -289,15 +400,30 @@ export function PaymentQueueScreen({
           </p>
         </div>
 
-        <Button
-          type="button"
-          size="lg"
-          onClick={() => setDialogOpen(true)}
-          className="min-h-11 w-full gap-2 rounded-xl px-4 font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)] sm:min-h-10 sm:w-auto"
-        >
-          <Plus className="size-4" />
-          <span>{t.queue.addPaymentButton}</span>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => setDialogOpen(true)}
+                className="min-h-11 w-full gap-2 rounded-xl px-4 font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)] sm:min-h-10 sm:w-auto"
+              />
+            }
+          >
+            <Plus className="size-4" />
+            <span>{t.queue.addPaymentButton}</span>
+            <kbd
+              aria-hidden="true"
+              className="ml-0.5 hidden rounded border border-white/30 bg-white/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-white sm:inline-flex"
+            >
+              N
+            </kbd>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t.queue.newPaymentTooltip}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Summary tiles: 2 columns on phone, 4 on desktop */}
@@ -476,6 +602,7 @@ export function PaymentQueueScreen({
                     }}
                     placeholder={t.queue.searchPlaceholder}
                     aria-label={t.queue.searchAriaLabel}
+                    title={t.queue.searchTooltip}
                     className="h-11 rounded-xl bg-background/70 pl-9 pr-10 sm:h-10 [&::-webkit-search-cancel-button]:hidden"
                   />
                   {searchQuery ? (
@@ -491,26 +618,72 @@ export function PaymentQueueScreen({
                       <X className="size-4" />
                     </button>
                   ) : (
-                    <kbd
-                      aria-hidden="true"
-                      className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
-                    >
-                      /
-                    </kbd>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <kbd
+                            aria-hidden="true"
+                            className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 cursor-default items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
+                          />
+                        }
+                      >
+                        /
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        {t.queue.searchTooltip}
+                      </TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
 
-                <div className="text-xs font-medium text-muted-foreground tabular-nums">
-                  {hasError && queue.length === 0
-                    ? t.common.noServerConnection
-                    : hasActiveFilters
-                      ? interpolate(t.queue.shownOfTotal, {
-                          shown: filteredQueue.length,
-                          total: queue.length,
-                        })
-                      : interpolate(t.queue.totalInQueue, {
-                          count: queue.length,
-                        })}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 sm:justify-end">
+                  <div className="relative flex-1 sm:flex-initial">
+                    <ArrowUpDown
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <select
+                      aria-label={t.queue.sortLabel}
+                      value={sortOrder}
+                      onChange={(e) =>
+                        setSortOrder(e.target.value as QueueSort)
+                      }
+                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background/70 pl-8 pr-8 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-auto"
+                    >
+                      <option value="default">
+                        {t.queue.sortOptions.default}
+                      </option>
+                      <option value="risk_desc">
+                        {t.queue.sortOptions.risk_desc}
+                      </option>
+                      <option value="amount_desc">
+                        {t.queue.sortOptions.amount_desc}
+                      </option>
+                      <option value="amount_asc">
+                        {t.queue.sortOptions.amount_asc}
+                      </option>
+                      <option value="name_asc">
+                        {t.queue.sortOptions.name_asc}
+                      </option>
+                    </select>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                    />
+                  </div>
+
+                  <div className="text-xs font-medium text-muted-foreground tabular-nums">
+                    {hasError && queue.length === 0
+                      ? t.common.noServerConnection
+                      : hasActiveFilters
+                        ? interpolate(t.queue.shownOfTotal, {
+                            shown: filteredQueue.length,
+                            total: queue.length,
+                          })
+                        : interpolate(t.queue.totalInQueue, {
+                            count: queue.length,
+                          })}
+                  </div>
                 </div>
               </div>
 
@@ -664,13 +837,22 @@ export function PaymentQueueScreen({
               </div>
             </>
           ) : hasError && queue.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2.5 py-14 px-6 text-center">
+            <div className="flex flex-col items-center justify-center gap-3 py-14 px-6 text-center">
               <div className="flex size-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
                 <AlertTriangle className="size-5" />
               </div>
               <p className="max-w-md text-sm text-muted-foreground">
                 {t.queue.loadErrorEmpty}
               </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void onRefreshQueue()}
+                className="min-h-11 gap-2 rounded-xl sm:min-h-9"
+              >
+                <RefreshCw className="size-4" />
+                <span>{t.common.retry}</span>
+              </Button>
             </div>
           ) : queue.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">

@@ -127,6 +127,7 @@ export interface QueueItem {
 
 export interface HistoryEntry {
   id?: string;
+  payer_id?: string;
   recipient_name: string;
   recipient_bin: string;
   recipient_iik: string;
@@ -134,7 +135,20 @@ export interface HistoryEntry {
   bank_name?: string;
   amount_kzt: number;
   date?: string;
+  paid_at?: string;
   purpose?: string;
+  knp?: string;
+}
+
+export interface AuditEntry {
+  timestamp: string;
+  check_id: string;
+  request_sha256: string;
+  ruleset_version?: string;
+  verdict: Verdict;
+  signal_ids: string[];
+  action: string;
+  approval_id?: string | null;
 }
 
 export interface CreateApprovalRequest {
