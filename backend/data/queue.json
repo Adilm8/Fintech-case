@@ -46,5 +46,77 @@
     "recipient_bik": "CASPKZKA",
     "amount_kzt": 240000,
     "purpose": "Оплата за полиграфическую продукцию по счёту № 19"
+  },
+  {
+    "id": "Q-005",
+    "scenario": "green",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «АстанаБетонСервис»",
+    "recipient_bin": "170446108884",
+    "recipient_iik": "KZ789140006612370252",
+    "recipient_bik": "BRKEKZKA",
+    "amount_kzt": 4650000,
+    "purpose": "Оплата за поставку товарного бетона М350 (сезонный заказ, апрель) по счёту № 412"
+  },
+  {
+    "id": "Q-006",
+    "scenario": "green",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «ЕвразияКранМонтаж»",
+    "recipient_bin": "150846341552",
+    "recipient_iik": "KZ215510005020339488",
+    "recipient_bik": "KSNVKZKA",
+    "amount_kzt": 970000,
+    "purpose": "Оплата аренды башенного крана по доп. соглашению № 2 (договор № 19-К), счёт № 419"
+  },
+  {
+    "id": "Q-007",
+    "scenario": "invalid",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «СтепьЭнергоСервис»",
+    "recipient_bin": "151144817419",
+    "recipient_iik": "KZ55856KZT5935868571",
+    "recipient_bik": "KCJBKZKX",
+    "amount_kzt": 550000,
+    "purpose": "Оплата электромонтажных материалов по счёту № 425"
+  },
+  {
+    "id": "Q-008",
+    "scenario": "green",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ИП Байжанов К.Т.",
+    "recipient_bin": "840715543940",
+    "recipient_iik": "KZ927220007997531813",
+    "recipient_bik": "CASPKZKA",
+    "amount_kzt": 190000,
+    "purpose": "Оплата услуг технического обслуживания объекта по акту № 431"
+  },
+  {
+    "id": "Q-009",
+    "scenario": "red",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «НұрМеталлПоставка»",
+    "recipient_bin": "251241964435",
+    "recipient_iik": "KZ609480007694717794",
+    "recipient_bik": "EURIKZKA",
+    "amount_kzt": 2280000,
+    "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 438"
+  },
+  {
+    "id": "Q-010",
+    "scenario": "yellow",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «Арматура Центр»",
+    "recipient_bin": "910412498047",
+    "recipient_iik": "KZ318860005307499873",
+    "recipient_bik": "INLMKZKA",
+    "amount_kzt": 1450000,
+    "purpose": "Оплата за поставку арматуры А500С по счёту № 442"
   }
 ]

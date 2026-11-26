@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 import unicodedata
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Verdict = Literal["green", "yellow", "red", "grey", "invalid"]
 Severity = Literal["block", "primary", "amplifier", "info"]
@@ -112,7 +112,16 @@ class Signal(BaseModel):
     points: int
     severity: Severity
     reason_ru: str
+    reason: str = ""
+    message_key: str | None = Field(default=None, exclude=True)
+    message_params: dict[str, Any] = Field(default_factory=dict, exclude=True)
     evidence: Evidence
+
+    @model_validator(mode="after")
+    def _default_localized_reason(self) -> Signal:
+        if not self.reason:
+            self.reason = self.reason_ru
+        return self
 
 
 class FieldDiff(BaseModel):
@@ -127,11 +136,19 @@ class FieldDiff(BaseModel):
 
 
 class NextAction(BaseModel):
-    """Recommended user action and plain-language Russian guidance."""
+    """Recommended user action and plain-language guidance."""
 
     text_ru: str
+    text: str = ""
+    message_key: str | None = Field(default=None, exclude=True)
     primary: ActionType
     secondary: list[ActionType] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _default_localized_text(self) -> NextAction:
+        if not self.text:
+            self.text = self.text_ru
+        return self
 
 
 class HistorySummary(BaseModel):
@@ -157,12 +174,20 @@ class CheckResult(BaseModel):
     verdict: Verdict
     score: int = Field(ge=0, le=100)
     headline_ru: str
+    headline: str = ""
+    headline_key: str | None = Field(default=None, exclude=True)
     signals: list[Signal]
     comparison: list[FieldDiff]
     next_action: NextAction
     history: HistorySummary
     trusted: bool = False
     trusted_info: TrustedInfo | None = None
+
+    @model_validator(mode="after")
+    def _default_localized_headline(self) -> CheckResult:
+        if not self.headline:
+            self.headline = self.headline_ru
+        return self
 
 
 class Approval(BaseModel):
@@ -246,3 +271,63 @@ class DemoResetResponse(BaseModel):
     status: Literal["reset"] = "reset"
     approvals_count: int = 0
     trusted_accounts_count: int = 0
+
+
+EvalLabel = Literal["legit", "attack"]
+
+
+class VerdictCounts(BaseModel):
+    """Breakdown of engine verdicts across a group of evaluation cases."""
+
+    green: int = 0
+    yellow: int = 0
+    red: int = 0
+    grey: int = 0
+    invalid: int = 0
+
+
+class ConfusionTable(BaseModel):
+    """Binary confusion matrix where positive means verdict in {'yellow', 'red'}."""
+
+    tp: int
+    fn: int
+    fp: int
+    tn: int
+
+
+class KindMetrics(BaseModel):
+    """Evaluation statistics for a single scenario kind."""
+
+    kind: str
+    label: EvalLabel
+    total: int
+    verdicts: VerdictCounts
+    flagged_count: int
+    detection_rate: float | None = None
+    false_positive_rate: float | None = None
+
+
+class MetricsSummary(BaseModel):
+    """Aggregate detection and false-alarm metrics over the evaluation set."""
+
+    total_cases: int
+    total_legit: int
+    total_attack: int
+    detection_rate: float
+    false_positive_rate: float
+    precision: float
+    f1: float
+    accuracy: float
+
+
+class MetricsResponse(BaseModel):
+    """Cached evaluation report returned by GET /api/metrics and scripts/evaluate.py."""
+
+    seed: int
+    dataset_path: str
+    positive_verdicts: list[Verdict] = Field(default_factory=lambda: ["yellow", "red"])
+    summary: MetricsSummary
+    confusion: ConfusionTable
+    verdict_by_label: dict[EvalLabel, VerdictCounts]
+    by_kind: list[KindMetrics]
+    disclaimer_ru: str

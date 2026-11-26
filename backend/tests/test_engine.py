@@ -111,7 +111,7 @@ class TestDemoScenarios:
 
         # M9: history uses the lookalike supplier's history with compared_with populated
         assert result.history.compared_with == "ТОО «Алатау Снаб»"
-        assert result.history.payments_count == 7
+        assert result.history.payments_count == 13
         assert result.history.median_amount_kzt == 1_350_000
         assert result.history.last_payment_date is not None
 
@@ -148,6 +148,43 @@ class TestDemoScenarios:
             == "Проверьте БИН поставщика в реестре и подтвердите реквизиты по телефону из договора."
         )
         assert all(d.in_history is None and not d.differs for d in result.comparison)
+
+    def test_additional_queue_scenarios_q005_to_q010(self) -> None:
+        store = Store()
+        by_id = {item["id"]: item for item in store.queue}
+
+        for qid in ("Q-005", "Q-006", "Q-007", "Q-008", "Q-009", "Q-010"):
+            item = by_id[qid]
+            req = CheckRequest(
+                payer_id=item["payer_id"],
+                recipient_name=item["recipient_name"],
+                recipient_bin=item["recipient_bin"],
+                recipient_iik=item["recipient_iik"],
+                recipient_bik=item["recipient_bik"],
+                amount_kzt=item["amount_kzt"],
+                purpose=item["purpose"],
+            )
+            res = check_payment(req, store)
+            assert res.verdict == item["scenario"], f"{qid}: {res.verdict} != {item['scenario']}"
+
+        # Q-009 Kazakh-letter lookalike compares against ТОО «НурМеталлПоставка»
+        q9 = by_id["Q-009"]
+        res_q9 = check_payment(
+            CheckRequest(**{k: q9[k] for k in CheckRequest.model_fields}),
+            store,
+        )
+        assert res_q9.verdict == "red"
+        assert res_q9.history.compared_with == "ТОО «НурМеталлПоставка»"
+        assert {"lookalike_supplier", "bin_young"}.issubset({s.rule_id for s in res_q9.signals})
+
+        # Q-010 legal entity with IIN triggers entity_type_mismatch -> yellow
+        q10 = by_id["Q-010"]
+        res_q10 = check_payment(
+            CheckRequest(**{k: q10[k] for k in CheckRequest.model_fields}),
+            store,
+        )
+        assert res_q10.verdict == "yellow"
+        assert any(s.rule_id == "entity_type_mismatch" for s in res_q10.signals)
 
 
 class TestPart2RulesInEngine:

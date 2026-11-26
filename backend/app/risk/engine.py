@@ -7,6 +7,7 @@ import uuid
 from datetime import date
 from typing import Any
 
+from app.i18n import DEFAULT_LANG, Lang, t
 from app.risk.config import (
     AMPLIFIER_ONLY_CAP,
     DEMO_TODAY,
@@ -38,6 +39,7 @@ from app.risk.rules import (
     rule_urgent_wording,
 )
 from app.schemas import (
+    ActionType,
     CheckRequest,
     CheckResult,
     FieldDiff,
@@ -49,15 +51,15 @@ from app.schemas import (
 from app.store import Store
 
 HEADLINES_RU: dict[Verdict, str] = {
-    "green": "Всё как раньше",
-    "yellow": "Есть изменения",
-    "red": "Похоже на подмену",
-    "grey": "Нет истории для сравнения",
-    "invalid": "Ошибка в реквизитах",
+    "green": t("headline.green", "ru"),
+    "yellow": t("headline.yellow", "ru"),
+    "red": t("headline.red", "ru"),
+    "grey": t("headline.grey", "ru"),
+    "invalid": t("headline.invalid", "ru"),
 }
 
-GREEN_WITH_AMPLIFIERS_HEADLINE_RU: str = "Реквизиты знакомые, но есть замечания"
-TRUSTED_HEADLINE_RU: str = "Счёт подтверждён директором"
+GREEN_WITH_AMPLIFIERS_HEADLINE_RU: str = t("headline.green_with_amplifiers", "ru")
+TRUSTED_HEADLINE_RU: str = t("headline.green_trusted", "ru")
 
 SEVERITY_RANK: dict[str, int] = {
     "block": 0,
@@ -189,63 +191,93 @@ def _build_comparison(
     ]
 
 
+def _select_headline_key(
+    verdict: Verdict,
+    *,
+    is_trusted: bool = False,
+    has_amplifiers: bool = False,
+) -> str:
+    if is_trusted and verdict == "green":
+        return "headline.green_trusted"
+    if verdict == "green" and has_amplifiers:
+        return "headline.green_with_amplifiers"
+    return f"headline.{verdict}"
+
+
+def _select_next_action_spec(
+    verdict: Verdict,
+    *,
+    has_amplifiers: bool = False,
+    grey_above_client_p90: bool = False,
+) -> tuple[str, ActionType, list[ActionType]]:
+    if verdict == "green":
+        if has_amplifiers:
+            return "next_action.green_with_amplifiers", "sign", []
+        return "next_action.green", "sign", []
+    if verdict == "yellow":
+        return "next_action.yellow", "send_to_director", ["sign"]
+    if verdict == "red":
+        return "next_action.red", "postpone", ["send_to_director"]
+    if verdict == "grey":
+        if grey_above_client_p90:
+            return "next_action.grey_above_p90", "send_to_director", ["sign"]
+        return "next_action.grey", "sign", ["send_to_director"]
+    return "next_action.invalid", "postpone", []
+
+
 def _build_next_action(
     verdict: Verdict,
     *,
     has_amplifiers: bool = False,
     grey_above_client_p90: bool = False,
+    lang: Lang = DEFAULT_LANG,
 ) -> NextAction:
-    if verdict == "green":
-        if has_amplifiers:
-            return NextAction(
-                text_ru=(
-                    "Реквизиты поставщика знакомые, но проверьте замечания ниже перед подписанием."
-                ),
-                primary="sign",
-                secondary=[],
-            )
-        return NextAction(
-            text_ru="Реквизиты и сумма совпадают с вашей историей платежей — можно подписывать.",
-            primary="sign",
-            secondary=[],
-        )
-    if verdict == "yellow":
-        return NextAction(
-            text_ru=(
-                "Позвоните поставщику по номеру из договора, "
-                "а не из письма с новыми реквизитами, и подтвердите счёт."
-            ),
-            primary="send_to_director",
-            secondary=["sign"],
-        )
-    if verdict == "red":
-        return NextAction(
-            text_ru=(
-                "Не подписывайте платёж. Позвоните поставщику по номеру из договора, "
-                "а не из письма с новыми реквизитами."
-            ),
-            primary="postpone",
-            secondary=["send_to_director"],
-        )
-    if verdict == "grey":
-        if grey_above_client_p90:
-            return NextAction(
-                text_ru=(
-                    "Крупный первый платёж новому поставщику: проверьте БИН в реестре, "
-                    "подтвердите реквизиты по телефону из договора и согласуйте с директором."
-                ),
-                primary="send_to_director",
-                secondary=["sign"],
-            )
-        return NextAction(
-            text_ru="Проверьте БИН поставщика в реестре и подтвердите реквизиты по телефону из договора.",
-            primary="sign",
-            secondary=["send_to_director"],
-        )
+    msg_key, primary, secondary = _select_next_action_spec(
+        verdict,
+        has_amplifiers=has_amplifiers,
+        grey_above_client_p90=grey_above_client_p90,
+    )
     return NextAction(
-        text_ru="Исправьте реквизиты: такого счёта не существует.",
-        primary="postpone",
-        secondary=[],
+        text_ru=t(msg_key, "ru"),
+        text=t(msg_key, lang),
+        message_key=msg_key,
+        primary=primary,
+        secondary=secondary,
+    )
+
+
+def localize_check_result(result: CheckResult, lang: Lang = DEFAULT_LANG) -> CheckResult:
+    """Return a copy of CheckResult with localized headline, signals, and next_action text."""
+    localized_headline = (
+        t(result.headline_key, lang) if result.headline_key else result.headline_ru
+    )
+    localized_signals = [
+        sig.model_copy(
+            update={
+                "reason": (
+                    t(sig.message_key, lang, **sig.message_params)
+                    if sig.message_key
+                    else sig.reason_ru
+                )
+            }
+        )
+        for sig in result.signals
+    ]
+    localized_next_action = result.next_action.model_copy(
+        update={
+            "text": (
+                t(result.next_action.message_key, lang)
+                if result.next_action.message_key
+                else result.next_action.text_ru
+            )
+        }
+    )
+    return result.model_copy(
+        update={
+            "headline": localized_headline,
+            "signals": localized_signals,
+            "next_action": localized_next_action,
+        }
     )
 
 
@@ -289,6 +321,7 @@ def check_payment(
     store: Store,
     *,
     today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
 ) -> CheckResult:
     """Run prechecks, risk rules, aggregation, and comparison for a payment request."""
     check_id = f"chk-{uuid.uuid4().hex[:12]}"
@@ -303,24 +336,27 @@ def check_payment(
     # 1. Precheck (no scoring; any failure yields invalid)
     precheck_signals: list[Signal] = []
     for sig in (
-        rule_bin_format(effective_req),
-        rule_iik_format(effective_req, store),
-        rule_bik_format(effective_req, store),
+        rule_bin_format(effective_req, lang=lang),
+        rule_iik_format(effective_req, store, lang=lang),
+        rule_bik_format(effective_req, store, lang=lang),
     ):
         if sig is not None:
             precheck_signals.append(sig)
 
     if not precheck_signals:
-        bank_match_sig = rule_iik_bank_code_vs_bik(effective_req, store)
+        bank_match_sig = rule_iik_bank_code_vs_bik(effective_req, store, lang=lang)
         if bank_match_sig is not None:
             precheck_signals.append(bank_match_sig)
 
     if precheck_signals:
+        headline_key = _select_headline_key("invalid")
         return CheckResult(
             check_id=check_id,
             verdict="invalid",
             score=0,
-            headline_ru=HEADLINES_RU["invalid"],
+            headline_ru=t(headline_key, "ru"),
+            headline=t(headline_key, lang),
+            headline_key=headline_key,
             signals=precheck_signals,
             comparison=_build_comparison(
                 effective_req,
@@ -329,7 +365,7 @@ def check_payment(
                 has_amount_anomaly=False,
                 is_trusted=False,
             ),
-            next_action=_build_next_action("invalid"),
+            next_action=_build_next_action("invalid", lang=lang),
             history=_build_history_summary(supplier_history),
             trusted=False,
             trusted_info=None,
@@ -362,20 +398,20 @@ def check_payment(
     is_trusted = trusted_info is not None
 
     candidates: list[Signal | None] = [
-        rule_bcc_account_other_owner(effective_req, store),
-        rule_lookalike_supplier(effective_req, store),
-        rule_bin_name_mismatch(effective_req, store),
-        rule_iik_belongs_to_other_counterparty(effective_req, store),
-        rule_iik_changed(effective_req, store),
-        rule_bank_changed(effective_req, store),
-        rule_entity_type_mismatch(effective_req),
-        rule_mixed_script_name(effective_req),
-        rule_new_bcc_account(effective_req, store, today=today),
-        rule_bin_young(effective_req, today=today),
-        rule_amount_anomaly(effective_req, store, reference_bin=reference_bin),
-        rule_first_payment(effective_req, store),
-        rule_urgent_wording(effective_req),
-        rule_trusted_account(effective_req, store),
+        rule_bcc_account_other_owner(effective_req, store, lang=lang),
+        rule_lookalike_supplier(effective_req, store, lang=lang),
+        rule_bin_name_mismatch(effective_req, store, lang=lang),
+        rule_iik_belongs_to_other_counterparty(effective_req, store, lang=lang),
+        rule_iik_changed(effective_req, store, lang=lang),
+        rule_bank_changed(effective_req, store, lang=lang),
+        rule_entity_type_mismatch(effective_req, lang=lang),
+        rule_mixed_script_name(effective_req, lang=lang),
+        rule_new_bcc_account(effective_req, store, today=today, lang=lang),
+        rule_bin_young(effective_req, today=today, lang=lang),
+        rule_amount_anomaly(effective_req, store, reference_bin=reference_bin, lang=lang),
+        rule_first_payment(effective_req, store, lang=lang),
+        rule_urgent_wording(effective_req, lang=lang),
+        rule_trusted_account(effective_req, store, lang=lang),
     ]
     all_signals = [s for s in candidates if s is not None]
 
@@ -391,18 +427,19 @@ def check_payment(
         verdict == "grey" and client_p90 is not None and effective_req.amount_kzt > client_p90
     )
 
-    if is_trusted and verdict == "green":
-        headline_ru = TRUSTED_HEADLINE_RU
-    elif verdict == "green" and has_amplifiers:
-        headline_ru = GREEN_WITH_AMPLIFIERS_HEADLINE_RU
-    else:
-        headline_ru = HEADLINES_RU[verdict]
+    headline_key = _select_headline_key(
+        verdict,
+        is_trusted=is_trusted,
+        has_amplifiers=has_amplifiers,
+    )
 
     return CheckResult(
         check_id=check_id,
         verdict=verdict,
         score=score,
-        headline_ru=headline_ru,
+        headline_ru=t(headline_key, "ru"),
+        headline=t(headline_key, lang),
+        headline_key=headline_key,
         signals=ordered_signals,
         comparison=_build_comparison(
             effective_req,
@@ -415,6 +452,7 @@ def check_payment(
             verdict,
             has_amplifiers=has_amplifiers,
             grey_above_client_p90=grey_above_client_p90,
+            lang=lang,
         ),
         history=history_summary,
         trusted=is_trusted,

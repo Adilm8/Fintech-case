@@ -1,7 +1,7 @@
 """Pure risk evaluation rules for BCC Business Shield.
 
-Each rule is a pure function returning Signal | None with a single plain-language
-Russian sentence and structured evidence.
+Each rule is a pure function returning Signal | None using i18n message keys + parameters
+and structured evidence.
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ import re
 import statistics
 import unicodedata
 from datetime import date
+from typing import Any
 
+from app.i18n import DEFAULT_LANG, Lang, t
 from app.risk.config import (
     AMOUNT_ANOMALY_MIN_HISTORY,
     BCC_BANK_CODE,
@@ -45,7 +47,7 @@ from app.risk.names import (
     normalize_company_name,
     token_set_similarity,
 )
-from app.schemas import CheckRequest, Evidence, Signal
+from app.schemas import CheckRequest, Evidence, Severity, Signal
 from app.store import Store
 from app.validators.kz import (
     bik_matches_iik,
@@ -54,12 +56,35 @@ from app.validators.kz import (
     bin_kind,
     bin_registration_yymm,
     iik_bank_code,
-    iik_ok,
+    iik_check,
 )
 
 
 def _format_kzt(amount: float) -> str:
     return f"{round(amount):,} ₸".replace(",", " ")
+
+
+def _make_signal(
+    rule_id: str,
+    points: int,
+    severity: Severity,
+    message_key: str,
+    evidence: Evidence,
+    *,
+    lang: Lang = DEFAULT_LANG,
+    **params: Any,
+) -> Signal:
+    """Build a Signal whose text is rendered from an i18n message key and parameters."""
+    return Signal(
+        rule_id=rule_id,
+        points=points,
+        severity=severity,
+        reason_ru=t(message_key, "ru", **params),
+        reason=t(message_key, lang, **params),
+        message_key=message_key,
+        message_params=dict(params),
+        evidence=evidence,
+    )
 
 
 def compute_client_p90(store: Store, payer_id: str | None = None) -> float | None:
@@ -79,60 +104,83 @@ def compute_client_p90(store: Store, payer_id: str | None = None) -> float | Non
 # --- Precheck rules (produce invalid verdict, no score) ---
 
 
-def rule_bin_format(req: CheckRequest) -> Signal | None:
+def rule_bin_format(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
     """Validate BIN/IIN format, 5th digit classification, and mod-11 checksum."""
     if bin_iin_checksum_ok(req.recipient_bin) and bin_kind(req.recipient_bin) is not None:
         return None
-    return Signal(
+    return _make_signal(
         rule_id="invalid_bin",
         points=0,
         severity="block",
-        reason_ru="В БИН/ИИН получателя ошибка — такого номера не существует.",
+        message_key="rule.invalid_bin",
         evidence=Evidence(
             field="bin",
             expected="12 цифр с верной контрольной суммой",
             actual=req.recipient_bin,
         ),
+        lang=lang,
     )
 
 
-def rule_iik_format(req: CheckRequest, store: Store | None = None) -> Signal | None:
+def rule_iik_format(
+    req: CheckRequest,
+    store: Store | None = None,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Validate IIK format, Cyrillic lookalikes, IBAN mod-97, and known bank code (M4)."""
     banks_path = store.banks_path if store is not None else None
-    ok, error_ru = iik_ok(req.recipient_iik, check_bank_code=True, banks_path=banks_path)
+    ok, msg_key, params = iik_check(
+        req.recipient_iik,
+        check_bank_code=True,
+        banks_path=banks_path,
+    )
     if ok:
         return None
-    return Signal(
+    return _make_signal(
         rule_id="invalid_iik",
         points=0,
         severity="block",
-        reason_ru=error_ru or "В ИИК ошибка — такого счёта не существует.",
+        message_key=msg_key or "rule.invalid_iik_fallback",
         evidence=Evidence(
             field="iik",
             expected="20 символов формата KZ...",
             actual=req.recipient_iik,
         ),
+        lang=lang,
+        **params,
     )
 
 
-def rule_bik_format(req: CheckRequest, store: Store) -> Signal | None:
+def rule_bik_format(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Validate that BIK is 8 characters and exists in banks.json."""
     if bik_ok(req.recipient_bik, path=store.banks_path):
         return None
-    return Signal(
+    return _make_signal(
         rule_id="invalid_bik",
         points=0,
         severity="block",
-        reason_ru="Указан неверный или неизвестный БИК банка получателя.",
+        message_key="rule.invalid_bik",
         evidence=Evidence(
             field="bik",
             expected="8-символьный БИК банка РК",
             actual=req.recipient_bik,
         ),
+        lang=lang,
     )
 
 
-def rule_iik_bank_code_vs_bik(req: CheckRequest, store: Store) -> Signal | None:
+def rule_iik_bank_code_vs_bik(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Verify that the 3-digit bank code in IIK matches the specified BIK."""
     code = iik_bank_code(req.recipient_iik)
     if code is None or not bik_ok(req.recipient_bik, path=store.banks_path):
@@ -148,23 +196,29 @@ def rule_iik_bank_code_vs_bik(req: CheckRequest, store: Store) -> Signal | None:
         else req.recipient_bik
     )
     actual_str = f"код {code} ({actual_bank['bik']})" if actual_bank is not None else f"код {code}"
-    return Signal(
+    return _make_signal(
         rule_id="iik_bank_code_vs_bik",
         points=0,
         severity="block",
-        reason_ru="Код банка в номере счёта не совпадает с указанным БИК.",
+        message_key="rule.iik_bank_code_vs_bik",
         evidence=Evidence(
             field="bik",
             expected=expected_str,
             actual=actual_str,
         ),
+        lang=lang,
     )
 
 
 # --- Blocking & risk scoring rules ---
 
 
-def rule_bcc_account_other_owner(req: CheckRequest, store: Store) -> Signal | None:
+def rule_bcc_account_other_owner(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Block payment when a BCC IIK belongs to a different BIN in BCC's account registry."""
     is_bcc = iik_bank_code(req.recipient_iik) == BCC_BANK_CODE or req.recipient_bik == BCC_BIK
     if not is_bcc:
@@ -179,20 +233,19 @@ def rule_bcc_account_other_owner(req: CheckRequest, store: Store) -> Signal | No
         return None
 
     owner_name = account.get("owner_name") or store.registry.get(owner_bin) or owner_bin
-    return Signal(
+    return _make_signal(
         rule_id="bcc_account_other_owner",
         points=100,
         severity="block",
-        reason_ru=(
-            f"Этот счёт в БЦК оформлен на другую компанию ({owner_name}), "
-            "а не на указанного получателя."
-        ),
+        message_key="rule.bcc_account_other_owner",
         evidence=Evidence(
             field="iik",
             expected=f"счёт на БИН {req.recipient_bin}",
             actual=f"владелец {owner_name} (БИН {owner_bin})",
             since=account.get("opened_at"),
         ),
+        lang=lang,
+        owner_name=owner_name,
     )
 
 
@@ -259,49 +312,57 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] |
     return best_match
 
 
-def rule_lookalike_supplier(req: CheckRequest, store: Store) -> Signal | None:
+def rule_lookalike_supplier(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Detect supplier name impersonation against known client suppliers with a different BIN."""
     match = find_lookalike_supplier(req, store)
     if match is None:
         return None
-    return Signal(
+    return _make_signal(
         rule_id="lookalike_supplier",
         points=WEIGHT_LOOKALIKE_SUPPLIER,
         severity="primary",
-        reason_ru=(
-            f"Название получателя почти совпадает с вашим поставщиком {match['name']}, "
-            "но указан другой БИН."
-        ),
+        message_key="rule.lookalike_supplier",
         evidence=Evidence(
             field="name",
             expected=f"{match['name']} (БИН {match['bin']})",
             actual=f"{req.recipient_name} (БИН {req.recipient_bin})",
             since=match["first_seen"],
         ),
+        lang=lang,
+        supplier_name=match["name"],
     )
 
 
-def rule_mixed_script_name(req: CheckRequest) -> Signal | None:
+def rule_mixed_script_name(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
     """Flag Latin or Greek letters embedded inside Cyrillic words in recipient_name."""
     positions = find_mixed_script_positions(req.recipient_name)
     if not positions:
         return None
-    return Signal(
+    return _make_signal(
         rule_id="mixed_script_name",
         points=WEIGHT_MIXED_SCRIPT_NAME,
         severity="primary",
-        reason_ru=(
-            "В названии получателя внутри кириллического слова подставлены буквы другого алфавита."
-        ),
+        message_key="rule.mixed_script_name",
         evidence=Evidence(
             field="name",
             expected="один алфавит в пределах слова",
             actual=req.recipient_name,
         ),
+        lang=lang,
     )
 
 
-def rule_bin_name_mismatch(req: CheckRequest, store: Store) -> Signal | None:
+def rule_bin_name_mismatch(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Flag when the recipient name does not match the legal entity registered for this BIN.
 
     Downgrades to info (0 pts) if the exact (BIN, IIK) pair is already in payment history (M3).
@@ -317,36 +378,42 @@ def rule_bin_name_mismatch(req: CheckRequest, store: Store) -> Signal | None:
     pair_in_history = any(p["recipient_iik"] == req.recipient_iik for p in supplier_history)
 
     if pair_in_history:
-        return Signal(
+        return _make_signal(
             rule_id="bin_name_mismatch",
             points=0,
             severity="info",
-            reason_ru=(
-                f"По этому БИН в реестре указано название {registered_name}, "
-                "но вы уже платили на этот счёт."
-            ),
+            message_key="rule.bin_name_mismatch_history",
             evidence=Evidence(
                 field="bin",
                 expected=registered_name,
                 actual=req.recipient_name,
                 since=supplier_history[-1]["paid_at"],
             ),
+            lang=lang,
+            registered_name=registered_name,
         )
 
-    return Signal(
+    return _make_signal(
         rule_id="bin_name_mismatch",
         points=WEIGHT_BIN_NAME_MISMATCH,
         severity="primary",
-        reason_ru=f"По этому БИН в реестре числится другая компания — {registered_name}.",
+        message_key="rule.bin_name_mismatch",
         evidence=Evidence(
             field="bin",
             expected=registered_name,
             actual=req.recipient_name,
         ),
+        lang=lang,
+        registered_name=registered_name,
     )
 
 
-def rule_iik_belongs_to_other_counterparty(req: CheckRequest, store: Store) -> Signal | None:
+def rule_iik_belongs_to_other_counterparty(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Flag when the IIK was previously paid or trusted under a different supplier BIN (M7)."""
     history = store.get_client_history(req.payer_id)
     other_payments = [
@@ -358,17 +425,19 @@ def rule_iik_belongs_to_other_counterparty(req: CheckRequest, store: Store) -> S
         last_other = other_payments[-1]
         other_name = last_other["recipient_name"]
         other_bin = last_other["recipient_bin"]
-        return Signal(
+        return _make_signal(
             rule_id="iik_belongs_to_other_counterparty",
             points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
             severity="primary",
-            reason_ru=f"Этот счёт раньше принадлежал вашему поставщику {other_name}.",
+            message_key="rule.iik_belongs_to_other_counterparty",
             evidence=Evidence(
                 field="iik",
                 expected=f"счёт для БИН {req.recipient_bin}",
                 actual=f"использовался для {other_name} (БИН {other_bin})",
                 since=last_other["paid_at"],
             ),
+            lang=lang,
+            other_name=other_name,
         )
 
     for trusted_bin, trusted_iik, info in store.get_trusted_entries_for_payer(req.payer_id):
@@ -379,23 +448,30 @@ def rule_iik_belongs_to_other_counterparty(req: CheckRequest, store: Store) -> S
                 if other_hist
                 else store.registry.get(trusted_bin, f"БИН {trusted_bin}")
             )
-            return Signal(
+            return _make_signal(
                 rule_id="iik_belongs_to_other_counterparty",
                 points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
                 severity="primary",
-                reason_ru=f"Этот счёт раньше принадлежал вашему поставщику {other_name}.",
+                message_key="rule.iik_belongs_to_other_counterparty",
                 evidence=Evidence(
                     field="iik",
                     expected=f"счёт для БИН {req.recipient_bin}",
                     actual=f"доверен для {other_name} (БИН {trusted_bin})",
                     since=info.decided_at,
                 ),
+                lang=lang,
+                other_name=other_name,
             )
 
     return None
 
 
-def rule_iik_changed(req: CheckRequest, store: Store) -> Signal | None:
+def rule_iik_changed(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Flag a new, untrusted IIK for a known supplier BIN."""
     supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
     if not supplier_history:
@@ -408,21 +484,27 @@ def rule_iik_changed(req: CheckRequest, store: Store) -> Signal | None:
         return None
 
     last_payment = supplier_history[-1]
-    return Signal(
+    return _make_signal(
         rule_id="iik_changed",
         points=WEIGHT_IIK_CHANGED,
         severity="primary",
-        reason_ru="У этого поставщика указан новый номер счёта, на который вы раньше не платили.",
+        message_key="rule.iik_changed",
         evidence=Evidence(
             field="iik",
             expected=last_payment["recipient_iik"],
             actual=req.recipient_iik,
             since=last_payment["paid_at"],
         ),
+        lang=lang,
     )
 
 
-def rule_bank_changed(req: CheckRequest, store: Store) -> Signal | None:
+def rule_bank_changed(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Amplifier (+15, once) when a known supplier switches to a new untrusted IIK in another bank."""
     supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
     if not supplier_history:
@@ -443,21 +525,24 @@ def rule_bank_changed(req: CheckRequest, store: Store) -> Signal | None:
         store.get_bank_name_by_bik(last_payment["recipient_bik"]) or last_payment["recipient_bik"]
     )
     new_bank = store.get_bank_name_by_bik(req.recipient_bik) or req.recipient_bik
-    return Signal(
+    return _make_signal(
         rule_id="bank_changed",
         points=WEIGHT_BANK_CHANGED_AMPLIFIER,
         severity="amplifier",
-        reason_ru=f"Сменился банк поставщика: раньше платежи шли в {old_bank}, а теперь в {new_bank}.",
+        message_key="rule.bank_changed",
         evidence=Evidence(
             field="bank",
             expected=old_bank,
             actual=new_bank,
             since=last_payment["paid_at"],
         ),
+        lang=lang,
+        old_bank=old_bank,
+        new_bank=new_bank,
     )
 
 
-def rule_entity_type_mismatch(req: CheckRequest) -> Signal | None:
+def rule_entity_type_mismatch(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
     """Flag mismatch between legal form in name (ТОО vs ИП) and BIN/IIN 5th digit (H3).
 
     - Legal entity (ТОО/АО/LLP/ЖШС) with IIN -> primary 40.
@@ -470,32 +555,34 @@ def rule_entity_type_mismatch(req: CheckRequest) -> Signal | None:
         return None
 
     if expected_kind == "bin":
-        return Signal(
+        return _make_signal(
             rule_id="entity_type_mismatch",
             points=WEIGHT_ENTITY_TYPE_MISMATCH_LEGAL_IIN,
             severity="primary",
-            reason_ru="В названии указана компания, но вместо БИН введён ИИН физлица.",
+            message_key="rule.entity_type_mismatch_legal_iin",
             evidence=Evidence(
                 field="bin",
                 expected="БИН юрлица",
                 actual="ИИН физлица",
             ),
+            lang=lang,
         )
 
     # In Kazakhstan, joint-venture IE (ИП(С)) legitimately uses a BIN with 5th digit '6'.
     if len(req.recipient_bin) == 12 and req.recipient_bin[4] == "6":
         return None
 
-    return Signal(
+    return _make_signal(
         rule_id="entity_type_mismatch",
         points=WEIGHT_ENTITY_TYPE_MISMATCH,
         severity="primary",
-        reason_ru="В названии указан ИП, но вместо ИИН введён БИН юрлица.",
+        message_key="rule.entity_type_mismatch_ie_bin",
         evidence=Evidence(
             field="bin",
             expected="ИИН физлица",
             actual="БИН юрлица",
         ),
+        lang=lang,
     )
 
 
@@ -504,6 +591,7 @@ def rule_new_bcc_account(
     store: Store,
     *,
     today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
     """Flag a BCC account opened less than 30 days before today."""
     account = store.bcc_accounts.get(req.recipient_iik)
@@ -515,17 +603,19 @@ def rule_new_bcc_account(
     if age_days < 0 or age_days >= NEW_BCC_ACCOUNT_MAX_DAYS:
         return None
 
-    return Signal(
+    return _make_signal(
         rule_id="new_bcc_account",
         points=WEIGHT_NEW_BCC_ACCOUNT,
         severity="primary",
-        reason_ru=f"Счёт в БЦК открыт совсем недавно — {age_days} дн. назад.",
+        message_key="rule.new_bcc_account",
         evidence=Evidence(
             field="iik",
             expected=f"счёт старше {NEW_BCC_ACCOUNT_MAX_DAYS} дней",
             actual=f"открыт {age_days} дн. назад ({account['opened_at']})",
             since=account["opened_at"],
         ),
+        lang=lang,
+        age_days=age_days,
     )
 
 
@@ -534,6 +624,7 @@ def rule_amount_anomaly(
     store: Store,
     *,
     reference_bin: str | None = None,
+    lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
     """Evaluate payment amount against supplier median + MAD, or client p90 on first payment (H2).
 
@@ -557,19 +648,19 @@ def rule_amount_anomaly(
             points = 15
         else:
             points = 10
-        return Signal(
+        client_p90_kzt = _format_kzt(client_p90)
+        return _make_signal(
             rule_id="amount_anomaly",
             points=points,
             severity="amplifier",
-            reason_ru=(
-                "Сумма первого платежа новому поставщику выше 90% ваших прошлых платежей "
-                f"(обычно не более {_format_kzt(client_p90)})."
-            ),
+            message_key="rule.amount_anomaly_first_p90",
             evidence=Evidence(
                 field="amount",
-                expected=f"не выше {_format_kzt(client_p90)} (p90 клиента)",
+                expected=f"не выше {client_p90_kzt} (p90 клиента)",
                 actual=_format_kzt(req.amount_kzt),
             ),
+            lang=lang,
+            client_p90_kzt=client_p90_kzt,
         )
 
     if len(supplier_history) < AMOUNT_ANOMALY_MIN_HISTORY:
@@ -585,6 +676,7 @@ def rule_amount_anomaly(
         return None
 
     mad = statistics.median([abs(x - median_amount) for x in amounts])
+    severity: Severity
     if mad > 0:
         mod_z = 0.6745 * (req.amount_kzt - median_amount) / mad
         if mod_z < 3.5:
@@ -615,38 +707,45 @@ def rule_amount_anomaly(
             severity = "amplifier"
             points = 10
 
-    return Signal(
+    median_kzt = _format_kzt(median_amount)
+    return _make_signal(
         rule_id="amount_anomaly",
         points=points,
         severity=severity,
-        reason_ru=(
-            f"Сумма платежа в {ratio:.1f} раза выше обычной для этого поставщика "
-            f"(обычно около {_format_kzt(median_amount)})."
-        ),
+        message_key="rule.amount_anomaly_supplier",
         evidence=Evidence(
             field="amount",
-            expected=f"около {_format_kzt(median_amount)}",
+            expected=f"около {median_kzt}",
             actual=_format_kzt(req.amount_kzt),
             since=supplier_history[0]["paid_at"],
         ),
+        lang=lang,
+        ratio=f"{ratio:.1f}",
+        median_kzt=median_kzt,
     )
 
 
-def rule_first_payment(req: CheckRequest, store: Store) -> Signal | None:
+def rule_first_payment(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Info signal when the client has no payment history with this recipient BIN."""
     supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
     if supplier_history:
         return None
-    return Signal(
+    return _make_signal(
         rule_id="first_payment",
         points=0,
         severity="info",
-        reason_ru="Вы ещё ни разу не платили этому поставщику — сравнить реквизиты не с чем.",
+        message_key="rule.first_payment",
         evidence=Evidence(
             field="bin",
             expected="предыдущие платежи в истории",
             actual="0 платежей",
         ),
+        lang=lang,
     )
 
 
@@ -671,7 +770,12 @@ _URGENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 )
 
 
-def rule_bin_young(req: CheckRequest, *, today: date = DEMO_TODAY) -> Signal | None:
+def rule_bin_young(
+    req: CheckRequest,
+    *,
+    today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Amplifier (+15 pts) when recipient BIN was registered less than 12 months before today (L1)."""
     yymm = bin_registration_yymm(req.recipient_bin)
     if yymm is None:
@@ -684,21 +788,24 @@ def rule_bin_young(req: CheckRequest, *, today: date = DEMO_TODAY) -> Signal | N
     if months_diff < 0 or months_diff >= BIN_YOUNG_MAX_MONTHS:
         return None
 
-    return Signal(
+    reg_date = f"{mm:02d}.{reg_year}"
+    return _make_signal(
         rule_id="bin_young",
         points=WEIGHT_BIN_YOUNG,
         severity="amplifier",
-        reason_ru=(f"Компания зарегистрирована недавно — менее года назад ({mm:02d}.{reg_year})."),
+        message_key="rule.bin_young",
         evidence=Evidence(
             field="bin",
             expected=f"регистрация компании от {BIN_YOUNG_MAX_MONTHS} месяцев",
-            actual=f"зарегистрирована {mm:02d}.{reg_year} ({months_diff} мес. назад)",
+            actual=f"зарегистрирована {reg_date} ({months_diff} мес. назад)",
             since=f"{reg_year:04d}-{mm:02d}",
         ),
+        lang=lang,
+        reg_date=reg_date,
     )
 
 
-def rule_urgent_wording(req: CheckRequest) -> Signal | None:
+def rule_urgent_wording(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
     """Amplifier (+10 pts) when purpose contains whole-word urgency or requisite-change wording (L2)."""
     folded = _fold_urgent_text(req.purpose or "")
     if not folded:
@@ -708,23 +815,26 @@ def rule_urgent_wording(req: CheckRequest) -> Signal | None:
     if not matched:
         return None
 
-    return Signal(
+    return _make_signal(
         rule_id="urgent_wording",
         points=WEIGHT_URGENT_WORDING,
         severity="amplifier",
-        reason_ru=(
-            "В назначении платежа есть формулировка срочности или смены реквизитов — "
-            "частый признак подмены счёта."
-        ),
+        message_key="rule.urgent_wording",
         evidence=Evidence(
             field="purpose",
             expected="обычное назначение платежа",
             actual=", ".join(matched),
         ),
+        lang=lang,
     )
 
 
-def rule_trusted_account(req: CheckRequest, store: Store) -> Signal | None:
+def rule_trusted_account(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
     """Info signal indicating the account was explicitly confirmed by the director."""
     info = store.get_trusted_info(req.payer_id, req.recipient_bin, req.recipient_iik)
     if info is None:
@@ -736,15 +846,17 @@ def rule_trusted_account(req: CheckRequest, store: Store) -> Signal | None:
     except ValueError:
         date_label = date_part
 
-    return Signal(
+    return _make_signal(
         rule_id="trusted_account",
         points=0,
         severity="info",
-        reason_ru=f"Новый счёт подтверждён директором {date_label}.",
+        message_key="rule.trusted_account",
         evidence=Evidence(
             field="iik",
             expected=req.recipient_iik,
             actual=info.director_comment or "Подтверждено директором",
             since=info.decided_at,
         ),
+        lang=lang,
+        date_label=date_label,
     )

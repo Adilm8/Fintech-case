@@ -106,7 +106,9 @@ class TestPaymentsSchemaValidationAndHistory:
         resp = client.get("/api/payments/queue")
         assert resp.status_code == 200
         items = resp.json()
-        assert len(items) == 4
+        assert len(items) == 10
+        assert [item["id"] for item in items[:4]] == ["Q-001", "Q-002", "Q-003", "Q-004"]
+        assert [item["scenario"] for item in items[:4]] == ["green", "yellow", "red", "grey"]
         for item in items:
             assert item["check"]["verdict"] == item["scenario"]
             assert item["check"]["trusted"] is False
@@ -280,7 +282,43 @@ class TestPaymentsSchemaValidationAndHistory:
         assert resp.status_code == 200
         body = resp.json()
         assert body["client"]["name"] == "ТОО «ТехноСтрой Астана»"
-        assert len(body["payments"]) == 30
+        assert len(body["payments"]) == 150
+
+    def test_get_metrics_returns_cached_evaluation_report(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resp1 = client.get("/api/metrics")
+        assert resp1.status_code == 200
+        body1 = resp1.json()
+        assert body1["seed"] == 42
+        assert body1["positive_verdicts"] == ["yellow", "red"]
+        assert body1["summary"]["total_cases"] == 400
+        assert body1["summary"]["total_legit"] == 200
+        assert body1["summary"]["total_attack"] == 200
+        for metric_key in ("detection_rate", "false_positive_rate", "precision", "f1", "accuracy"):
+            assert 0.0 <= body1["summary"][metric_key] <= 1.0
+        assert set(body1["confusion"].keys()) == {"tp", "fn", "fp", "tn"}
+        assert body1["confusion"]["tp"] + body1["confusion"]["fn"] == 200
+        assert body1["confusion"]["fp"] + body1["confusion"]["tn"] == 200
+        assert set(body1["verdict_by_label"].keys()) == {"legit", "attack"}
+        assert len(body1["by_kind"]) >= 10
+        for row in body1["by_kind"]:
+            if row["label"] == "attack":
+                assert row["detection_rate"] is not None
+                assert row["false_positive_rate"] is None
+            else:
+                assert row["false_positive_rate"] is not None
+                assert row["detection_rate"] is None
+        assert "синтетич" in body1["disclaimer_ru"].lower()
+
+        # Subsequent call must use the cached metrics without re-running evaluate_dataset
+        def _must_not_recompute(*args, **kwargs):
+            raise AssertionError("GET /api/metrics should serve cached result")
+
+        monkeypatch.setattr("app.main.evaluate_dataset", _must_not_recompute)
+        resp2 = client.get("/api/metrics")
+        assert resp2.status_code == 200
+        assert resp2.json() == body1
 
 
 class TestApprovalWorkflowAndTrustModel:
@@ -604,3 +642,132 @@ class TestApprovalWorkflowAndTrustModel:
             json={"decision": "rejected", "director_comment": "Нет заявки"},
         )
         assert resp.status_code == 404
+
+
+class TestI18nApiEndpoints:
+    def test_check_and_queue_support_ru_kk_en_with_backwards_compatibility(
+        self, client: TestClient
+    ) -> None:
+        q_ru = client.get("/api/payments/queue").json()
+        q_kk = client.get("/api/payments/queue", params={"lang": "kk"}).json()
+        q_en = client.get("/api/payments/queue", params={"lang": "en"}).json()
+
+        assert len(q_ru) == len(q_kk) == len(q_en) == 10
+        assert q_ru[0]["check"]["headline"] == q_ru[0]["check"]["headline_ru"]
+        assert q_kk[0]["check"]["headline_ru"] == q_ru[0]["check"]["headline_ru"]
+        assert q_en[0]["check"]["headline_ru"] == q_ru[0]["check"]["headline_ru"]
+        assert q_kk[0]["check"]["headline"] != q_ru[0]["check"]["headline_ru"]
+        assert q_en[0]["check"]["headline"] != q_ru[0]["check"]["headline_ru"]
+
+        red_req = _queue_item_to_check_request(next(q for q in q_ru if q["id"] == "Q-003"))
+        chk_ru = client.post("/api/payments/check", params={"lang": "ru"}, json=red_req)
+        chk_kk = client.post("/api/payments/check", params={"lang": "kk"}, json=red_req)
+        chk_en = client.post("/api/payments/check", params={"lang": "en"}, json=red_req)
+        assert chk_ru.status_code == 200
+        assert chk_kk.status_code == 200
+        assert chk_en.status_code == 200
+
+        body_ru = chk_ru.json()
+        body_kk = chk_kk.json()
+        body_en = chk_en.json()
+        assert body_ru["headline"] == body_ru["headline_ru"]
+        assert body_ru["next_action"]["text"] == body_ru["next_action"]["text_ru"]
+        for sig in body_ru["signals"]:
+            assert sig["reason"] == sig["reason_ru"]
+
+        assert body_kk["verdict"] == body_en["verdict"] == "red"
+        assert body_kk["headline_ru"] == body_en["headline_ru"] == "Похоже на подмену"
+        assert body_kk["headline"] != body_kk["headline_ru"]
+        assert body_en["headline"] != body_en["headline_ru"]
+        assert body_kk["next_action"]["text"] != body_kk["next_action"]["text_ru"]
+        assert body_en["next_action"]["text"] != body_en["next_action"]["text_ru"]
+        kz_letters = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
+        assert any(ch in kz_letters for ch in body_kk["headline"])
+        assert any(ch in kz_letters for ch in body_kk["next_action"]["text"])
+        for sig in body_kk["signals"]:
+            assert sig["reason"].strip() and sig["reason"] != sig["reason_ru"]
+            assert any(ch in kz_letters for ch in sig["reason"])
+        for sig in body_en["signals"]:
+            assert sig["reason"].strip() and sig["reason"] != sig["reason_ru"]
+
+    def test_approvals_and_errors_localize_by_lang_param(self, client: TestClient) -> None:
+        queue = client.get("/api/payments/queue").json()
+        yellow_req = _queue_item_to_check_request(next(q for q in queue if q["id"] == "Q-002"))
+
+        created = client.post(
+            "/api/approvals",
+            params={"lang": "kk"},
+            json={"check_request": yellow_req, "accountant_note": "Тексеру"},
+        )
+        assert created.status_code == 200
+        created_body = created.json()
+        assert created_body["check"]["headline_ru"] == "Есть изменения"
+        assert created_body["check"]["headline"] != created_body["check"]["headline_ru"]
+
+        # Stored approval re-localizes to English on GET /api/approvals?lang=en
+        listed_en = client.get("/api/approvals", params={"lang": "en"})
+        assert listed_en.status_code == 200
+        item_en = listed_en.json()[0]
+        assert item_en["check"]["headline"] == "Changes detected"
+        assert item_en["check"]["headline_ru"] == "Есть изменения"
+
+        # Localized 422 business error on decision
+        bad_decision = client.post(
+            f"/api/approvals/{created_body['id']}/decision",
+            params={"lang": "en"},
+            json={"decision": "approved", "director_comment": "short", "trust_account": True},
+        )
+        assert bad_decision.status_code == 422
+        assert "10 characters" in bad_decision.json()["detail"]
+
+        # Localized 404 error
+        missing_kk = client.post(
+            "/api/approvals/apr-missing/decision",
+            params={"lang": "kk"},
+            json={"decision": "rejected"},
+        )
+        assert missing_kk.status_code == 404
+        assert "табылмады" in missing_kk.json()["detail"]
+
+        # Localized 422 request validation error
+        invalid_amt = client.post(
+            "/api/payments/check",
+            params={"lang": "en"},
+            json={**yellow_req, "amount_kzt": -100},
+        )
+        assert invalid_amt.status_code == 422
+        assert "Payment amount" in invalid_amt.json()["detail"]
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("GET", "/api/payments/queue"),
+            ("GET", "/api/approvals"),
+        ],
+    )
+    def test_unknown_lang_returns_422(self, client: TestClient, method: str, path: str) -> None:
+        resp = client.request(method, path, params={"lang": "fr"})
+        assert resp.status_code == 422
+
+    def test_unknown_lang_on_post_check_and_approvals_returns_422(
+        self, client: TestClient
+    ) -> None:
+        queue = client.get("/api/payments/queue").json()
+        req = _queue_item_to_check_request(queue[0])
+
+        r_check = client.post("/api/payments/check", params={"lang": "de"}, json=req)
+        assert r_check.status_code == 422
+
+        r_apr = client.post(
+            "/api/approvals",
+            params={"lang": "de"},
+            json={"check_request": req},
+        )
+        assert r_apr.status_code == 422
+
+        r_dec = client.post(
+            "/api/approvals/apr-any/decision",
+            params={"lang": "de"},
+            json={"decision": "rejected"},
+        )
+        assert r_dec.status_code == 422

@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
+
+from app.i18n import DEFAULT_LANG, Lang, t
 
 WEIGHTS_FIRST: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
 WEIGHTS_SECOND: tuple[int, ...] = (3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2)
@@ -147,62 +149,70 @@ def make_iik(bank_code: str, account_body: str) -> str:
     return f"KZ{check}{bank_code}{account_body}"
 
 
+def iik_check(
+    value: str,
+    *,
+    check_bank_code: bool = True,
+    banks_path: Path | None = None,
+) -> tuple[bool, str | None, dict[str, Any]]:
+    """Validate a Kazakhstan IIK and return (ok, i18n_message_key, params).
+
+    Explicitly detects Cyrillic lookalike characters and validates bank code digits
+    and membership in banks.json (M4) when check_bank_code is True.
+    """
+    if not isinstance(value, str) or not value:
+        return False, "iik.empty", {}
+
+    if _has_cyrillic(value):
+        return False, "iik.cyrillic", {}
+
+    if len(value) != 20:
+        return False, "iik.length", {"length": len(value)}
+
+    if value != value.upper():
+        return False, "iik.uppercase", {}
+
+    if not value.startswith("KZ"):
+        return False, "iik.prefix_kz", {}
+
+    if not _is_ascii_upper_alnum(value):
+        return False, "iik.alnum", {}
+
+    if not _is_ascii_digits(value[2:4]):
+        return False, "iik.check_digits", {}
+
+    if iban_mod97(value) != 1:
+        return False, "iik.checksum", {}
+
+    code = value[4:7]
+    if not _is_ascii_digits(code):
+        return False, "iik.bank_code_digits", {}
+
+    if check_bank_code and get_bank_by_code(code, path=banks_path) is None:
+        return False, "iik.unknown_bank_code", {"code": code}
+
+    return True, None, {}
+
+
 def iik_ok(
     value: str,
     *,
     check_bank_code: bool = True,
     banks_path: Path | None = None,
+    lang: Lang = DEFAULT_LANG,
 ) -> tuple[bool, str | None]:
     """Validate a Kazakhstan IIK (20-char KZ IBAN).
 
-    Returns (True, None) when valid, or (False, plain_russian_error_message).
-    Explicitly detects Cyrillic lookalike characters and validates bank code digits
-    and membership in banks.json (M4) when check_bank_code is True.
+    Returns (True, None) when valid, or (False, localized_error_message).
     """
-    if not isinstance(value, str) or not value:
-        return False, "Укажите ИИК счёта."
-
-    if _has_cyrillic(value):
-        return (
-            False,
-            "В ИИК найдены кириллические буквы вместо латинских — проверьте раскладку.",
-        )
-
-    if len(value) != 20:
-        return False, f"ИИК должен состоять из 20 символов (сейчас {len(value)})."
-
-    if value != value.upper():
-        return (
-            False,
-            "ИИК должен быть записан только заглавными латинскими буквами и цифрами.",
-        )
-
-    if not value.startswith("KZ"):
-        return False, "ИИК казахстанского счёта должен начинаться с KZ."
-
-    if not _is_ascii_upper_alnum(value):
-        return (
-            False,
-            "ИИК должен содержать только заглавные латинские буквы и цифры без пробелов.",
-        )
-
-    if not _is_ascii_digits(value[2:4]):
-        return False, "В ИИК указаны неверные контрольные цифры после KZ."
-
-    if iban_mod97(value) != 1:
-        return False, "В ИИК ошибка контрольной суммы — такого счёта не существует."
-
-    code = value[4:7]
-    if not _is_ascii_digits(code):
-        return False, "В ИИК указан неверный код банка — символы 5–7 должны быть цифрами."
-
-    if check_bank_code and get_bank_by_code(code, path=banks_path) is None:
-        return (
-            False,
-            f"Неизвестный код банка ({code}) в ИИК — такого счёта не существует.",
-        )
-
-    return True, None
+    ok, msg_key, params = iik_check(
+        value,
+        check_bank_code=check_bank_code,
+        banks_path=banks_path,
+    )
+    if ok or msg_key is None:
+        return True, None
+    return False, t(msg_key, lang, **params)
 
 
 def iik_bank_code(value: str) -> str | None:
