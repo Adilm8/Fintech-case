@@ -2,28 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertCircle,
-  ArrowLeft,
-  Clock,
-  FileEdit,
-  Loader2,
-  PauseCircle,
-  RefreshCw,
-  Send,
-  ShieldAlert,
-  ShieldCheck,
-  XCircle,
-} from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
 import { ComparisonTable } from "@/components/ComparisonTable";
 import { ExplainButton } from "@/components/ExplainButton";
 import { NewPaymentDialog } from "@/components/NewPaymentDialog";
 import { ReasonsList } from "@/components/ReasonsList";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -52,18 +37,24 @@ import {
   extractInvalidFieldMap,
   pickActionText,
   pickHeadline,
-  VERDICT_STYLES,
 } from "@/lib/format";
 import { hasIdentitySignal } from "@/lib/identitySignals";
 import { notify } from "@/lib/toast";
 import type {
   Approval,
+  ApprovalStatus,
   CheckRequest,
   CheckResult,
   SignPaymentPayload,
   Verdict,
 } from "@/lib/types";
 import { cn } from "cn";
+
+const APPROVAL_DOT_CLASS: Record<ApprovalStatus, string> = {
+  pending: "ui-dot-warn",
+  approved: "ui-dot-ok",
+  rejected: "ui-dot-danger",
+};
 
 interface CheckScreenProps {
   paymentId?: string;
@@ -444,13 +435,6 @@ export function CheckScreen({
     : null;
   const directorComment = effectiveApproval?.director_comment?.trim() || null;
 
-  const invalidBtnClass =
-    VERDICT_STYLES.invalid.actionButtonClass ??
-    "bg-rose-900 text-white hover:bg-rose-950";
-  const redBtnClass =
-    VERDICT_STYLES.red.actionButtonClass ??
-    "bg-red-600 text-white hover:bg-red-700";
-
   const openDirectorDialog = () => {
     if (isPendingApproval || sentApprovalId !== null) {
       return;
@@ -464,25 +448,23 @@ export function CheckScreen({
       return (
         <Button
           type="button"
-          size="lg"
+          variant="destructive"
           onClick={handleOpenFixRequisites}
-          className={cn("hidden md:inline-flex min-h-11 w-full gap-2", invalidBtnClass)}
+          className="hidden min-h-10 w-full md:inline-flex"
         >
-          <FileEdit className="size-4" />
-          <span>{t.check.actionFixRequisites}</span>
+          {t.check.actionFixRequisites}
         </Button>
       );
     }
 
     if (isRejectedByDirector) {
       return (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-3.5 text-sm text-red-950 space-y-1">
-          <div className="flex items-center gap-2 font-semibold text-red-800">
-            <XCircle className="size-4 shrink-0" />
-            <span>{t.check.rejectedTitle}</span>
+        <div className="ui-notice ui-notice-danger space-y-1 text-sm">
+          <div className="font-semibold text-[var(--status-danger-text)]">
+            {t.check.rejectedTitle}
           </div>
           {directorComment && (
-            <p className="text-xs text-red-900 break-words">
+            <p className="text-xs text-foreground break-words">
               {interpolate(t.check.directorCommentLine, {
                 comment: directorComment,
               })}
@@ -497,24 +479,20 @@ export function CheckScreen({
         <div className="space-y-2">
           <Button
             type="button"
-            size="lg"
             disabled={isSigning || demoActionStatus === "signed"}
             onClick={() => void handleSignDemo()}
-            className="hidden md:inline-flex min-h-11 w-full gap-2"
+            className="hidden min-h-10 w-full md:inline-flex"
           >
             {isSigning ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 <span>{t.check.actionSigning}</span>
               </>
             ) : (
-              <>
-                <ShieldCheck className="size-4" />
-                <span>{t.check.actionSign}</span>
-              </>
+              t.check.actionSign
             )}
           </Button>
-          <p className="text-xs text-[#006B49]">
+          <p className="text-xs text-[var(--status-ok-text)]">
             {t.check.approvedAllowedHint}
           </p>
         </div>
@@ -527,24 +505,21 @@ export function CheckScreen({
           <div className="space-y-2">
             <Button
               type="button"
-              size="lg"
+              variant="destructive"
               onClick={handlePostponeDemo}
-              className={cn("hidden md:inline-flex min-h-11 w-full gap-2", redBtnClass)}
+              className="hidden min-h-10 w-full md:inline-flex"
             >
-              <PauseCircle className="size-4" />
-              <span>{t.check.actionPostpone}</span>
+              {t.check.actionPostpone}
             </Button>
             <Button
               type="button"
               variant="outline"
-              size="lg"
               disabled
-              className="min-h-11 w-full gap-2"
+              className="min-h-10 w-full"
             >
-              <Clock className="size-4" />
-              <span>{t.check.actionSentToDirector}</span>
+              {t.check.actionSentToDirector}
             </Button>
-            <p className="pt-1 text-xs text-muted-foreground">
+            <p className="pt-0.5 text-xs text-muted-foreground">
               {t.check.blockedUntilDecisionHint}
             </p>
           </div>
@@ -555,24 +530,20 @@ export function CheckScreen({
         <div className="space-y-2">
           <Button
             type="button"
-            size="lg"
             disabled
-            className="hidden md:inline-flex min-h-11 w-full gap-2"
+            className="hidden min-h-10 w-full md:inline-flex"
           >
-            <Clock className="size-4" />
-            <span>{t.check.actionSentToDirector}</span>
+            {t.check.actionSentToDirector}
           </Button>
           <Button
             type="button"
             variant="outline"
-            size="lg"
             disabled
-            className="min-h-11 w-full gap-2"
+            className="min-h-10 w-full"
           >
-            <ShieldCheck className="size-4" />
-            <span>{t.check.actionSign}</span>
+            {t.check.actionSign}
           </Button>
-          <p className="pt-1 text-xs text-muted-foreground">
+          <p className="pt-0.5 text-xs text-muted-foreground">
             {t.check.blockedUntilDecisionHint}
           </p>
         </div>
@@ -583,21 +554,17 @@ export function CheckScreen({
       return (
         <Button
           type="button"
-          size="lg"
           disabled={isSigning || demoActionStatus === "signed"}
           onClick={() => void handleSignDemo()}
-          className="hidden md:inline-flex min-h-11 w-full gap-2"
+          className="hidden min-h-10 w-full md:inline-flex"
         >
           {isSigning ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               <span>{t.check.actionSigning}</span>
             </>
           ) : (
-            <>
-              <ShieldCheck className="size-4" />
-              <span>{t.check.actionSign}</span>
-            </>
+            t.check.actionSign
           )}
         </Button>
       );
@@ -608,24 +575,21 @@ export function CheckScreen({
         <div className="space-y-2">
           <Button
             type="button"
-            size="lg"
+            variant="destructive"
             onClick={handlePostponeDemo}
-            className={cn("hidden md:inline-flex min-h-11 w-full gap-2", redBtnClass)}
+            className="hidden min-h-10 w-full md:inline-flex"
           >
-            <PauseCircle className="size-4" />
-            <span>{t.check.actionPostpone}</span>
+            {t.check.actionPostpone}
           </Button>
           <Button
             type="button"
             variant="outline"
-            size="lg"
             onClick={openDirectorDialog}
-            className="min-h-11 w-full gap-2"
+            className="min-h-10 w-full"
           >
-            <Send className="size-4" />
-            <span>{t.check.actionSendToDirector}</span>
+            {t.check.actionSendToDirector}
           </Button>
-          <p className="pt-1 text-xs text-muted-foreground">
+          <p className="pt-0.5 text-xs text-muted-foreground">
             {t.check.blockedUntilCheckOrApprovalHint}
           </p>
         </div>
@@ -637,36 +601,26 @@ export function CheckScreen({
         <div className="space-y-2.5">
           <Button
             type="button"
-            size="lg"
             onClick={openDirectorDialog}
-            className="hidden md:inline-flex min-h-11 w-full gap-2"
+            className="hidden min-h-10 w-full md:inline-flex"
           >
-            <Send className="size-4" />
-            <span>{t.check.actionSendToDirector}</span>
+            {t.check.actionSendToDirector}
           </Button>
 
           <div
             role="status"
-            className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50/90 px-3 py-2.5 text-xs font-medium text-amber-950"
+            className="ui-notice ui-notice-warn py-2.5 text-xs leading-snug text-foreground break-words"
           >
-            <ShieldAlert
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-amber-700"
-            />
-            <span className="min-w-0 flex-1 leading-snug break-words">
-              {t.check.directorRequiredIdentity}
-            </span>
+            {t.check.directorRequiredIdentity}
           </div>
 
           <Button
             type="button"
             variant="outline"
-            size="lg"
             disabled
-            className="min-h-11 w-full gap-2"
+            className="min-h-10 w-full"
           >
-            <ShieldCheck className="size-4" />
-            <span>{t.check.actionSign}</span>
+            {t.check.actionSign}
           </Button>
         </div>
       );
@@ -676,15 +630,13 @@ export function CheckScreen({
       <div className="space-y-2.5">
         <Button
           type="button"
-          size="lg"
           onClick={openDirectorDialog}
-          className="hidden md:inline-flex min-h-11 w-full gap-2"
+          className="hidden min-h-10 w-full md:inline-flex"
         >
-          <Send className="size-4" />
-          <span>{t.check.actionSendToDirector}</span>
+          {t.check.actionSendToDirector}
         </Button>
 
-        <div className="flex min-h-11 items-start gap-2.5 rounded-xl border border-border bg-background/80 px-3 py-2.5">
+        <div className="ui-subpanel flex min-h-10 items-start gap-2.5">
           <Checkbox
             id="accountant-ack-checkbox"
             checked={accountantAck}
@@ -692,7 +644,7 @@ export function CheckScreen({
             onCheckedChange={(checked) => setAccountantAck(Boolean(checked))}
             className="mt-0.5"
           />
-          <div className="min-w-0 flex-1 space-y-1">
+          <div className="min-w-0 flex-1 space-y-0.5">
             <Label
               htmlFor="accountant-ack-checkbox"
               className="cursor-pointer text-xs font-medium leading-snug text-foreground"
@@ -700,7 +652,7 @@ export function CheckScreen({
               {t.check.accountantAckLabel}
             </Label>
             {!accountantAck && (
-              <p className="text-[11px] leading-snug text-muted-foreground">
+              <p className="text-xs leading-snug text-muted-foreground">
                 {t.check.accountantAckRequiredHint}
               </p>
             )}
@@ -710,23 +662,19 @@ export function CheckScreen({
         <Button
           type="button"
           variant="outline"
-          size="lg"
           disabled={
             !accountantAck || isSigning || demoActionStatus === "signed"
           }
           onClick={() => void handleSignDemo()}
-          className="min-h-11 w-full gap-2"
+          className="min-h-10 w-full"
         >
           {isSigning ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               <span>{t.check.actionSigning}</span>
             </>
           ) : (
-            <>
-              <ShieldCheck className="size-4" />
-              <span>{t.check.actionSign}</span>
-            </>
+            t.check.actionSign
           )}
         </Button>
       </div>
@@ -738,12 +686,11 @@ export function CheckScreen({
       return (
         <Button
           type="button"
-          size="lg"
+          variant="destructive"
           onClick={handleOpenFixRequisites}
-          className={cn("min-h-11 w-full gap-2", invalidBtnClass)}
+          className="min-h-11 w-full"
         >
-          <FileEdit className="size-4" />
-          <span>{t.check.actionFixRequisites}</span>
+          {t.check.actionFixRequisites}
         </Button>
       );
     }
@@ -756,21 +703,17 @@ export function CheckScreen({
       return (
         <Button
           type="button"
-          size="lg"
           disabled={isSigning || demoActionStatus === "signed"}
           onClick={() => void handleSignDemo()}
-          className="min-h-11 w-full gap-2"
+          className="min-h-11 w-full"
         >
           {isSigning ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               <span>{t.check.actionSigning}</span>
             </>
           ) : (
-            <>
-              <ShieldCheck className="size-4" />
-              <span>{t.check.actionSign}</span>
-            </>
+            t.check.actionSign
           )}
         </Button>
       );
@@ -781,25 +724,18 @@ export function CheckScreen({
         return (
           <Button
             type="button"
-            size="lg"
+            variant="destructive"
             onClick={handlePostponeDemo}
-            className={cn("min-h-11 w-full gap-2", redBtnClass)}
+            className="min-h-11 w-full"
           >
-            <PauseCircle className="size-4" />
-            <span>{t.check.actionPostpone}</span>
+            {t.check.actionPostpone}
           </Button>
         );
       }
 
       return (
-        <Button
-          type="button"
-          size="lg"
-          disabled
-          className="min-h-11 w-full gap-2"
-        >
-          <Clock className="size-4" />
-          <span>{t.check.actionSentToDirector}</span>
+        <Button type="button" disabled className="min-h-11 w-full">
+          {t.check.actionSentToDirector}
         </Button>
       );
     }
@@ -808,21 +744,17 @@ export function CheckScreen({
       return (
         <Button
           type="button"
-          size="lg"
           disabled={isSigning || demoActionStatus === "signed"}
           onClick={() => void handleSignDemo()}
-          className="min-h-11 w-full gap-2"
+          className="min-h-11 w-full"
         >
           {isSigning ? (
             <>
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               <span>{t.check.actionSigning}</span>
             </>
           ) : (
-            <>
-              <ShieldCheck className="size-4" />
-              <span>{t.check.actionSign}</span>
-            </>
+            t.check.actionSign
           )}
         </Button>
       );
@@ -832,12 +764,11 @@ export function CheckScreen({
       return (
         <Button
           type="button"
-          size="lg"
+          variant="destructive"
           onClick={handlePostponeDemo}
-          className={cn("min-h-11 w-full gap-2", redBtnClass)}
+          className="min-h-11 w-full"
         >
-          <PauseCircle className="size-4" />
-          <span>{t.check.actionPostpone}</span>
+          {t.check.actionPostpone}
         </Button>
       );
     }
@@ -845,12 +776,10 @@ export function CheckScreen({
     return (
       <Button
         type="button"
-        size="lg"
         onClick={openDirectorDialog}
-        className="min-h-11 w-full gap-2"
+        className="min-h-11 w-full"
       >
-        <Send className="size-4" />
-        <span>{t.check.actionSendToDirector}</span>
+        {t.check.actionSendToDirector}
       </Button>
     );
   };
@@ -868,18 +797,18 @@ export function CheckScreen({
   return (
     <div
       className={cn(
-        "space-y-5",
+        "space-y-4 sm:space-y-5",
         mobilePrimaryAction &&
           "pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-0"
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onClick={onBack}
-          className="min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+          className="min-h-10 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
         >
           <ArrowLeft className="size-4" />
           <span>{t.check.backToList}</span>
@@ -891,42 +820,43 @@ export function CheckScreen({
           size="sm"
           onClick={handleRecheck}
           disabled={isRechecking}
-          className="min-h-11 gap-1.5 sm:min-h-9"
+          className="min-h-10 sm:min-h-8"
         >
-          <RefreshCw
-            className={cn("size-3.5", isRechecking && "animate-spin")}
-          />
+          {isRechecking && (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          )}
           <span>{isRechecking ? t.check.rechecking : t.check.recheck}</span>
         </Button>
       </div>
 
-      <Card className="min-w-0">
-        <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
-          <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="ui-panel min-w-0 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="ui-label-meta">
                 {t.check.paymentOrderEyebrow}
               </span>
-              {approvalStyle && approvalLabel && (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "h-auto px-2 py-0.5 text-xs font-medium",
-                    approvalStyle.badgeClass
-                  )}
-                >
-                  {approvalLabel}
-                </Badge>
+              {resolvedApprovalStatus && approvalStyle && approvalLabel && (
+                <span className={cn("ui-status", approvalStyle.badgeClass)}>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "ui-status-dot",
+                      APPROVAL_DOT_CLASS[resolvedApprovalStatus]
+                    )}
+                  />
+                  <span>{approvalLabel}</span>
+                </span>
               )}
             </div>
-            <div className="text-lg font-semibold text-foreground break-words">
+            <h1 className="ui-page-title break-words">
               {request.recipient_name}
-            </div>
-            <div className="text-sm text-muted-foreground break-words">
+            </h1>
+            <p className="text-sm text-[var(--text-secondary)] break-words">
               {request.purpose}
-            </div>
+            </p>
             {directorComment && (
-              <div className="rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-xs text-foreground break-words">
+              <div className="ui-subpanel mt-2 text-xs text-foreground break-words">
                 <span className="font-semibold">
                   {t.check.directorCommentLabel}
                 </span>
@@ -934,18 +864,19 @@ export function CheckScreen({
               </div>
             )}
             {showSecondaryTrustedNote && (
-              <div className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground break-words">
-                <ShieldCheck className="size-3.5 shrink-0 text-muted-foreground" />
-                <span>{formatTrustedBanner(currentResult.trusted_info)}</span>
+              <div className="pt-1">
+                <span className="ui-tag max-w-full whitespace-normal break-words">
+                  {formatTrustedBanner(currentResult.trusted_info)}
+                </span>
               </div>
             )}
           </div>
 
           <div className="min-w-0 shrink-0 space-y-1 text-left sm:text-right">
-            <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground">
+            <div className="text-[22px] leading-7 font-semibold tabular-nums whitespace-nowrap text-foreground sm:text-2xl sm:leading-[30px]">
               {formatMoney(request.amount_kzt)}
             </div>
-            <div className="text-xs text-muted-foreground space-y-1">
+            <div className="space-y-1 text-xs text-muted-foreground tabular-nums">
               <div>
                 {(currentResult.history?.payments_count ?? 0) > 0
                   ? interpolate(t.check.historySummary, {
@@ -955,16 +886,18 @@ export function CheckScreen({
                   : t.check.noPriorPayments}
               </div>
               {currentResult.history?.compared_with && (
-                <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
-                  {interpolate(t.check.comparedWith, {
-                    supplier: currentResult.history.compared_with,
-                  })}
+                <div>
+                  <span className="ui-tag max-w-full whitespace-normal break-words">
+                    {interpolate(t.check.comparedWith, {
+                      supplier: currentResult.history.compared_with,
+                    })}
+                  </span>
                 </div>
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <VerdictBanner
         verdict={verdict}
@@ -972,44 +905,44 @@ export function CheckScreen({
       />
 
       {showProminentTrustedBanner && (
-        <Alert className="rounded-xl border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]">
-          <ShieldCheck className="size-4 text-[var(--brand-text)]" />
-          <AlertTitle>{t.check.trustedBannerTitle}</AlertTitle>
-          <AlertDescription className="text-[#064A34]/90 font-medium break-words">
+        <div role="status" className="ui-notice ui-notice-ok space-y-0.5">
+          <div className="text-[13px] font-semibold text-foreground">
+            {t.check.trustedBannerTitle}
+          </div>
+          <p className="text-[13px] text-[var(--text-secondary)] break-words">
             {formatTrustedBanner(currentResult.trusted_info)}
-          </AlertDescription>
-        </Alert>
+          </p>
+        </div>
       )}
 
       {recheckError && (
-        <Alert
-          variant="destructive"
-          className="rounded-xl bg-red-50/90 border-red-300"
-        >
-          <AlertCircle className="size-4" />
-          <AlertTitle>{t.check.actionErrorTitle}</AlertTitle>
-          <AlertDescription className="break-words">
+        <div role="alert" className="ui-notice ui-notice-danger space-y-0.5">
+          <div className="text-[13px] font-semibold text-[var(--status-danger-text)]">
+            {t.check.actionErrorTitle}
+          </div>
+          <p className="text-[13px] text-foreground break-words">
             {recheckError}
-          </AlertDescription>
-        </Alert>
+          </p>
+        </div>
       )}
 
       {isRejectedByDirector && (
-        <Alert className="rounded-xl border-red-300 bg-red-50 text-red-950">
-          <XCircle className="size-4 text-red-600" />
-          <AlertTitle>{t.check.rejectedTitle}</AlertTitle>
-          <AlertDescription className="text-red-900 break-words">
+        <div role="status" className="ui-notice ui-notice-danger space-y-0.5">
+          <div className="text-[13px] font-semibold text-[var(--status-danger-text)]">
+            {t.check.rejectedTitle}
+          </div>
+          <p className="text-[13px] text-foreground break-words">
             {directorComment
               ? interpolate(t.check.directorCommentLine, {
                   comment: directorComment,
                 })
               : t.check.rejectedBlocked}
-          </AlertDescription>
-        </Alert>
+          </p>
+        </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-5">
+      <div className="grid grid-cols-1 items-start gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4 sm:space-y-5">
           <ComparisonTable
             comparison={currentResult.comparison}
             trusted={isTrusted}
@@ -1022,7 +955,7 @@ export function CheckScreen({
           />
         </div>
 
-        <div className="min-w-0 space-y-4 lg:sticky lg:top-28">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-20">
           <AdviceBox
             text={pickActionText(currentResult.next_action, lang)}
             verdict={verdict}
@@ -1038,71 +971,64 @@ export function CheckScreen({
             />
           )}
 
-          <Card
+          <div
             className={cn(
-              "min-w-0",
+              "ui-panel min-w-0 space-y-2.5 p-4",
               hideInlineActionsCardOnMobile && "hidden md:block"
             )}
           >
-            <CardContent className="pt-4 space-y-2.5">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t.check.actionsEyebrow}
+            <div className="ui-label-meta">{t.check.actionsEyebrow}</div>
+            {signError && (
+              <div
+                role="alert"
+                className="ui-notice ui-notice-danger py-2 text-xs text-foreground break-words"
+              >
+                {signError}
               </div>
-              {signError && (
-                <Alert
-                  variant="destructive"
-                  className="rounded-xl border-red-300 bg-red-50/90 py-2.5"
-                >
-                  <AlertCircle className="size-4" />
-                  <AlertDescription className="text-xs break-words">
-                    {signError}
-                  </AlertDescription>
-                </Alert>
-              )}
-              {renderActionButtons()}
-              {demoActionStatus === "signed" && (
-                <div
-                  role="status"
-                  className="rounded-xl border border-[#00AB75]/35 bg-[#E8F8F2] px-3 py-2 text-xs font-medium text-[#064A34]"
-                >
-                  {signedWithAck
-                    ? t.check.signedWithAckStatusNote
-                    : t.check.signedStatusNote}
-                </div>
-              )}
-              {demoActionStatus === "postponed" && (
-                <div
-                  role="status"
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950"
-                >
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <div>{t.check.postponedStatusNote}</div>
-                    {canUndoPostpone && (
-                      <div className="text-[11px] font-normal text-amber-800">
-                        {t.check.postponedUndoHint}
-                      </div>
-                    )}
-                  </div>
+            )}
+            {renderActionButtons()}
+            {demoActionStatus === "signed" && (
+              <div
+                role="status"
+                className="ui-notice ui-notice-ok py-2 text-xs font-medium text-foreground"
+              >
+                {signedWithAck
+                  ? t.check.signedWithAckStatusNote
+                  : t.check.signedStatusNote}
+              </div>
+            )}
+            {demoActionStatus === "postponed" && (
+              <div
+                role="status"
+                className="ui-notice ui-notice-warn flex flex-wrap items-center justify-between gap-2 py-2 text-xs font-medium text-foreground"
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div>{t.check.postponedStatusNote}</div>
                   {canUndoPostpone && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleUndoPostpone}
-                      className="h-7 shrink-0 border-amber-400 bg-card px-2.5 text-xs font-semibold text-amber-950 hover:bg-amber-100"
-                    >
-                      {t.common.undo}
-                    </Button>
+                    <div className="font-normal text-muted-foreground">
+                      {t.check.postponedUndoHint}
+                    </div>
                   )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                {canUndoPostpone && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={handleUndoPostpone}
+                    className="shrink-0"
+                  >
+                    {t.common.undo}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {currentResult.ruleset_version && (
-        <div className="text-right font-mono text-[11px] text-muted-foreground/75">
+        <div className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
           {interpolate(t.check.rulesetVersion, {
             version: currentResult.ruleset_version,
           })}
@@ -1110,7 +1036,7 @@ export function CheckScreen({
       )}
 
       {mobilePrimaryAction && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(29,29,30,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/90 md:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-none md:hidden">
           <div className="mx-auto max-w-[1248px]">{mobilePrimaryAction}</div>
         </div>
       )}
@@ -1124,15 +1050,15 @@ export function CheckScreen({
 
           <div className="min-w-0 space-y-3 py-1">
             {dialogError && (
-              <Alert variant="destructive">
-                <AlertCircle className="size-4" />
-                <AlertDescription className="break-words">
-                  {dialogError}
-                </AlertDescription>
-              </Alert>
+              <div
+                role="alert"
+                className="ui-notice ui-notice-danger py-2 text-xs text-foreground break-words"
+              >
+                {dialogError}
+              </div>
             )}
 
-            <div className="rounded-lg border border-border bg-background/80 px-3 py-2 text-xs space-y-0.5">
+            <div className="ui-subpanel space-y-0.5 text-xs">
               <div className="font-medium text-foreground break-words">
                 {request.recipient_name}
               </div>
@@ -1141,17 +1067,14 @@ export function CheckScreen({
                   {formatMoney(request.amount_kzt)}
                 </span>
                 <span aria-hidden="true">·</span>
-                <span className="font-mono break-all">
+                <span className="font-mono tabular-nums break-all">
                   {request.recipient_iik}
                 </span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label
-                htmlFor="accountant_note"
-                className={cn(noteFieldError && "text-rose-900")}
-              >
+              <Label htmlFor="accountant_note">
                 {t.check.accountantNoteLabel}
               </Label>
               <Textarea
@@ -1159,10 +1082,6 @@ export function CheckScreen({
                 rows={3}
                 aria-invalid={Boolean(noteFieldError)}
                 placeholder={t.check.accountantNotePlaceholder}
-                className={cn(
-                  noteFieldError &&
-                    "border-rose-500 bg-rose-50/60 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-                )}
                 value={accountantNote}
                 onChange={(e) => {
                   setAccountantNote(e.target.value);
@@ -1170,7 +1089,7 @@ export function CheckScreen({
                 }}
               />
               {noteFieldError && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {noteFieldError}
                 </p>
               )}
@@ -1183,7 +1102,7 @@ export function CheckScreen({
               variant="outline"
               onClick={() => setDialogOpen(false)}
               disabled={isSendingApproval}
-              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
+              className="min-h-10 w-full sm:min-h-9 sm:w-auto"
             >
               {t.common.cancel}
             </Button>
@@ -1195,18 +1114,15 @@ export function CheckScreen({
                 isPendingApproval ||
                 sentApprovalId !== null
               }
-              className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
+              className="min-h-10 w-full sm:min-h-9 sm:w-auto"
             >
               {isSendingApproval ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   <span>{t.check.sending}</span>
                 </>
               ) : (
-                <>
-                  <Send className="size-4" />
-                  <span>{t.check.send}</span>
-                </>
+                t.check.send
               )}
             </Button>
           </DialogFooter>

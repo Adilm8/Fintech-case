@@ -8,18 +8,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  FileText,
-  Loader2,
-  RefreshCw,
-  Upload,
-  X,
-} from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -33,7 +22,6 @@ import {
   needsManualConfirmation,
   validateInvoiceFile,
   type InvoiceExtraction,
-  type InvoiceExtractionSource,
 } from "@/lib/invoice";
 import { cn } from "cn";
 
@@ -59,26 +47,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function getSourceBadgeClass(source: InvoiceExtractionSource): string {
-  if (source === "claude") {
-    return "border-[#00AB75]/30 bg-[#00AB75]/10 text-[#006B49] dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-200";
-  }
-  if (source === "text_rules") {
-    return "border-border bg-secondary text-secondary-foreground";
-  }
-  return "border-amber-300/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200";
-}
-
-function getConfidenceBadgeClass(confidence: number): string {
-  if (confidence >= 0.8) {
-    return "border-[#00AB75]/30 bg-[#00AB75]/10 text-[#006B49] dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-200";
-  }
-  if (confidence >= 0.5) {
-    return "border-border bg-muted text-foreground";
-  }
-  return "border-amber-300/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200";
 }
 
 export function InvoiceUpload({
@@ -309,40 +277,31 @@ export function InvoiceUpload({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          "min-w-0 rounded-xl border transition-colors motion-reduce:transition-none",
+          "min-w-0 transition-colors motion-reduce:transition-none",
           status === "success"
-            ? "border-border bg-card p-3 sm:p-3.5"
-            : "border-dashed bg-background/60 p-3 sm:p-3.5",
-          isDragOver &&
-            "border-primary bg-accent/50 ring-2 ring-primary/25 dark:bg-accent/20",
-          status === "error" &&
-            !isDragOver &&
-            "border-red-300/90 dark:border-red-800/70",
-          !isDragOver && status !== "error" && "border-border"
+            ? "ui-panel p-3"
+            : "ui-dropzone",
+          isDragOver && "border-primary bg-muted/60",
+          status === "error" && !isDragOver && "border-destructive"
         )}
       >
         {status === "loading" ? (
           <div
             role="status"
             aria-live="polite"
-            className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+            className="flex w-full min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between"
           >
-            <div className="flex min-w-0 items-start gap-2.5">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                <Loader2
-                  aria-hidden="true"
-                  className="size-4 animate-spin motion-reduce:animate-none"
-                />
-              </div>
+            <div className="flex min-w-0 items-start gap-2">
+              <Loader2
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none"
+              />
               <div className="min-w-0 flex-1 space-y-0.5">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t.invoice.label}
-                </div>
                 <div className="text-sm font-medium text-foreground break-words">
                   {t.invoice.loadingTitle}
                 </div>
                 {selectedFile && (
-                  <div className="text-xs text-muted-foreground break-all">
+                  <div className="text-xs text-muted-foreground tabular-nums break-all">
                     {selectedFile.name} · {formatFileSize(selectedFile.size)}
                   </div>
                 )}
@@ -354,33 +313,30 @@ export function InvoiceUpload({
               variant="outline"
               size="sm"
               onClick={resetToIdle}
-              className="min-h-11 w-full shrink-0 gap-1.5 sm:min-h-9 sm:w-auto"
+              className="min-h-10 w-full shrink-0 sm:min-h-8 sm:w-auto"
             >
-              <X className="size-3.5" />
-              <span>{t.invoice.cancelUploadButton}</span>
+              {t.invoice.cancelUploadButton}
             </Button>
           </div>
         ) : status === "success" && result ? (
-          <div className="min-w-0 space-y-3">
+          <div className="w-full min-w-0 space-y-2.5">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
-                <div
-                  className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-lg",
-                    requiresConfirmation
-                      ? "bg-amber-100/90 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-                      : "bg-accent text-[var(--brand-text)]"
-                  )}
-                >
-                  {requiresConfirmation ? (
-                    <AlertTriangle aria-hidden="true" className="size-4" />
-                  ) : (
-                    <CheckCircle2 aria-hidden="true" className="size-4" />
-                  )}
-                </div>
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground break-words">
-                  {t.invoice.label}
+                <span className="ui-status">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "ui-status-dot",
+                      requiresConfirmation ? "ui-dot-warn" : "ui-dot-ok"
+                    )}
+                  />
+                  <span>{t.invoice.label}</span>
                 </span>
+                {selectedFile && (
+                  <span className="min-w-0 truncate text-xs text-muted-foreground tabular-nums">
+                    {selectedFile.name} · {formatFileSize(selectedFile.size)}
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -390,10 +346,9 @@ export function InvoiceUpload({
                   size="sm"
                   onClick={openFilePicker}
                   disabled={disabled}
-                  className="min-h-11 gap-1.5 px-2.5 text-xs sm:min-h-8"
+                  className="min-h-10 sm:min-h-8"
                 >
-                  <RefreshCw className="size-3.5" />
-                  <span>{t.invoice.replaceButton}</span>
+                  {t.invoice.replaceButton}
                 </Button>
                 <Button
                   type="button"
@@ -402,52 +357,24 @@ export function InvoiceUpload({
                   onClick={resetToIdle}
                   disabled={disabled}
                   aria-label={t.invoice.aria.removeFile}
-                  className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
+                  className="size-10 text-muted-foreground hover:text-foreground sm:size-8"
                 >
                   <X className="size-4" />
                 </Button>
               </div>
             </div>
 
-            {selectedFile && (
-              <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                <FileText aria-hidden="true" className="size-3.5 shrink-0" />
-                <span className="min-w-0 truncate font-medium text-foreground">
-                  {selectedFile.name}
-                </span>
-                <span className="shrink-0">
-                  · {formatFileSize(selectedFile.size)}
-                </span>
-              </div>
-            )}
-
-            <div
+            <p
               role="status"
               aria-live="polite"
-              className="flex min-w-0 flex-wrap items-center gap-1.5"
+              className="text-xs text-muted-foreground tabular-nums break-words"
             >
-              <Badge
-                variant="outline"
-                className={cn(
-                  "h-auto max-w-full whitespace-normal px-2.5 py-0.5 text-xs font-medium",
-                  getSourceBadgeClass(result.source)
-                )}
-              >
-                {t.invoice.sourceLabel}: {t.invoice.sources[result.source]}
-              </Badge>
-
-              <Badge
-                variant="outline"
-                className={cn(
-                  "h-auto max-w-full whitespace-normal px-2.5 py-0.5 text-xs font-medium tabular-nums",
-                  getConfidenceBadgeClass(result.confidence)
-                )}
-              >
-                {interpolate(t.invoice.confidenceLabel, {
-                  percent: confidencePercent,
-                })}
-              </Badge>
-            </div>
+              {t.invoice.sourceLabel}: {t.invoice.sources[result.source]}
+              {" · "}
+              {interpolate(t.invoice.confidenceLabel, {
+                percent: confidencePercent,
+              })}
+            </p>
 
             {extractedValuesCount === 0 && result.warnings.length === 0 && (
               <p className="text-xs leading-relaxed text-muted-foreground break-words">
@@ -456,25 +383,16 @@ export function InvoiceUpload({
             )}
 
             {result.warnings.length > 0 && (
-              <div className="min-w-0 space-y-1.5">
-                <div className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+              <div className="ui-notice ui-notice-warn min-w-0 space-y-1">
+                <div className="text-xs font-medium text-[var(--status-warn-text)]">
                   {interpolate(t.invoice.warningsTitle, {
                     count: result.warnings.length,
                   })}
                 </div>
-                <ul className="min-w-0 space-y-1.5">
+                <ul className="min-w-0 list-disc space-y-0.5 pl-4 text-xs leading-5 text-foreground">
                   {result.warnings.map((warning, idx) => (
-                    <li
-                      key={`${idx}-${warning}`}
-                      className="flex min-w-0 items-start gap-2 rounded-lg border border-amber-300/90 bg-amber-50/90 px-2.5 py-2 text-xs leading-snug text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100"
-                    >
-                      <AlertTriangle
-                        aria-hidden="true"
-                        className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-400"
-                      />
-                      <span className="min-w-0 flex-1 break-words">
-                        {warning}
-                      </span>
+                    <li key={`${idx}-${warning}`} className="break-words">
+                      {warning}
                     </li>
                   ))}
                 </ul>
@@ -484,10 +402,8 @@ export function InvoiceUpload({
             {requiresConfirmation && (
               <div
                 className={cn(
-                  "flex min-h-11 min-w-0 items-start gap-2.5 rounded-xl border px-3 py-2.5 transition-colors motion-reduce:transition-none",
-                  isConfirmed
-                    ? "border-[#00AB75]/35 bg-[#E8F8F2]/60 dark:border-emerald-700/60 dark:bg-emerald-950/30"
-                    : "border-amber-300/90 bg-amber-50/75 dark:border-amber-700/60 dark:bg-amber-950/35"
+                  "flex min-h-10 min-w-0 items-start gap-2.5",
+                  isConfirmed ? "ui-subpanel" : "ui-notice ui-notice-warn"
                 )}
               >
                 <Checkbox
@@ -499,7 +415,7 @@ export function InvoiceUpload({
                   disabled={disabled}
                   className="mt-0.5"
                 />
-                <div className="min-w-0 flex-1 space-y-1">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <Label
                     htmlFor={checkboxId}
                     className="cursor-pointer text-xs font-medium leading-snug text-foreground break-words"
@@ -507,7 +423,7 @@ export function InvoiceUpload({
                     {t.invoice.confirmCheckboxLabel}
                   </Label>
                   {!isConfirmed && (
-                    <p className="text-[11px] leading-snug text-amber-900 dark:text-amber-200 break-words">
+                    <p className="text-xs leading-snug text-[var(--status-warn-text)] break-words">
                       {t.invoice.confirmRequiredHint}
                     </p>
                   )}
@@ -516,72 +432,56 @@ export function InvoiceUpload({
             )}
 
             {isDragOver && (
-              <p className="text-center text-xs font-medium text-[var(--brand-text)]">
+              <p className="text-xs font-medium text-[var(--brand-text)]">
                 {t.invoice.dropActiveHint}
               </p>
             )}
           </div>
         ) : (
-          <div className="min-w-0 space-y-2.5">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <FileText
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0 text-[var(--brand-text)]"
-                />
-                <span className="truncate">{t.invoice.label}</span>
-              </div>
-              {status === "error" && (
+          <div className="w-full min-w-0 space-y-2.5">
+            {status === "error" && errorMessage && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="ui-notice ui-notice-danger flex items-start justify-between gap-2 py-2"
+              >
+                <p className="min-w-0 text-xs leading-5 text-foreground break-words">
+                  {errorMessage}
+                </p>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon-xs"
                   onClick={resetToIdle}
                   disabled={disabled}
                   aria-label={t.invoice.aria.removeFile}
-                  className="size-11 shrink-0 text-muted-foreground hover:text-foreground sm:size-7"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
                 >
                   <X className="size-3.5" />
                 </Button>
-              )}
-            </div>
-
-            {status === "error" && errorMessage && (
-              <Alert
-                variant="destructive"
-                aria-live="assertive"
-                className="border-red-300 bg-red-50/90 dark:border-red-800/70 dark:bg-red-950/40"
-              >
-                <AlertCircle className="size-4" />
-                <AlertDescription className="min-w-0 break-words">
-                  {errorMessage}
-                </AlertDescription>
-              </Alert>
+              </div>
             )}
 
-            <div className="flex min-w-0 flex-col items-center gap-2 py-1 text-center">
+            <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-0.5">
+                <div className="text-[13px] font-medium text-foreground break-words">
+                  {isDragOver ? t.invoice.dropActiveHint : t.invoice.label}
+                </div>
+                <p className="text-xs text-muted-foreground break-words">
+                  {t.invoice.dropHint} · {t.invoice.formatsHint}
+                </p>
+              </div>
+
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={openFilePicker}
                 disabled={isDisabled}
-                className="min-h-11 h-auto w-full gap-2 whitespace-normal rounded-xl border-primary/35 bg-card px-3.5 py-2.5 text-center font-medium text-foreground shadow-xs hover:border-primary/60 hover:bg-accent/50 sm:min-h-10 sm:w-auto"
+                className="min-h-10 w-full shrink-0 sm:min-h-8 sm:w-auto"
               >
-                <Upload
-                  aria-hidden="true"
-                  className="size-4 shrink-0 text-[var(--brand-text)]"
-                />
-                <span>{t.invoice.uploadButton}</span>
+                {t.invoice.uploadButton}
               </Button>
-
-              <div className="min-w-0 space-y-0.5 text-xs text-muted-foreground">
-                <p className="break-words">
-                  {isDragOver ? t.invoice.dropActiveHint : t.invoice.dropHint}
-                </p>
-                <p className="text-[11px] break-words">
-                  {t.invoice.formatsHint}
-                </p>
-              </div>
             </div>
           </div>
         )}
@@ -589,7 +489,7 @@ export function InvoiceUpload({
 
       <p
         id={privacyNoteId}
-        className="text-[11px] leading-relaxed text-muted-foreground break-words"
+        className="text-xs leading-4 text-muted-foreground break-words"
       >
         {t.invoice.privacyNotice}
       </p>

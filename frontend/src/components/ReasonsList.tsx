@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,10 +21,10 @@ interface ReasonsListProps {
 }
 
 const SEVERITY_DOT_CLASS: Record<SignalSeverity, string> = {
-  block: "bg-red-600",
-  primary: "bg-red-500",
-  amplifier: "bg-amber-500",
-  info: "bg-[#737376]",
+  block: "ui-dot-danger",
+  primary: "ui-dot-danger",
+  amplifier: "ui-dot-warn",
+  info: "ui-dot-neutral",
 };
 
 export function ReasonsList({ signals, score, className }: ReasonsListProps) {
@@ -41,16 +40,14 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
 
   return (
     <Card className={cn("min-w-0", className)}>
-      <CardHeader className="border-b border-border pb-3.5">
-        <CardTitle className="text-base font-semibold">
-          {t.reasons.title}
-        </CardTitle>
+      <CardHeader className="border-b border-border pb-3">
+        <CardTitle>{t.reasons.title}</CardTitle>
       </CardHeader>
-      <CardContent className="pt-4 space-y-4">
+      <CardContent className="space-y-3">
         {topReasons.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t.reasons.empty}</p>
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="space-y-2">
             {topReasons.map((signal, idx) => {
               const isPositiveSignal =
                 signal.rule_id === "trusted_account" ||
@@ -59,15 +56,15 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
               return (
                 <li
                   key={`${signal.rule_id}-${idx}`}
-                  className="flex min-w-0 items-start gap-3 text-sm leading-relaxed text-foreground"
+                  className="flex min-w-0 items-start gap-2.5 text-sm leading-5 text-foreground"
                 >
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "mt-2 size-2 shrink-0 rounded-full",
+                      "mt-[7px] size-1.5 shrink-0 rounded-full",
                       isPositiveSignal
-                        ? "bg-[#00AB75]"
-                        : SEVERITY_DOT_CLASS[signal.severity] ?? "bg-[#737376]"
+                        ? "ui-dot-ok"
+                        : SEVERITY_DOT_CLASS[signal.severity] ?? "ui-dot-neutral"
                     )}
                   />
                   <span className="min-w-0 break-words">
@@ -87,7 +84,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="min-h-11 gap-1.5 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground sm:min-h-8 sm:px-2"
+                  className="min-h-10 gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground sm:min-h-8"
                 />
               }
             >
@@ -106,19 +103,19 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
               />
             </CollapsibleTrigger>
 
-            <CollapsibleContent className="mt-3 space-y-3 rounded-xl border border-border bg-background/80 p-3 sm:p-3.5">
+            <CollapsibleContent className="ui-subpanel mt-2.5 space-y-2.5">
               {score !== undefined && (
                 <div className="flex items-center justify-between gap-2 border-b border-border pb-2 text-xs">
                   <span className="font-medium text-muted-foreground">
                     {t.reasons.totalRiskScore}
                   </span>
-                  <span className="shrink-0 font-mono font-semibold text-foreground">
+                  <span className="shrink-0 font-mono font-semibold tabular-nums text-foreground">
                     {score} / 100
                   </span>
                 </div>
               )}
 
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {orderedSignals.map((signal, idx) => {
                   const ruleTitle =
                     signalRulesMap[signal.rule_id] ?? t.reasons.unknownSignal;
@@ -131,29 +128,23 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                   return (
                     <div
                       key={`${signal.rule_id}-detail-${idx}`}
-                      className="min-w-0 rounded-lg border border-border bg-card p-3 text-xs space-y-1.5"
+                      className="min-w-0 space-y-1.5 rounded-[6px] border border-border bg-card p-3 text-xs"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                           <span className="font-semibold text-foreground break-words">
                             {ruleTitle}
                           </span>
-                          <Badge
-                            variant="outline"
-                            className="h-auto px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-                          >
+                          <span className="ui-tag">
                             {t.severity[signal.severity] ?? signal.severity}
-                          </Badge>
+                          </span>
                           {isExtra && (
-                            <Badge
-                              variant="secondary"
-                              className="h-auto text-[10px] px-1.5 py-0.5"
-                            >
+                            <span className="ui-tag">
                               {t.reasons.extraBadge}
-                            </Badge>
+                            </span>
                           )}
                         </div>
-                        <span className="shrink-0 font-mono font-semibold text-foreground">
+                        <span className="shrink-0 font-mono font-semibold tabular-nums text-foreground">
                           {signal.points > 0
                             ? `+${signal.points}`
                             : signal.points}{" "}
@@ -166,16 +157,16 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                       </p>
 
                       {signal.evidence && (
-                        <div className="grid grid-cols-1 gap-1.5 rounded bg-muted/60 px-2.5 py-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-1.5 rounded-[4px] bg-muted/60 px-2.5 py-2 font-mono text-[11px] tabular-nums text-muted-foreground sm:grid-cols-2">
                           <div className="min-w-0 break-words">
-                            <span className="text-foreground/70">
+                            <span className="text-[var(--text-secondary)]">
                               {t.reasons.evidenceField}
                             </span>
                             {evidenceFieldLabel}
                           </div>
                           {signal.evidence.since && (
                             <div className="min-w-0">
-                              <span className="text-foreground/70">
+                              <span className="text-[var(--text-secondary)]">
                                 {t.reasons.evidenceSince}
                               </span>
                               {formatDate(signal.evidence.since)}
@@ -183,7 +174,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                           )}
                           {signal.evidence.expected !== null && (
                             <div className="min-w-0 break-all">
-                              <span className="text-foreground/70">
+                              <span className="text-[var(--text-secondary)]">
                                 {t.reasons.evidenceExpected}
                               </span>
                               {localizeBackendText(
@@ -194,7 +185,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                           )}
                           {signal.evidence.actual !== null && (
                             <div className="min-w-0 break-all">
-                              <span className="text-foreground/70">
+                              <span className="text-[var(--text-secondary)]">
                                 {t.reasons.evidenceActual}
                               </span>
                               {localizeBackendText(

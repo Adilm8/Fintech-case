@@ -2,27 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  ClipboardCheck,
-  Inbox,
-  Loader2,
-  Lock,
-  MessageSquare,
-  RefreshCw,
-  ShieldCheck,
-  XCircle,
-} from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
 import { ComparisonTable } from "@/components/ComparisonTable";
 import { ReasonsList } from "@/components/ReasonsList";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { VerdictBanner } from "@/components/VerdictBanner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -205,15 +190,15 @@ function PendingApprovalCard({
 
   return (
     <Card className="min-w-0">
-      <CardHeader className="border-b border-border pb-4">
+      <CardHeader className="border-b border-border pb-3.5">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1 space-y-1">
-            <CardTitle className="text-lg font-semibold break-words">
+            <CardTitle className="text-base font-semibold break-words">
               {summary.recipientName}
             </CardTitle>
             <CardDescription className="space-y-1">
               {(summary.recipientBin || summary.recipientIik) && (
-                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs">
+                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs tabular-nums">
                   {summary.recipientBin && (
                     <span>
                       {interpolate(t.common.binPrefix, {
@@ -230,21 +215,23 @@ function PendingApprovalCard({
                 </div>
               )}
               {summary.purpose && (
-                <div className="text-sm text-muted-foreground break-words">
+                <div className="text-sm text-[var(--text-secondary)] break-words">
                   {summary.purpose}
                 </div>
               )}
               {approval.check.history?.compared_with && (
-                <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
-                  {interpolate(t.check.comparedWith, {
-                    supplier: approval.check.history.compared_with,
-                  })}
+                <div className="pt-0.5">
+                  <span className="ui-tag max-w-full whitespace-normal break-words">
+                    {interpolate(t.check.comparedWith, {
+                      supplier: approval.check.history.compared_with,
+                    })}
+                  </span>
                 </div>
               )}
             </CardDescription>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right sm:space-y-1">
-            <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end sm:space-y-1 sm:text-right">
+            <div className="text-[22px] leading-7 font-semibold tabular-nums whitespace-nowrap text-foreground">
               {summary.amountDisplay}
             </div>
             <VerdictBadge
@@ -257,7 +244,7 @@ function PendingApprovalCard({
         </div>
       </CardHeader>
 
-      <CardContent className="pt-5 space-y-5">
+      <CardContent className="space-y-4">
         <VerdictBanner
           verdict={approval.check.verdict}
           headline={pickHeadline(approval.check, lang)}
@@ -281,11 +268,8 @@ function PendingApprovalCard({
           <AnalystDetailsCard details={approval.check.analyst_details} />
         )}
 
-        <div className="rounded-xl border border-border bg-background/80 p-4 space-y-1.5">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <MessageSquare className="size-3.5 shrink-0" />
-            <span>{t.director.accountantNoteTitle}</span>
-          </div>
+        <div className="ui-subpanel space-y-1">
+          <div className="ui-label-meta">{t.director.accountantNoteTitle}</div>
           <p className="text-sm text-foreground break-words">
             {approval.accountant_note?.trim()
               ? approval.accountant_note
@@ -295,15 +279,17 @@ function PendingApprovalCard({
 
         <Separator />
 
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {cardError && (
-            <Alert variant="destructive" className="bg-red-50/90 border-red-300">
-              <AlertCircle className="size-4" />
-              <AlertTitle>{t.director.saveErrorTitle}</AlertTitle>
-              <AlertDescription className="break-words">
-                {cardError}
-              </AlertDescription>
-            </Alert>
+            <div
+              role="alert"
+              className="ui-notice ui-notice-danger space-y-0.5"
+            >
+              <div className="text-[13px] font-semibold text-[var(--status-danger-text)]">
+                {t.director.saveErrorTitle}
+              </div>
+              <p className="text-xs text-foreground break-words">{cardError}</p>
+            </div>
           )}
 
           <div className="space-y-1.5">
@@ -311,14 +297,18 @@ function PendingApprovalCard({
               <Label htmlFor={`director-comment-${approval.id}`}>
                 {t.director.directorCommentLabel}
                 {commentRequiredForApprove && (
-                  <span className="ml-1 text-red-600 font-semibold">*</span>
+                  <span className="ml-1 font-semibold text-[var(--status-danger-text)]">
+                    *
+                  </span>
                 )}
               </Label>
               {commentRequiredForApprove && (
                 <span
                   className={cn(
                     "text-xs font-medium tabular-nums",
-                    commentTooShort ? "text-red-700" : "text-[#006B49]"
+                    commentTooShort
+                      ? "text-[var(--status-danger-text)]"
+                      : "text-[var(--status-ok-text)]"
                   )}
                 >
                   {interpolate(
@@ -339,11 +329,7 @@ function PendingApprovalCard({
               rows={3}
               aria-required={commentRequiredForApprove}
               aria-invalid={Boolean(commentFieldError)}
-              className={cn(
-                "w-full min-h-24",
-                commentFieldError &&
-                  "border-rose-500 bg-rose-50/60 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-              )}
+              className="min-h-24 w-full"
               placeholder={
                 commentRequiredForApprove
                   ? interpolate(t.director.commentPlaceholderRequired, {
@@ -359,7 +345,7 @@ function PendingApprovalCard({
               }}
             />
             {commentFieldError && (
-              <p className="text-xs font-medium text-rose-800 break-words">
+              <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                 {commentFieldError}
               </p>
             )}
@@ -371,7 +357,7 @@ function PendingApprovalCard({
           </div>
 
           {allowTrust && (
-            <div className="flex min-h-11 items-start gap-3 rounded-xl border border-border bg-background/80 px-3.5 py-2.5">
+            <div className="ui-subpanel flex min-h-10 items-start gap-2.5">
               <Checkbox
                 id={`trust-account-${approval.id}`}
                 checked={trustAccount}
@@ -379,7 +365,7 @@ function PendingApprovalCard({
                   setTrustAccount(Boolean(checked));
                   if (cardError) setCardError(null);
                 }}
-                className="mt-1"
+                className="mt-0.5"
               />
               <div className="min-w-0 flex-1 space-y-0.5">
                 <Label
@@ -397,45 +383,37 @@ function PendingApprovalCard({
             </div>
           )}
 
-          <div className="flex flex-col gap-2.5 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+          <div className="flex flex-col gap-2 pt-0.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2.5">
             <Button
               type="button"
-              size="lg"
               disabled={isApproveDisabled}
               onClick={() => handleDecision("approved")}
-              className="min-h-11 w-full gap-2 sm:w-auto"
+              className="min-h-10 w-full sm:min-h-9 sm:w-auto"
             >
               {submittingDecision === "approved" ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   <span>{t.director.saving}</span>
                 </>
               ) : (
-                <>
-                  <CheckCircle2 className="size-4" />
-                  <span>{t.director.approve}</span>
-                </>
+                t.director.approve
               )}
             </Button>
 
             <Button
               type="button"
               variant="destructive"
-              size="lg"
               disabled={submittingDecision !== null}
               onClick={() => setRejectDialogOpen(true)}
-              className="min-h-11 w-full gap-2 sm:w-auto"
+              className="min-h-10 w-full sm:min-h-9 sm:w-auto"
             >
               {submittingDecision === "rejected" ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   <span>{t.director.rejecting}</span>
                 </>
               ) : (
-                <>
-                  <XCircle className="size-4" />
-                  <span>{t.director.reject}</span>
-                </>
+                t.director.reject
               )}
             </Button>
           </div>
@@ -464,7 +442,7 @@ function PendingApprovalCard({
                   variant="outline"
                   onClick={() => setRejectDialogOpen(false)}
                   disabled={submittingDecision !== null}
-                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
+                  className="min-h-10 w-full sm:min-h-9 sm:w-auto"
                 >
                   {t.common.cancel}
                 </Button>
@@ -473,18 +451,18 @@ function PendingApprovalCard({
                   variant="destructive"
                   onClick={() => void handleDecision("rejected")}
                   disabled={submittingDecision !== null}
-                  className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
+                  className="min-h-10 w-full sm:min-h-9 sm:w-auto"
                 >
                   {submittingDecision === "rejected" ? (
                     <>
-                      <Loader2 className="size-4 animate-spin" />
+                      <Loader2
+                        className="size-4 animate-spin"
+                        aria-hidden="true"
+                      />
                       <span>{t.director.rejecting}</span>
                     </>
                   ) : (
-                    <>
-                      <XCircle className="size-4" />
-                      <span>{t.director.rejectConfirmAction}</span>
-                    </>
+                    t.director.rejectConfirmAction
                   )}
                 </Button>
               </DialogFooter>
@@ -492,7 +470,7 @@ function PendingApprovalCard({
           </Dialog>
 
           {approval.check.ruleset_version && (
-            <div className="pt-1 text-right font-mono text-[11px] text-muted-foreground/75">
+            <div className="pt-0.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
               {interpolate(t.check.rulesetVersion, {
                 version: approval.check.ruleset_version,
               })}
@@ -558,45 +536,38 @@ export function DirectorScreen({
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.director.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.director.subtitle}
-          </p>
+          <h1 className="ui-page-title">{t.director.title}</h1>
+          <p className="ui-page-subtitle">{t.director.subtitle}</p>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <button
             type="button"
             role="switch"
             aria-checked={analystMode}
             onClick={() => onAnalystModeChange(!analystMode)}
             className={cn(
-              "inline-flex min-h-11 w-full items-center justify-between gap-2.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:w-auto sm:justify-start",
+              "inline-flex h-10 w-full cursor-pointer items-center justify-between gap-2.5 rounded-[6px] border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:w-auto sm:justify-start",
               analystMode
-                ? "border-slate-400 bg-slate-100 text-slate-900"
-                : "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                ? "border-foreground bg-muted text-foreground"
+                : "border-input bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="size-3.5 shrink-0" />
-              <span>{t.director.analystViewToggle}</span>
-            </span>
+            <span>{t.director.analystViewToggle}</span>
             <span
               aria-hidden="true"
               className={cn(
-                "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-                analystMode ? "bg-slate-700" : "bg-muted-foreground/30"
+                "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+                analystMode ? "bg-foreground" : "bg-muted-foreground/30"
               )}
             >
               <span
                 className={cn(
-                  "inline-block size-3.5 rounded-full bg-white shadow-xs transition-transform",
-                  analystMode ? "translate-x-[18px]" : "translate-x-1"
+                  "inline-block size-3 rounded-full bg-card transition-transform",
+                  analystMode ? "translate-x-3.5" : "translate-x-0.5"
                 )}
               />
             </span>
@@ -605,173 +576,112 @@ export function DirectorScreen({
           <Button
             type="button"
             variant="outline"
-            size="sm"
             onClick={() => void onRefresh()}
             disabled={isLoading}
-            className="min-h-11 w-full gap-1.5 rounded-xl sm:min-h-9 sm:w-auto"
+            className="min-h-10 w-full sm:min-h-9 sm:w-auto"
           >
-            <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
+            {isLoading && (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            )}
             <span>{t.common.refresh}</span>
           </Button>
         </div>
       </div>
 
-      {/* Summary tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/* Summary strip */}
+      <div className="ui-kpi-strip">
         {isLoading && approvals.length === 0 ? (
           Array.from({ length: 4 }).map((_, index) => (
-            <Card key={`approval-tile-skeleton-${index}`} className="py-4">
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Skeleton className="h-3.5 w-24" />
-                  <Skeleton className="size-8 rounded-xl" />
-                </div>
-                <Skeleton className="h-8 w-14" />
-              </CardContent>
-            </Card>
+            <div key={`approval-tile-skeleton-${index}`} className="ui-kpi-cell">
+              <Skeleton className="h-3.5 w-24 rounded-[4px]" />
+              <Skeleton className="h-6 w-14 rounded-[4px]" />
+            </div>
           ))
         ) : (
           <>
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.director.tiles.pendingLabel}
-                  </span>
-                  <div
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                      pendingApprovals.length > 0
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-accent text-[var(--brand-text)]"
-                    )}
-                  >
-                    <ClipboardCheck className="size-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                  {pendingApprovals.length}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">
+                {t.director.tiles.pendingLabel}
+              </span>
+              <div className="ui-kpi-value">{pendingApprovals.length}</div>
+            </div>
 
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.director.tiles.highRiskLabel}
-                  </span>
-                  <div
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                      highRiskPendingCount > 0
-                        ? "bg-red-50 text-red-600"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    <AlertTriangle className="size-4" />
-                  </div>
-                </div>
-                <div
-                  className={cn(
-                    "text-2xl font-bold tabular-nums sm:text-3xl",
-                    highRiskPendingCount > 0 ? "text-red-700" : "text-foreground"
-                  )}
-                >
-                  {highRiskPendingCount}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">
+                {t.director.tiles.highRiskLabel}
+              </span>
+              <div
+                className={cn(
+                  "ui-kpi-value",
+                  highRiskPendingCount > 0 && "text-[var(--status-danger-text)]"
+                )}
+              >
+                {highRiskPendingCount}
+              </div>
+            </div>
 
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.director.tiles.resolvedLabel}
-                  </span>
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
-                    <CheckCircle2 className="size-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                  {resolvedApprovals.length}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">
+                {t.director.tiles.resolvedLabel}
+              </span>
+              <div className="ui-kpi-value">{resolvedApprovals.length}</div>
+            </div>
 
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.director.tiles.trustedLabel}
-                  </span>
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                    <ShieldCheck className="size-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                  {trustedCount}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">
+                {t.director.tiles.trustedLabel}
+              </span>
+              <div className="ui-kpi-value">{trustedCount}</div>
+            </div>
           </>
         )}
       </div>
 
       {isLoading && approvals.length === 0 ? (
         <Card className="min-w-0">
-          <CardHeader className="border-b border-border pb-4">
+          <CardHeader className="border-b border-border pb-3.5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-2">
-                <Skeleton className="h-6 w-56" />
-                <Skeleton className="h-4 w-72" />
-                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-5 w-56 rounded-[4px]" />
+                <Skeleton className="h-4 w-72 rounded-[4px]" />
+                <Skeleton className="h-4 w-64 rounded-[4px]" />
               </div>
               <div className="flex flex-col items-start gap-2 sm:items-end">
-                <Skeleton className="h-8 w-36" />
-                <Skeleton className="h-6 w-28 rounded-full" />
+                <Skeleton className="h-7 w-36 rounded-[4px]" />
+                <Skeleton className="h-4 w-28 rounded-[4px]" />
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-5 space-y-5">
-            <Skeleton className="h-16 w-full rounded-xl" />
-            <div className="space-y-2.5">
-              <Skeleton className="h-10 w-full rounded-lg" />
-              <Skeleton className="h-10 w-full rounded-lg" />
-              <Skeleton className="h-10 w-full rounded-lg" />
+          <CardContent className="space-y-4">
+            <Skeleton className="h-14 w-full rounded-[6px]" />
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full rounded-[6px]" />
+              <Skeleton className="h-10 w-full rounded-[6px]" />
+              <Skeleton className="h-10 w-full rounded-[6px]" />
             </div>
-            <Skeleton className="h-24 w-full rounded-xl" />
-            <div className="flex gap-3">
-              <Skeleton className="h-11 w-32 rounded-lg" />
-              <Skeleton className="h-11 w-32 rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-[6px]" />
+            <div className="flex gap-2.5">
+              <Skeleton className="h-9 w-32 rounded-[6px]" />
+              <Skeleton className="h-9 w-32 rounded-[6px]" />
             </div>
           </CardContent>
         </Card>
       ) : pendingApprovals.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-14 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <Inbox className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <div className="text-base font-semibold text-foreground">
-                {t.director.emptyTitle}
-              </div>
-              <p className="max-w-md text-sm text-muted-foreground">
-                {t.director.emptyDescription}
-              </p>
-            </div>
+        <div className="ui-panel">
+          <div className="ui-empty">
+            <div className="ui-empty-title">{t.director.emptyTitle}</div>
+            <p className="ui-empty-desc">{t.director.emptyDescription}</p>
             <Link
               href="/"
-              className="mt-1 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+              className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-[6px] border border-input bg-card px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
             >
-              <ArrowLeft className="size-4" />
+              <ArrowLeft className="size-3.5" />
               <span>{t.director.backToPayments}</span>
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {pendingApprovals.map((approval) => (
             <PendingApprovalCard
               key={approval.id}
@@ -787,10 +697,8 @@ export function DirectorScreen({
 
       {resolvedApprovals.length > 0 && (
         <Card className="min-w-0">
-          <CardHeader className="border-b border-border pb-3.5">
-            <CardTitle className="text-base font-semibold">
-              {t.director.resolvedTitle}
-            </CardTitle>
+          <CardHeader className="border-b border-border pb-3">
+            <CardTitle>{t.director.resolvedTitle}</CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-border p-0">
             {resolvedApprovals.map((approval) => {
@@ -802,14 +710,14 @@ export function DirectorScreen({
               const isApproved = approval.status === "approved";
 
               return (
-                <div key={approval.id} className="space-y-3 px-4 py-3.5 sm:px-5">
-                  <div className="flex flex-col gap-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
-                    <div className="min-w-0 space-y-1">
+                <div key={approval.id} className="space-y-3 px-4 py-3">
+                  <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                    <div className="min-w-0 space-y-0.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium text-foreground break-words">
                           {summary.recipientName}
                         </span>
-                        <span className="font-semibold tabular-nums whitespace-nowrap text-foreground">
+                        <span className="font-medium tabular-nums whitespace-nowrap text-foreground">
                           {summary.amountDisplay}
                         </span>
                       </div>
@@ -822,31 +730,35 @@ export function DirectorScreen({
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       {approval.trust_account && (
-                        <Badge
-                          variant="outline"
-                          className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
-                        >
-                          <ShieldCheck className="size-3" />
-                          <span>{t.director.trustedBadge}</span>
-                        </Badge>
+                        <span className="ui-tag">
+                          {t.director.trustedBadge}
+                        </span>
                       )}
-                      <Badge
-                        variant="outline"
+                      <span
                         className={cn(
-                          "h-auto py-0.5",
+                          "ui-status",
                           isApproved
-                            ? "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]"
-                            : "border-red-200 bg-red-50 text-red-800"
+                            ? "text-[var(--status-ok-text)]"
+                            : "text-[var(--status-danger-text)]"
                         )}
                       >
-                        {isApproved
-                          ? t.director.statusApprovedShort
-                          : t.director.statusRejectedShort}
-                      </Badge>
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "ui-status-dot",
+                            isApproved ? "ui-dot-ok" : "ui-dot-danger"
+                          )}
+                        />
+                        <span>
+                          {isApproved
+                            ? t.director.statusApprovedShort
+                            : t.director.statusRejectedShort}
+                        </span>
+                      </span>
                       {approval.decided_at && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs tabular-nums text-muted-foreground">
                           {formatDate(approval.decided_at)}
                         </span>
                       )}

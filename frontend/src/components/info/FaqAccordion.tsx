@@ -1,7 +1,6 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import type { InfoFaqItem } from "@/i18n/info/types";
 import { cn } from "cn";
 
@@ -23,7 +22,7 @@ export function FaqAccordion({
   return (
     <div
       className={cn(
-        "divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(29,29,30,0.04)]",
+        "ui-panel divide-y divide-border overflow-hidden",
         className
       )}
     >
@@ -42,31 +41,25 @@ export function FaqAccordion({
                 aria-controls={panelId}
                 onClick={() => onToggle(item.id)}
                 className={cn(
-                  "flex min-h-14 w-full cursor-pointer items-center justify-between gap-4 px-4 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5",
-                  isOpen ? "bg-accent/40" : "hover:bg-muted/60"
+                  "flex min-h-12 w-full cursor-pointer items-center justify-between gap-4 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  isOpen ? "bg-muted/35" : "hover:bg-muted/40"
                 )}
               >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <span className="block text-sm font-semibold leading-snug text-foreground sm:text-base">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <span className="block text-sm font-semibold leading-5 text-foreground">
                     {item.question}
                   </span>
-                  <Badge
-                    variant="secondary"
-                    className="h-auto rounded-full px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                  >
+                  <span className="block text-xs text-muted-foreground">
                     {categoryLabels[item.category]}
-                  </Badge>
+                  </span>
                 </div>
-                <span
+                <ChevronDown
                   aria-hidden="true"
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-transform duration-200 motion-reduce:transition-none",
-                    isOpen &&
-                      "rotate-180 border-primary/35 bg-accent text-[var(--brand-text)]"
+                    "size-4 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none",
+                    isOpen && "rotate-180 text-foreground"
                   )}
-                >
-                  <ChevronDown className="size-4" />
-                </span>
+                />
               </button>
             </h3>
 
@@ -75,9 +68,9 @@ export function FaqAccordion({
               role="region"
               aria-labelledby={buttonId}
               hidden={!isOpen}
-              className="border-t border-border/60 bg-background/40 px-4 py-4 sm:px-5"
+              className="border-t border-border bg-background/60 px-4 py-3.5"
             >
-              <p className="max-w-3xl text-sm leading-relaxed text-foreground/90">
+              <p className="max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
                 {item.answer}
               </p>
             </div>

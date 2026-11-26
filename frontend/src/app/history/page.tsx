@@ -8,25 +8,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  CheckCircle2,
-  Download,
-  History,
-  Inbox,
-  OctagonX,
-  Plus,
-  RefreshCw,
-  Search,
-  SearchX,
-  ShieldAlert,
-  X,
-} from "lucide-react";
+import { Loader2, Search, X } from "lucide-react";
 import { useAppData } from "@/components/AppShell";
 import { VerdictBadge } from "@/components/VerdictBadge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -284,192 +268,119 @@ export default function CheckHistoryPage() {
     !mounted || (isLoadingAudit && mergedRows.length === 0);
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-              <History className="size-5" />
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              {t.history.title}
-            </h1>
-          </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {t.history.subtitle}
-          </p>
+          <h1 className="ui-page-title">{t.history.title}</h1>
+          <p className="ui-page-subtitle">{t.history.subtitle}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
-            size="sm"
             onClick={() => setRefreshNonce((n) => n + 1)}
             disabled={isLoadingAudit}
-            className="min-h-11 flex-1 gap-1.5 rounded-xl sm:min-h-9 sm:flex-initial"
+            className="min-h-10 flex-1 sm:min-h-9 sm:flex-initial"
           >
-            <RefreshCw
-              className={cn("size-3.5", isLoadingAudit && "animate-spin")}
-            />
+            {isLoadingAudit && (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            )}
             <span>{t.common.refresh}</span>
           </Button>
 
           <Button
             type="button"
-            size="sm"
             onClick={handleExportCsv}
             disabled={filteredRows.length === 0}
-            className="min-h-11 flex-1 gap-1.5 rounded-xl sm:min-h-9 sm:flex-initial"
+            className="min-h-10 flex-1 sm:min-h-9 sm:flex-initial"
           >
-            <Download className="size-3.5" />
-            <span>{t.history.exportCsv}</span>
+            {t.history.exportCsv}
           </Button>
         </div>
       </div>
 
       {auditError && (
-        <Alert className="rounded-xl border-amber-300 bg-amber-50/90 text-amber-950">
-          <AlertTriangle className="size-4 text-amber-700" />
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-amber-950">
-            <span>{t.history.loadErrorNotice}</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setRefreshNonce((n) => n + 1)}
-              className="h-8 gap-1.5 border-amber-400 bg-card text-xs text-amber-950 hover:bg-amber-100"
-            >
-              <RefreshCw className="size-3.5" />
-              <span>{t.common.retry}</span>
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <div
+          role="alert"
+          className="ui-notice ui-notice-warn flex flex-wrap items-center justify-between gap-2 text-xs text-foreground"
+        >
+          <span>{t.history.loadErrorNotice}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={() => setRefreshNonce((n) => n + 1)}
+          >
+            {t.common.retry}
+          </Button>
+        </div>
       )}
 
-      {/* Summary tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/* Summary strip */}
+      <div className="ui-kpi-strip">
         {showInitialSkeleton ? (
           Array.from({ length: 4 }).map((_, idx) => (
-            <Card key={`hist-tile-skel-${idx}`} className="py-4">
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Skeleton className="h-3.5 w-24" />
-                  <Skeleton className="size-8 rounded-xl" />
-                </div>
-                <Skeleton className="h-8 w-16" />
-              </CardContent>
-            </Card>
+            <div key={`hist-tile-skel-${idx}`} className="ui-kpi-cell">
+              <Skeleton className="h-3.5 w-24 rounded-[4px]" />
+              <Skeleton className="h-6 w-16 rounded-[4px]" />
+            </div>
           ))
         ) : (
           <>
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.history.tiles.total}
-                  </span>
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
-                    <History className="size-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                  {mergedRows.length}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">{t.history.tiles.total}</span>
+              <div className="ui-kpi-value">{mergedRows.length}</div>
+            </div>
 
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.history.tiles.highRisk}
-                  </span>
-                  <div
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                      highRiskCount > 0
-                        ? "bg-red-50 text-red-600"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    <OctagonX className="size-4" />
-                  </div>
-                </div>
-                <div
-                  className={cn(
-                    "text-2xl font-bold tabular-nums sm:text-3xl",
-                    highRiskCount > 0 ? "text-red-700" : "text-foreground"
-                  )}
-                >
-                  {highRiskCount}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">{t.history.tiles.highRisk}</span>
+              <div
+                className={cn(
+                  "ui-kpi-value",
+                  highRiskCount > 0 && "text-[var(--status-danger-text)]"
+                )}
+              >
+                {highRiskCount}
+              </div>
+            </div>
 
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.history.tiles.review}
-                  </span>
-                  <div
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                      reviewCount > 0
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    <ShieldAlert className="size-4" />
-                  </div>
-                </div>
-                <div
-                  className={cn(
-                    "text-2xl font-bold tabular-nums sm:text-3xl",
-                    reviewCount > 0 ? "text-amber-700" : "text-foreground"
-                  )}
-                >
-                  {reviewCount}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">{t.history.tiles.review}</span>
+              <div
+                className={cn(
+                  "ui-kpi-value",
+                  reviewCount > 0 && "text-[var(--status-warn-text)]"
+                )}
+              >
+                {reviewCount}
+              </div>
+            </div>
 
-            <Card className="py-4">
-              <CardContent className="flex flex-col justify-between gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.history.tiles.clean}
-                  </span>
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                    <CheckCircle2 className="size-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                  {cleanCount}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">{t.history.tiles.clean}</span>
+              <div className="ui-kpi-value">{cleanCount}</div>
+            </div>
           </>
         )}
       </div>
 
-      {/* Main History Card */}
+      {/* Main History Panel */}
       <Card className="min-w-0 py-0">
-        <div className="border-b border-border p-4 space-y-3 sm:px-5">
+        <div className="space-y-3 border-b border-border p-4">
           {showInitialSkeleton ? (
             <div className="space-y-3">
-              <Skeleton className="h-10 w-full max-w-md rounded-xl" />
-              <div className="flex flex-wrap gap-2">
-                <Skeleton className="h-8 w-20 rounded-full" />
-                <Skeleton className="h-8 w-28 rounded-full" />
-                <Skeleton className="h-8 w-32 rounded-full" />
+              <Skeleton className="h-9 w-full max-w-md rounded-[6px]" />
+              <div className="flex flex-wrap gap-1.5">
+                <Skeleton className="h-8 w-20 rounded-[6px]" />
+                <Skeleton className="h-8 w-28 rounded-[6px]" />
+                <Skeleton className="h-8 w-32 rounded-[6px]" />
               </div>
             </div>
           ) : (
             <>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="relative flex-1 sm:max-w-md">
                   <Search
                     aria-hidden="true"
@@ -493,7 +404,7 @@ export default function CheckHistoryPage() {
                     placeholder={t.history.searchPlaceholder}
                     aria-label={t.history.searchAriaLabel}
                     title={t.queue.searchTooltip}
-                    className="h-11 rounded-xl bg-background/70 pl-9 pr-10 sm:h-10 [&::-webkit-search-cancel-button]:hidden"
+                    className="h-10 rounded-[6px] bg-card pl-9 pr-10 sm:h-9 [&::-webkit-search-cancel-button]:hidden"
                   />
                   {searchQuery ? (
                     <button
@@ -503,7 +414,7 @@ export default function CheckHistoryPage() {
                         searchInputRef.current?.focus();
                       }}
                       aria-label={t.queue.clearSearch}
-                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <X className="size-4" />
                     </button>
@@ -513,7 +424,7 @@ export default function CheckHistoryPage() {
                         render={
                           <kbd
                             aria-hidden="true"
-                            className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 cursor-default items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
+                            className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 cursor-default items-center justify-center rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
                           />
                         }
                       >
@@ -548,22 +459,10 @@ export default function CheckHistoryPage() {
                     type="button"
                     aria-pressed={verdictFilter === "all"}
                     onClick={() => setVerdictFilter("all")}
-                    className={cn(
-                      "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:min-h-8",
-                      verdictFilter === "all"
-                        ? "border-primary bg-primary text-primary-foreground shadow-xs"
-                        : "border-border bg-card text-foreground hover:bg-muted/70"
-                    )}
+                    className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>{t.queue.filterAll}</span>
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
-                        verdictFilter === "all"
-                          ? "bg-white/20 text-white"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
+                    <span className="tabular-nums text-muted-foreground">
                       {mergedRows.length}
                     </span>
                   </button>
@@ -581,32 +480,14 @@ export default function CheckHistoryPage() {
                             prev === verdict ? "all" : verdict
                           )
                         }
-                        className={cn(
-                          "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:min-h-8",
-                          isSelected
-                            ? cn(
-                                style.badgeClass,
-                                "ring-1 ring-current/25 font-semibold shadow-xs"
-                              )
-                            : "border-border bg-card text-foreground hover:bg-muted/70"
-                        )}
+                        className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span
                           aria-hidden="true"
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            style.dotClass
-                          )}
+                          className={cn("ui-status-dot", style.dotClass)}
                         />
                         <span>{t.verdicts[verdict]}</span>
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
-                            isSelected
-                              ? "bg-white/70 text-current"
-                              : "bg-muted text-muted-foreground"
-                          )}
-                        >
+                        <span className="tabular-nums text-muted-foreground">
                           {verdictCounts[verdict]}
                         </span>
                       </button>
@@ -621,32 +502,32 @@ export default function CheckHistoryPage() {
         <CardContent className="p-0">
           {showInitialSkeleton ? (
             <>
-              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+              <div className="divide-y divide-border md:hidden">
                 {Array.from({ length: 4 }).map((_, idx) => (
                   <div
                     key={`hist-card-skel-${idx}`}
-                    className="space-y-3 rounded-xl border border-border bg-card p-3.5"
+                    className="space-y-2 p-4"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <Skeleton className="h-4 w-36" />
-                      <Skeleton className="h-6 w-24 rounded-full" />
+                      <Skeleton className="h-4 w-36 rounded-[4px]" />
+                      <Skeleton className="h-4 w-24 rounded-[4px]" />
                     </div>
-                    <Skeleton className="h-4 w-52" />
-                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-4 w-52 rounded-[4px]" />
+                    <Skeleton className="h-3.5 w-full rounded-[4px]" />
                   </div>
                 ))}
               </div>
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="pl-4 lg:pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-4">
                         {t.history.colTime}
                       </TableHead>
                       <TableHead>{t.history.colCheck}</TableHead>
                       <TableHead>{t.history.colVerdict}</TableHead>
                       <TableHead>{t.history.colSignals}</TableHead>
-                      <TableHead className="pr-4 lg:pr-5">
+                      <TableHead className="pr-4">
                         {t.history.colAction}
                       </TableHead>
                     </TableRow>
@@ -654,23 +535,23 @@ export default function CheckHistoryPage() {
                   <TableBody>
                     {Array.from({ length: 5 }).map((_, idx) => (
                       <TableRow key={`hist-row-skel-${idx}`}>
-                        <TableCell className="pl-4 lg:pl-5 py-4">
-                          <Skeleton className="h-4 w-28" />
+                        <TableCell className="pl-4 py-3">
+                          <Skeleton className="h-4 w-28 rounded-[4px]" />
                         </TableCell>
-                        <TableCell className="py-4">
+                        <TableCell className="py-3">
                           <div className="space-y-1.5">
-                            <Skeleton className="h-4 w-44" />
-                            <Skeleton className="h-3 w-32" />
+                            <Skeleton className="h-4 w-44 rounded-[4px]" />
+                            <Skeleton className="h-3 w-32 rounded-[4px]" />
                           </div>
                         </TableCell>
-                        <TableCell className="py-4">
-                          <Skeleton className="h-6 w-28 rounded-full" />
+                        <TableCell className="py-3">
+                          <Skeleton className="h-4 w-28 rounded-[4px]" />
                         </TableCell>
-                        <TableCell className="py-4">
-                          <Skeleton className="h-4 w-48" />
+                        <TableCell className="py-3">
+                          <Skeleton className="h-4 w-48 rounded-[4px]" />
                         </TableCell>
-                        <TableCell className="pr-4 lg:pr-5 py-4">
-                          <Skeleton className="h-5 w-24" />
+                        <TableCell className="pr-4 py-3">
+                          <Skeleton className="h-4 w-24 rounded-[4px]" />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -679,71 +560,54 @@ export default function CheckHistoryPage() {
               </div>
             </>
           ) : mergedRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                <Inbox className="size-6" />
-              </div>
-              <div className="space-y-1">
-                <div className="text-base font-semibold text-foreground">
-                  {t.history.emptyTitle}
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {t.history.emptyDescription}
-                </p>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+            <div className="ui-empty">
+              <div className="ui-empty-title">{t.history.emptyTitle}</div>
+              <p className="ui-empty-desc">{t.history.emptyDescription}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Link
                   href="/?new=1"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-xs transition-colors hover:bg-[var(--brand-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+                  className="inline-flex min-h-10 items-center rounded-[6px] bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-[var(--brand-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
                 >
-                  <Plus className="size-4" />
-                  <span>{t.history.emptyActionNew}</span>
+                  {t.history.emptyActionNew}
                 </Link>
                 <Link
                   href="/"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+                  className="inline-flex min-h-10 items-center rounded-[6px] border border-input bg-card px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
                 >
-                  <span>{t.history.emptyActionQueue}</span>
+                  {t.history.emptyActionQueue}
                 </Link>
               </div>
             </div>
           ) : filteredRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                <SearchX className="size-6" />
+            <div className="ui-empty">
+              <div className="ui-empty-title">
+                {t.history.emptyFilteredTitle}
               </div>
-              <div className="space-y-1">
-                <div className="text-base font-semibold text-foreground">
-                  {t.history.emptyFilteredTitle}
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {t.history.emptyFilteredDescription}
-                </p>
-              </div>
+              <p className="ui-empty-desc">
+                {t.history.emptyFilteredDescription}
+              </p>
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={resetFilters}
-                className="mt-1 min-h-11 rounded-xl sm:min-h-9"
+                className="mt-2 min-h-10 sm:min-h-8"
               >
                 {t.queue.resetFilters}
               </Button>
             </div>
           ) : (
             <>
-              {/* Mobile Cards (< md) */}
-              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+              {/* Mobile flat list (< md) */}
+              <div className="divide-y divide-border md:hidden">
                 {filteredRows.map((row) => (
-                  <div
-                    key={row.check_id}
-                    className="space-y-2.5 rounded-xl border border-border bg-card p-3.5 shadow-xs"
-                  >
+                  <div key={row.check_id} className="space-y-2 px-4 py-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 space-y-0.5">
                         <div className="text-xs text-muted-foreground tabular-nums">
                           {formatDateTime(row.timestamp, formatDate)}
                         </div>
-                        <div className="font-mono text-xs font-semibold text-foreground break-all">
+                        <div className="font-mono text-xs font-medium tabular-nums text-foreground break-all">
                           {row.check_id}
                         </div>
                       </div>
@@ -751,19 +615,19 @@ export default function CheckHistoryPage() {
                     </div>
 
                     {row.recipient_name ? (
-                      <div className="space-y-1">
+                      <div className="space-y-0.5">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="text-sm font-semibold text-foreground break-words">
+                          <span className="text-sm font-medium text-foreground break-words">
                             {row.recipient_name}
                           </span>
                           {row.amount_kzt !== null && (
-                            <span className="text-sm font-bold tabular-nums whitespace-nowrap text-foreground">
+                            <span className="text-sm font-semibold tabular-nums whitespace-nowrap text-foreground">
                               {formatMoney(row.amount_kzt)}
                             </span>
                           )}
                         </div>
                         {(row.recipient_bin || row.recipient_iik) && (
-                          <div className="flex flex-wrap items-baseline gap-x-1.5 font-mono text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-baseline gap-x-1.5 font-mono text-xs tabular-nums text-muted-foreground">
                             {row.recipient_bin && (
                               <span>
                                 {interpolate(t.common.binPrefix, {
@@ -786,7 +650,7 @@ export default function CheckHistoryPage() {
                       <div className="space-y-0.5 text-xs text-muted-foreground">
                         <div>{t.history.auditOnlyLabel}</div>
                         {row.request_sha256 && (
-                          <div className="font-mono text-[11px]">
+                          <div className="font-mono text-[11px] tabular-nums">
                             {interpolate(t.history.hashShort, {
                               hash: `${row.request_sha256.slice(0, 12)}…`,
                             })}
@@ -795,50 +659,41 @@ export default function CheckHistoryPage() {
                       </div>
                     )}
 
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1">
                       {row.signal_ids.length === 0 ? (
                         <span className="text-xs text-muted-foreground">
                           {t.history.noSignals}
                         </span>
                       ) : (
                         row.signal_ids.map((sigId) => (
-                          <Badge
+                          <span
                             key={sigId}
-                            variant="outline"
-                            className="h-auto max-w-full whitespace-normal px-2 py-0.5 text-[11px] font-medium"
+                            className="ui-tag max-w-full whitespace-normal"
                           >
                             {resolveSignalLabel(sigId)}
-                          </Badge>
+                          </span>
                         ))
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {row.actions.map((act) => (
-                          <Badge
-                            key={act}
-                            variant="secondary"
-                            className="h-auto px-2 py-0.5 text-[11px] font-medium"
-                          >
-                            {resolveActionLabel(act)}
-                          </Badge>
-                        ))}
-                        <Badge
-                          variant="outline"
-                          className="h-auto px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                        >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {row.actions.length > 0 && (
+                          <span className="font-medium text-foreground">
+                            {row.actions.map(resolveActionLabel).join(" · ")}
+                          </span>
+                        )}
+                        <span className="text-muted-foreground">
                           {resolveSourceLabel(row.source)}
-                        </Badge>
+                        </span>
                       </div>
 
                       {row.queue_item_id && (
                         <Link
                           href={getPaymentCheckHref(row.queue_item_id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand-text)] hover:underline"
+                          className="font-medium text-[var(--brand-text)] hover:underline"
                         >
-                          <span>{t.history.openPayment}</span>
-                          <ArrowUpRight className="size-3.5" />
+                          {t.history.openPayment}
                         </Link>
                       )}
                     </div>
@@ -850,8 +705,8 @@ export default function CheckHistoryPage() {
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="w-[160px] pl-4 lg:pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[160px] pl-4">
                         {t.history.colTime}
                       </TableHead>
                       <TableHead>{t.history.colCheck}</TableHead>
@@ -859,7 +714,7 @@ export default function CheckHistoryPage() {
                         {t.history.colVerdict}
                       </TableHead>
                       <TableHead>{t.history.colSignals}</TableHead>
-                      <TableHead className="w-[180px] pr-4 lg:pr-5">
+                      <TableHead className="w-[180px] pr-4">
                         {t.history.colAction}
                       </TableHead>
                     </TableRow>
@@ -867,14 +722,14 @@ export default function CheckHistoryPage() {
                   <TableBody>
                     {filteredRows.map((row) => (
                       <TableRow key={row.check_id} className="align-top">
-                        <TableCell className="pl-4 lg:pl-5 py-3.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                        <TableCell className="pl-4 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                           <div>{formatDateTime(row.timestamp, formatDate)}</div>
-                          <div className="mt-1 font-mono text-[11px] text-foreground/80">
+                          <div className="mt-0.5 font-mono text-[11px] text-[var(--text-secondary)]">
                             {row.check_id}
                           </div>
                         </TableCell>
 
-                        <TableCell className="py-3.5 whitespace-normal">
+                        <TableCell className="whitespace-normal">
                           {row.recipient_name ? (
                             <div className="space-y-0.5">
                               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -882,13 +737,13 @@ export default function CheckHistoryPage() {
                                   {row.recipient_name}
                                 </span>
                                 {row.amount_kzt !== null && (
-                                  <span className="text-xs font-semibold tabular-nums whitespace-nowrap text-foreground">
+                                  <span className="text-xs font-medium tabular-nums whitespace-nowrap text-foreground">
                                     {formatMoney(row.amount_kzt)}
                                   </span>
                                 )}
                               </div>
                               {(row.recipient_bin || row.recipient_iik) && (
-                                <div className="font-mono text-xs text-muted-foreground">
+                                <div className="font-mono text-xs tabular-nums text-muted-foreground">
                                   {row.recipient_bin && (
                                     <span>
                                       {interpolate(t.common.binPrefix, {
@@ -913,7 +768,7 @@ export default function CheckHistoryPage() {
                                 {t.history.auditOnlyLabel}
                               </div>
                               {row.request_sha256 && (
-                                <div className="font-mono text-[11px] text-muted-foreground">
+                                <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                   {interpolate(t.history.hashShort, {
                                     hash: `${row.request_sha256.slice(0, 14)}…`,
                                   })}
@@ -923,8 +778,8 @@ export default function CheckHistoryPage() {
                           )}
                         </TableCell>
 
-                        <TableCell className="py-3.5 whitespace-normal">
-                          <div className="flex flex-col items-start gap-1">
+                        <TableCell className="whitespace-normal">
+                          <div className="flex flex-col items-start gap-0.5">
                             <VerdictBadge verdict={row.verdict} />
                             {row.score !== null && (
                               <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
@@ -936,50 +791,44 @@ export default function CheckHistoryPage() {
                           </div>
                         </TableCell>
 
-                        <TableCell className="py-3.5 whitespace-normal">
+                        <TableCell className="whitespace-normal">
                           {row.signal_ids.length === 0 ? (
                             <span className="text-xs text-muted-foreground">
                               {t.history.noSignals}
                             </span>
                           ) : (
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-1">
                               {row.signal_ids.map((sigId) => (
-                                <Badge
+                                <span
                                   key={sigId}
-                                  variant="outline"
-                                  className="h-auto max-w-full whitespace-normal px-2 py-0.5 text-[11px] font-medium"
+                                  className="ui-tag max-w-full whitespace-normal"
                                 >
                                   {resolveSignalLabel(sigId)}
-                                </Badge>
+                                </span>
                               ))}
                             </div>
                           )}
                         </TableCell>
 
-                        <TableCell className="pr-4 lg:pr-5 py-3.5 whitespace-normal">
-                          <div className="flex flex-col items-start gap-1.5">
-                            <div className="flex flex-wrap gap-1">
-                              {row.actions.map((act) => (
-                                <Badge
-                                  key={act}
-                                  variant="secondary"
-                                  className="h-auto px-2 py-0.5 text-[11px] font-medium"
-                                >
-                                  {resolveActionLabel(act)}
-                                </Badge>
-                              ))}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-[11px] text-muted-foreground">
+                        <TableCell className="pr-4 whitespace-normal">
+                          <div className="flex flex-col items-start gap-1 text-xs">
+                            {row.actions.length > 0 && (
+                              <span className="font-medium text-foreground">
+                                {row.actions
+                                  .map(resolveActionLabel)
+                                  .join(" · ")}
+                              </span>
+                            )}
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="text-muted-foreground">
                                 {resolveSourceLabel(row.source)}
                               </span>
                               {row.queue_item_id && (
                                 <Link
                                   href={getPaymentCheckHref(row.queue_item_id)}
-                                  className="inline-flex items-center gap-0.5 text-xs font-semibold text-[var(--brand-text)] hover:underline"
+                                  className="font-medium text-[var(--brand-text)] hover:underline"
                                 >
-                                  <span>{t.history.openPayment}</span>
-                                  <ArrowUpRight className="size-3.5" />
+                                  {t.history.openPayment}
                                 </Link>
                               )}
                             </div>

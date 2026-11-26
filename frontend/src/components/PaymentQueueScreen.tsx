@@ -2,24 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowUpDown,
-  ArrowUpRight,
-  ChevronDown,
-  ChevronRight,
-  ClipboardCheck,
-  FileText,
-  Inbox,
-  Plus,
-  RefreshCw,
-  Search,
-  SearchX,
-  Wallet,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import { NewPaymentDialog } from "@/components/NewPaymentDialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -54,6 +38,7 @@ import {
 } from "@/lib/preferences";
 import type {
   Approval,
+  ApprovalStatus,
   CheckRequest,
   CheckResult,
   QueueItem,
@@ -92,6 +77,12 @@ const RISK_PRIORITY: Record<Verdict, number> = {
   yellow: 2,
   grey: 3,
   green: 4,
+};
+
+const APPROVAL_DOT_CLASS: Record<ApprovalStatus, string> = {
+  pending: "ui-dot-warn",
+  approved: "ui-dot-ok",
+  rejected: "ui-dot-danger",
 };
 
 /**
@@ -389,15 +380,11 @@ export function PaymentQueueScreen({
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.queue.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.queue.description}
-          </p>
+          <h1 className="ui-page-title">{t.queue.title}</h1>
+          <p className="ui-page-subtitle">{t.queue.description}</p>
         </div>
 
         <Tooltip>
@@ -405,17 +392,15 @@ export function PaymentQueueScreen({
             render={
               <Button
                 type="button"
-                size="lg"
                 onClick={() => setDialogOpen(true)}
-                className="min-h-11 w-full gap-2 rounded-xl px-4 font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)] sm:min-h-10 sm:w-auto"
+                className="min-h-10 w-full sm:min-h-9 sm:w-auto"
               />
             }
           >
-            <Plus className="size-4" />
             <span>{t.queue.addPaymentButton}</span>
             <kbd
               aria-hidden="true"
-              className="ml-0.5 hidden rounded border border-white/30 bg-white/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-white sm:inline-flex"
+              className="ml-0.5 hidden rounded-[4px] border border-white/30 bg-white/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-white sm:inline-flex"
             >
               N
             </kbd>
@@ -426,160 +411,98 @@ export function PaymentQueueScreen({
         </Tooltip>
       </div>
 
-      {/* Summary tiles: 2 columns on phone, 4 on desktop */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      {/* Summary strip: 2 columns on phone, 4 on desktop */}
+      <div className="ui-kpi-strip">
         {isLoading && queue.length === 0 ? (
           Array.from({ length: 4 }).map((_, index) => (
-            <Card key={`tile-skeleton-${index}`} className="py-4">
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Skeleton className="h-3.5 w-24" />
-                  <Skeleton className="size-8 rounded-xl" />
-                </div>
-                <Skeleton className="h-8 w-16" />
-                <Skeleton className="h-3 w-28" />
-              </CardContent>
-            </Card>
+            <div key={`tile-skeleton-${index}`} className="ui-kpi-cell">
+              <Skeleton className="h-3.5 w-24 rounded-[4px]" />
+              <Skeleton className="h-6 w-16 rounded-[4px]" />
+              <Skeleton className="h-3 w-28 rounded-[4px]" />
+            </div>
           ))
         ) : (
           <>
             <button
               type="button"
               onClick={resetFilters}
-              className="group text-left rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="ui-kpi-cell cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              <Card className="h-full py-4 transition-colors group-hover:border-primary/40">
-                <CardContent className="flex h-full flex-col justify-between gap-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                      {t.queue.tiles.toSignLabel}
-                    </span>
-                    <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                      <FileText className="size-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                    {signableQueue.length}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {t.queue.tiles.toSignHint}
-                  </div>
-                </CardContent>
-              </Card>
+              <span className="ui-kpi-label">{t.queue.tiles.toSignLabel}</span>
+              <div className="ui-kpi-value">{signableQueue.length}</div>
+              <div className="text-xs text-muted-foreground">
+                {t.queue.tiles.toSignHint}
+              </div>
             </button>
 
-            <Card className="h-full py-4">
-              <CardContent className="flex h-full flex-col justify-between gap-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.queue.tiles.needsAttentionLabel}
-                  </span>
-                  <div
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                      attentionCount > 0
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-accent text-[var(--brand-text)]"
-                    )}
-                  >
-                    <AlertTriangle className="size-4" />
-                  </div>
-                </div>
-                <div
-                  className={cn(
-                    "text-2xl font-bold tabular-nums sm:text-3xl",
-                    attentionCount > 0 ? "text-amber-700" : "text-foreground"
-                  )}
-                >
-                  {attentionCount}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {attentionCount > 0
-                    ? t.queue.tiles.needsAttentionHint
-                    : t.queue.tiles.allClearHint}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">
+                {t.queue.tiles.needsAttentionLabel}
+              </span>
+              <div
+                className={cn(
+                  "ui-kpi-value",
+                  attentionCount > 0 && "text-[var(--status-warn-text)]"
+                )}
+              >
+                {attentionCount}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {attentionCount > 0
+                  ? t.queue.tiles.needsAttentionHint
+                  : t.queue.tiles.allClearHint}
+              </div>
+            </div>
 
             <Link
               href="/approvals"
-              className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="ui-kpi-cell transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              <Card className="h-full py-4 transition-colors group-hover:border-primary/40">
-                <CardContent className="flex h-full flex-col justify-between gap-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                      {t.queue.tiles.pendingApprovalsLabel}
-                    </span>
-                    <div
-                      className={cn(
-                        "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                        approvalsError
-                          ? "bg-muted text-muted-foreground"
-                          : pendingApprovalsCount > 0
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-accent text-[var(--brand-text)]"
-                      )}
-                    >
-                      <ClipboardCheck className="size-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                    {approvalsError ? "—" : pendingApprovalsCount}
-                  </div>
-                  <div className="flex items-center gap-1 text-xs font-medium text-[var(--brand-text)]">
-                    <span>
-                      {approvalsError
-                        ? t.queue.tiles.pendingApprovalsUnavailable
-                        : t.queue.tiles.pendingApprovalsHint}
-                    </span>
-                    {!approvalsError && (
-                      <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              <span className="ui-kpi-label">
+                {t.queue.tiles.pendingApprovalsLabel}
+              </span>
+              <div className="ui-kpi-value">
+                {approvalsError ? "—" : pendingApprovalsCount}
+              </div>
+              <div className="text-xs font-medium text-[var(--brand-text)]">
+                {approvalsError
+                  ? t.queue.tiles.pendingApprovalsUnavailable
+                  : t.queue.tiles.pendingApprovalsHint}
+              </div>
             </Link>
 
-            <Card className="h-full py-4">
-              <CardContent className="flex h-full flex-col justify-between gap-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                    {t.queue.tiles.totalAmountLabel}
-                  </span>
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
-                    <Wallet className="size-4" />
-                  </div>
-                </div>
-                <div className="truncate whitespace-nowrap text-lg font-bold tabular-nums text-foreground sm:text-2xl">
-                  {formatMoney(totalSignableAmount)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {t.queue.tiles.totalAmountHint}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="ui-kpi-cell">
+              <span className="ui-kpi-label">
+                {t.queue.tiles.totalAmountLabel}
+              </span>
+              <div className="ui-kpi-value truncate whitespace-nowrap">
+                {formatMoney(totalSignableAmount)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {t.queue.tiles.totalAmountHint}
+              </div>
+            </div>
           </>
         )}
       </div>
 
-      {/* Main Queue Card */}
+      {/* Main Queue Panel */}
       <Card className="min-w-0 py-0">
-        {/* Toolbar: Search + Verdict Chips */}
-        <div className="border-b border-border p-4 space-y-3 sm:px-5">
+        {/* Toolbar: Search + Sort + Verdict Chips */}
+        <div className="space-y-3 border-b border-border p-4">
           {isLoading && queue.length === 0 ? (
             <div className="space-y-3">
-              <Skeleton className="h-10 w-full max-w-md rounded-xl" />
-              <div className="flex flex-wrap gap-2">
-                <Skeleton className="h-8 w-20 rounded-full" />
-                <Skeleton className="h-8 w-32 rounded-full" />
-                <Skeleton className="h-8 w-32 rounded-full" />
-                <Skeleton className="h-8 w-36 rounded-full" />
+              <Skeleton className="h-9 w-full max-w-md rounded-[6px]" />
+              <div className="flex flex-wrap gap-1.5">
+                <Skeleton className="h-8 w-20 rounded-[6px]" />
+                <Skeleton className="h-8 w-28 rounded-[6px]" />
+                <Skeleton className="h-8 w-28 rounded-[6px]" />
+                <Skeleton className="h-8 w-32 rounded-[6px]" />
               </div>
             </div>
           ) : (
             <>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="relative flex-1 sm:max-w-md">
                   <Search
                     aria-hidden="true"
@@ -603,7 +526,7 @@ export function PaymentQueueScreen({
                     placeholder={t.queue.searchPlaceholder}
                     aria-label={t.queue.searchAriaLabel}
                     title={t.queue.searchTooltip}
-                    className="h-11 rounded-xl bg-background/70 pl-9 pr-10 sm:h-10 [&::-webkit-search-cancel-button]:hidden"
+                    className="h-10 rounded-[6px] bg-card pl-9 pr-10 sm:h-9 [&::-webkit-search-cancel-button]:hidden"
                   />
                   {searchQuery ? (
                     <button
@@ -613,7 +536,7 @@ export function PaymentQueueScreen({
                         searchInputRef.current?.focus();
                       }}
                       aria-label={t.queue.clearSearch}
-                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <X className="size-4" />
                     </button>
@@ -623,7 +546,7 @@ export function PaymentQueueScreen({
                         render={
                           <kbd
                             aria-hidden="true"
-                            className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 cursor-default items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
+                            className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 cursor-default items-center justify-center rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
                           />
                         }
                       >
@@ -638,17 +561,13 @@ export function PaymentQueueScreen({
 
                 <div className="flex flex-wrap items-center justify-between gap-2.5 sm:justify-end">
                   <div className="relative flex-1 sm:flex-initial">
-                    <ArrowUpDown
-                      aria-hidden="true"
-                      className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-                    />
                     <select
                       aria-label={t.queue.sortLabel}
                       value={sortOrder}
                       onChange={(e) =>
                         setSortOrder(e.target.value as QueueSort)
                       }
-                      className="h-10 w-full appearance-none rounded-xl border border-input bg-background/70 pl-8 pr-8 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-9 sm:w-auto"
+                      className="ui-select h-10 w-full appearance-none sm:h-9 sm:w-auto"
                     >
                       <option value="default">
                         {t.queue.sortOptions.default}
@@ -697,22 +616,10 @@ export function PaymentQueueScreen({
                     type="button"
                     aria-pressed={verdictFilter === "all"}
                     onClick={() => setVerdictFilter("all")}
-                    className={cn(
-                      "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:min-h-8",
-                      verdictFilter === "all"
-                        ? "border-primary bg-primary text-primary-foreground shadow-xs"
-                        : "border-border bg-card text-foreground hover:bg-muted/70"
-                    )}
+                    className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span>{t.queue.filterAll}</span>
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
-                        verdictFilter === "all"
-                          ? "bg-white/20 text-white"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
+                    <span className="tabular-nums text-muted-foreground">
                       {queue.length}
                     </span>
                   </button>
@@ -730,32 +637,14 @@ export function PaymentQueueScreen({
                             prev === verdict ? "all" : verdict
                           )
                         }
-                        className={cn(
-                          "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:min-h-8",
-                          isSelected
-                            ? cn(
-                                style.badgeClass,
-                                "ring-1 ring-current/25 font-semibold shadow-xs"
-                              )
-                            : "border-border bg-card text-foreground hover:bg-muted/70"
-                        )}
+                        className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span
                           aria-hidden="true"
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            style.dotClass
-                          )}
+                          className={cn("ui-status-dot", style.dotClass)}
                         />
                         <span>{t.verdicts[verdict]}</span>
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
-                            isSelected
-                              ? "bg-white/70 text-current"
-                              : "bg-muted text-muted-foreground"
-                          )}
-                        >
+                        <span className="tabular-nums text-muted-foreground">
                           {verdictCounts[verdict]}
                         </span>
                       </button>
@@ -770,20 +659,20 @@ export function PaymentQueueScreen({
         <CardContent className="p-0">
           {isLoading && queue.length === 0 ? (
             <>
-              {/* Phone skeleton cards */}
-              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+              {/* Phone skeleton list */}
+              <div className="divide-y divide-border md:hidden">
                 {Array.from({ length: 4 }).map((_, index) => (
                   <div
                     key={`card-skeleton-${index}`}
-                    className="rounded-xl border border-border bg-card p-3.5 space-y-3"
+                    className="space-y-2 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <Skeleton className="h-5 w-44" />
-                      <Skeleton className="h-6 w-24 rounded-full" />
+                      <Skeleton className="h-4 w-44 rounded-[4px]" />
+                      <Skeleton className="h-4 w-24 rounded-[4px]" />
                     </div>
-                    <Skeleton className="h-7 w-32" />
-                    <Skeleton className="h-3.5 w-56" />
-                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-5 w-32 rounded-[4px]" />
+                    <Skeleton className="h-3.5 w-56 rounded-[4px]" />
+                    <Skeleton className="h-4 w-full rounded-[4px]" />
                   </div>
                 ))}
               </div>
@@ -792,8 +681,8 @@ export function PaymentQueueScreen({
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="pl-4 lg:pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-4">
                         {t.queue.colRecipient}
                       </TableHead>
                       <TableHead className="text-right">
@@ -803,7 +692,7 @@ export function PaymentQueueScreen({
                       <TableHead className="whitespace-normal">
                         {t.queue.colCheckResult}
                       </TableHead>
-                      <TableHead className="w-9 pr-3 lg:pr-4" />
+                      <TableHead className="w-9 pr-3" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -812,23 +701,23 @@ export function PaymentQueueScreen({
                         key={`row-skeleton-${index}`}
                         className="hover:bg-transparent"
                       >
-                        <TableCell className="pl-4 lg:pl-5 py-4">
-                          <div className="space-y-2">
-                            <Skeleton className="h-4 w-48" />
-                            <Skeleton className="h-3 w-64" />
+                        <TableCell className="pl-4 py-3">
+                          <div className="space-y-1.5">
+                            <Skeleton className="h-4 w-48 rounded-[4px]" />
+                            <Skeleton className="h-3 w-64 rounded-[4px]" />
                           </div>
                         </TableCell>
-                        <TableCell className="py-4">
-                          <Skeleton className="ml-auto h-4 w-24" />
+                        <TableCell className="py-3">
+                          <Skeleton className="ml-auto h-4 w-24 rounded-[4px]" />
                         </TableCell>
-                        <TableCell className="py-4">
-                          <Skeleton className="h-4 w-44" />
+                        <TableCell className="py-3">
+                          <Skeleton className="h-4 w-44 rounded-[4px]" />
                         </TableCell>
-                        <TableCell className="py-4">
-                          <Skeleton className="h-6 w-28 rounded-full" />
+                        <TableCell className="py-3">
+                          <Skeleton className="h-4 w-28 rounded-[4px]" />
                         </TableCell>
-                        <TableCell className="pr-3 lg:pr-4 py-4">
-                          <Skeleton className="ml-auto size-4 rounded" />
+                        <TableCell className="pr-3 py-3">
+                          <Skeleton className="ml-auto size-4 rounded-[4px]" />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -837,71 +726,53 @@ export function PaymentQueueScreen({
               </div>
             </>
           ) : hasError && queue.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-14 px-6 text-center">
-              <div className="flex size-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
-                <AlertTriangle className="size-5" />
-              </div>
-              <p className="max-w-md text-sm text-muted-foreground">
-                {t.queue.loadErrorEmpty}
+            <div className="ui-empty">
+              <div className="ui-empty-title">{t.common.serverErrorTitle}</div>
+              <p className="ui-empty-desc">{t.queue.loadErrorEmpty}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void onRefreshQueue()}
+                className="mt-2 min-h-10 sm:min-h-8"
+              >
+                {t.common.retry}
+              </Button>
+            </div>
+          ) : queue.length === 0 ? (
+            <div className="ui-empty">
+              <div className="ui-empty-title">{t.queue.emptyTitle}</div>
+              <p className="ui-empty-desc">{t.queue.emptyQueue}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDialogOpen(true)}
+                className="mt-2 min-h-10 sm:min-h-8"
+              >
+                {t.queue.addPaymentButton}
+              </Button>
+            </div>
+          ) : filteredQueue.length === 0 ? (
+            <div className="ui-empty">
+              <div className="ui-empty-title">{t.queue.emptyFilteredTitle}</div>
+              <p className="ui-empty-desc">
+                {t.queue.emptyFilteredDescription}
               </p>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void onRefreshQueue()}
-                className="min-h-11 gap-2 rounded-xl sm:min-h-9"
-              >
-                <RefreshCw className="size-4" />
-                <span>{t.common.retry}</span>
-              </Button>
-            </div>
-          ) : queue.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                <Inbox className="size-6" />
-              </div>
-              <div className="space-y-1">
-                <div className="text-base font-semibold text-foreground">
-                  {t.queue.emptyTitle}
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {t.queue.emptyQueue}
-                </p>
-              </div>
-              <Button
-                type="button"
-                onClick={() => setDialogOpen(true)}
-                className="mt-1 min-h-11 gap-2 rounded-xl sm:min-h-9"
-              >
-                <Plus className="size-4" />
-                <span>{t.queue.addPaymentButton}</span>
-              </Button>
-            </div>
-          ) : filteredQueue.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                <SearchX className="size-6" />
-              </div>
-              <div className="space-y-1">
-                <div className="text-base font-semibold text-foreground">
-                  {t.queue.emptyFilteredTitle}
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {t.queue.emptyFilteredDescription}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
+                size="sm"
                 onClick={resetFilters}
-                className="mt-1 min-h-11 rounded-xl sm:min-h-9"
+                className="mt-2 min-h-10 sm:min-h-8"
               >
                 {t.queue.resetFilters}
               </Button>
             </div>
           ) : (
             <>
-              {/* Mobile payment cards (< md) */}
-              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+              {/* Mobile flat list (< md) */}
+              <div className="divide-y divide-border md:hidden">
                 {filteredQueue.map((item) => {
                   const approval = findApprovalForPayment(
                     approvals,
@@ -923,25 +794,20 @@ export function PaymentQueueScreen({
                       type="button"
                       onClick={() => onSelectPayment(item)}
                       className={cn(
-                        "w-full min-h-11 rounded-xl border bg-card p-3.5 text-left shadow-xs transition-all hover:bg-muted/50 active:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                        isHighlighted
-                          ? "border-primary bg-accent/60 ring-2 ring-primary/35"
-                          : "border-border"
+                        "block w-full min-h-11 px-4 py-3 text-left transition-colors hover:bg-muted/40 active:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        isHighlighted && "bg-[var(--brand-subtle)]"
                       )}
                     >
                       <div className="flex items-start justify-between gap-2.5">
-                        <div className="min-w-0 flex-1 space-y-1">
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-base font-semibold leading-snug text-foreground break-words">
+                            <span className="text-sm font-semibold leading-5 text-foreground break-words">
                               {item.request.recipient_name}
                             </span>
                             {isHighlighted && (
-                              <Badge
-                                variant="outline"
-                                className="h-auto border-primary/30 bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground"
-                              >
+                              <span className="ui-tag">
                                 {t.queue.newBadge}
-                              </Badge>
+                              </span>
                             )}
                           </div>
                         </div>
@@ -959,14 +825,14 @@ export function PaymentQueueScreen({
                         />
                       </div>
 
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="text-xl font-bold tabular-nums whitespace-nowrap text-foreground">
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <div className="text-base font-semibold tabular-nums whitespace-nowrap text-foreground">
                           {formatMoney(item.request.amount_kzt)}
                         </div>
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                       </div>
 
-                      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs text-muted-foreground">
+                      <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs tabular-nums text-muted-foreground">
                         <span>
                           {interpolate(t.common.binPrefix, {
                             bin: item.request.recipient_bin,
@@ -978,22 +844,28 @@ export function PaymentQueueScreen({
                         </span>
                       </div>
 
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground break-words">
+                      <p className="mt-1.5 line-clamp-2 text-[13px] text-[var(--text-secondary)] break-words">
                         {item.request.purpose}
                       </p>
 
-                      {(approvalStyle || directorComment) && (
-                        <div className="mt-2.5 flex flex-col items-start gap-1.5 border-t border-border/60 pt-2.5">
-                          {approvalStyle && approvalLabel && (
-                            <Badge
-                              variant="outline"
+                      {(approval || directorComment) && (
+                        <div className="mt-2 flex flex-col items-start gap-1 border-t border-border pt-2">
+                          {approval && approvalStyle && approvalLabel && (
+                            <span
                               className={cn(
-                                "h-auto px-2 py-0.5 text-[11px] font-medium",
+                                "ui-status",
                                 approvalStyle.badgeClass
                               )}
                             >
-                              {approvalLabel}
-                            </Badge>
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  "ui-status-dot",
+                                  APPROVAL_DOT_CLASS[approval.status]
+                                )}
+                              />
+                              <span>{approvalLabel}</span>
+                            </span>
                           )}
                           {directorComment && (
                             <p className="line-clamp-2 text-xs text-muted-foreground break-words">
@@ -1013,8 +885,8 @@ export function PaymentQueueScreen({
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="pl-4 lg:pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-4">
                         {t.queue.colRecipient}
                       </TableHead>
                       <TableHead className="text-right">
@@ -1024,7 +896,7 @@ export function PaymentQueueScreen({
                       <TableHead className="whitespace-normal">
                         {t.queue.colCheckResult}
                       </TableHead>
-                      <TableHead className="w-9 pr-3 lg:pr-4" />
+                      <TableHead className="w-9 pr-3" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1059,25 +931,23 @@ export function PaymentQueueScreen({
                             }
                           }}
                           className={cn(
-                            "cursor-pointer transition-colors hover:bg-muted/60 focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                            isHighlighted && "bg-accent/65 hover:bg-accent/80"
+                            "cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                            isHighlighted &&
+                              "bg-[var(--brand-subtle)] hover:bg-[var(--brand-subtle)]"
                           )}
                         >
-                          <TableCell className="pl-4 lg:pl-5 py-3.5 whitespace-normal">
-                            <div className="flex flex-wrap items-center gap-2">
+                          <TableCell className="pl-4 whitespace-normal">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium text-foreground break-words">
                                 {item.request.recipient_name}
                               </span>
                               {isHighlighted && (
-                                <Badge
-                                  variant="outline"
-                                  className="h-auto border-primary/30 bg-card px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground"
-                                >
+                                <span className="ui-tag">
                                   {t.queue.newBadge}
-                                </Badge>
+                                </span>
                               )}
                             </div>
-                            <div className="mt-0.5 font-mono text-xs text-muted-foreground">
+                            <div className="mt-0.5 font-mono text-xs tabular-nums text-muted-foreground">
                               <span>
                                 {interpolate(t.common.binPrefix, {
                                   bin: item.request.recipient_bin,
@@ -1089,16 +959,16 @@ export function PaymentQueueScreen({
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="py-3.5 text-right font-semibold tabular-nums whitespace-nowrap text-foreground">
+                          <TableCell className="text-right font-medium tabular-nums whitespace-nowrap text-foreground">
                             {formatMoney(item.request.amount_kzt)}
                           </TableCell>
-                          <TableCell className="py-3.5 max-w-[220px] lg:max-w-sm whitespace-normal text-muted-foreground">
+                          <TableCell className="max-w-[220px] lg:max-w-sm whitespace-normal text-[var(--text-secondary)]">
                             <span className="line-clamp-2 break-words">
                               {item.request.purpose}
                             </span>
                           </TableCell>
-                          <TableCell className="py-3.5 whitespace-normal">
-                            <div className="flex flex-col items-start gap-1.5">
+                          <TableCell className="whitespace-normal">
+                            <div className="flex flex-col items-start gap-1">
                               <VerdictBadge
                                 verdict={item.result.verdict}
                                 label={
@@ -1110,16 +980,22 @@ export function PaymentQueueScreen({
                                     : undefined
                                 }
                               />
-                              {approvalStyle && approvalLabel && (
-                                <Badge
-                                  variant="outline"
+                              {approval && approvalStyle && approvalLabel && (
+                                <span
                                   className={cn(
-                                    "h-auto px-2 py-0.5 text-[11px] font-medium",
+                                    "ui-status",
                                     approvalStyle.badgeClass
                                   )}
                                 >
-                                  {approvalLabel}
-                                </Badge>
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      "ui-status-dot",
+                                      APPROVAL_DOT_CLASS[approval.status]
+                                    )}
+                                  />
+                                  <span>{approvalLabel}</span>
+                                </span>
                               )}
                               {directorComment && (
                                 <p className="max-w-[220px] line-clamp-2 text-xs text-muted-foreground break-words">
@@ -1130,7 +1006,7 @@ export function PaymentQueueScreen({
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="pr-3 lg:pr-4 py-3.5 text-right text-muted-foreground">
+                          <TableCell className="pr-3 text-right text-muted-foreground">
                             <ChevronRight className="ml-auto size-4" />
                           </TableCell>
                         </TableRow>

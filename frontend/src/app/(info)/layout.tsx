@@ -13,9 +13,9 @@ export default function InfoRouteGroupLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-6 pb-4 sm:space-y-8">
+    <div className="space-y-5 pb-4">
       <InfoNavLinks variant="bar" />
-      <div className="space-y-6 sm:space-y-8">{children}</div>
+      <div className="space-y-5">{children}</div>
       <SiteFooter embedded />
     </div>
   );

@@ -1,64 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, Lock } from "lucide-react";
 import { InfoPageHeader } from "@/components/info/InfoPageHeader";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useInfoT } from "@/i18n/info";
-import { cn } from "cn";
 
 export default function PrivacyPage() {
   const { info } = useInfoT();
   const content = info.privacy;
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-5">
       <InfoPageHeader
-        icon={Lock}
         title={content.title}
         subtitle={content.subtitle}
         badge={info.common.prototypeBadge}
       />
 
-      <Alert className="rounded-2xl border-amber-300/90 bg-amber-50/85 px-4 py-3.5 text-amber-950">
-        <AlertTriangle aria-hidden="true" className="size-4 text-amber-700" />
-        <AlertTitle className="font-semibold text-amber-950">
+      <div role="note" className="ui-notice ui-notice-warn space-y-0.5">
+        <div className="text-[13px] font-semibold text-foreground">
           {content.bannerTitle}
-        </AlertTitle>
-        <AlertDescription className="text-amber-900">
+        </div>
+        <p className="text-xs leading-5 text-[var(--text-secondary)]">
           {content.bannerDescription}
-        </AlertDescription>
-      </Alert>
+        </p>
+      </div>
 
       <Card>
-        <CardHeader className="border-b border-border pb-4">
+        <CardHeader className="border-b border-border pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Badge
-              variant="secondary"
-              className="h-auto rounded-full px-3 py-1 text-xs font-medium"
-            >
-              {content.updatedLabel}
-            </Badge>
+            <span className="ui-tag">{content.updatedLabel}</span>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/terms"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "rounded-lg"
-                )}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
               >
                 {info.nav.terms}
               </Link>
               <Link
                 href="/security"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "rounded-lg"
-                )}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
               >
                 {info.nav.security}
               </Link>
@@ -66,18 +49,16 @@ export default function PrivacyPage() {
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-6 pt-5">
+        <CardContent className="space-y-5">
           {content.sections.map((section, idx) => (
             <div key={section.title}>
-              {idx > 0 && <Separator className="mb-6" />}
-              <section className="max-w-3xl space-y-2.5">
-                <h2 className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
-                  {section.title}
-                </h2>
+              {idx > 0 && <Separator className="mb-5" />}
+              <section className="max-w-3xl space-y-2">
+                <h2 className="ui-section-title">{section.title}</h2>
                 {section.paragraphs.map((paragraph) => (
                   <p
                     key={paragraph}
-                    className="text-sm leading-relaxed text-foreground/90"
+                    className="text-sm leading-6 text-[var(--text-secondary)]"
                   >
                     {paragraph}
                   </p>

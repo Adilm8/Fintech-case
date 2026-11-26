@@ -1,20 +1,9 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Headphones,
-  Info,
-  Mail,
-  Phone,
-  RotateCcw,
-  Send,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { InfoNavLinks } from "@/components/info/InfoNavLinks";
 import { InfoPageHeader } from "@/components/info/InfoPageHeader";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -82,66 +71,62 @@ export default function SupportPage() {
   };
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-5">
       <InfoPageHeader
-        icon={Headphones}
         title={content.title}
         subtitle={content.subtitle}
         badge={info.common.prototypeBadge}
       />
 
-      <Alert className="rounded-2xl border-amber-300/80 bg-amber-50/85 px-4 py-3.5 text-amber-950">
-        <Info aria-hidden="true" className="size-4 text-amber-700" />
-        <AlertTitle className="font-semibold text-amber-950">
+      <div role="note" className="ui-notice ui-notice-warn space-y-0.5">
+        <div className="text-[13px] font-semibold text-foreground">
           {content.prototypeBannerTitle}
-        </AlertTitle>
-        <AlertDescription className="text-amber-900">
+        </div>
+        <p className="text-xs leading-5 text-[var(--text-secondary)]">
           {content.prototypeBannerDescription}
-        </AlertDescription>
-      </Alert>
+        </p>
+      </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         {/* Local Support Form */}
         <section
           aria-labelledby="support-form-heading"
           className="lg:col-span-7"
         >
           <Card>
-            <CardHeader className="border-b border-border pb-4">
-              <CardTitle className="text-base sm:text-lg">
+            <CardHeader className="border-b border-border pb-3">
+              <CardTitle>
                 <h2 id="support-form-heading">{content.formTitle}</h2>
               </CardTitle>
               <CardDescription>{content.formDescription}</CardDescription>
             </CardHeader>
 
-            <CardContent className="pt-4">
+            <CardContent>
               <form onSubmit={handleSubmit} noValidate className="space-y-4">
                 {errorText && (
-                  <Alert
-                    variant="destructive"
-                    className="rounded-xl border-red-300 bg-red-50/90"
+                  <div
+                    role="alert"
+                    className="ui-notice ui-notice-danger py-2 text-xs text-foreground"
                   >
-                    <AlertCircle aria-hidden="true" className="size-4" />
-                    <AlertDescription>{errorText}</AlertDescription>
-                  </Alert>
+                    {errorText}
+                  </div>
                 )}
 
                 {submitted && (
-                  <Alert className="rounded-xl border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]">
-                    <CheckCircle2
-                      aria-hidden="true"
-                      className="size-4 text-[var(--brand-text)]"
-                    />
-                    <AlertTitle className="font-semibold text-[#064A34]">
+                  <div
+                    role="status"
+                    className="ui-notice ui-notice-ok space-y-0.5"
+                  >
+                    <div className="text-[13px] font-semibold text-foreground">
                       {content.submittedBannerTitle}
-                    </AlertTitle>
-                    <AlertDescription className="text-[#064A34]/90">
+                    </div>
+                    <p className="text-xs leading-5 text-[var(--text-secondary)]">
                       {content.submittedBannerDescription}
-                    </AlertDescription>
-                  </Alert>
+                    </p>
+                  </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor={nameId}>{content.nameLabel}</Label>
                     <Input
@@ -155,7 +140,7 @@ export default function SupportPage() {
                       placeholder={content.namePlaceholder}
                       autoComplete="off"
                       required
-                      className="h-11 rounded-xl bg-background sm:h-10"
+                      className="h-10 bg-card sm:h-9"
                     />
                   </div>
 
@@ -172,25 +157,31 @@ export default function SupportPage() {
                       placeholder={content.emailPlaceholder}
                       autoComplete="off"
                       required
-                      className="h-11 rounded-xl bg-background sm:h-10"
+                      className="h-10 bg-card sm:h-9"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label htmlFor={topicId}>{content.topicLabel}</Label>
-                  <select
-                    id={topicId}
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-input bg-background px-3 py-1.5 text-sm text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-10"
-                  >
-                    {content.topics.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      id={topicId}
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      className="ui-select h-10 w-full appearance-none sm:h-9"
+                    >
+                      {content.topics.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -205,27 +196,25 @@ export default function SupportPage() {
                     }}
                     placeholder={content.messagePlaceholder}
                     required
-                    className="min-h-32 rounded-xl bg-background"
+                    className="min-h-32 bg-card"
                   />
                 </div>
 
-                <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-2 pt-0.5 sm:flex-row sm:items-center">
                   <Button
                     type="submit"
-                    className="min-h-11 gap-2 rounded-xl px-5 sm:min-h-10"
+                    className="min-h-10 sm:min-h-9"
                   >
-                    <Send aria-hidden="true" className="size-4" />
-                    <span>{content.submitButton}</span>
+                    {content.submitButton}
                   </Button>
 
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleReset}
-                    className="min-h-11 gap-2 rounded-xl px-4 sm:min-h-10"
+                    className="min-h-10 sm:min-h-9"
                   >
-                    <RotateCcw aria-hidden="true" className="size-4" />
-                    <span>{content.resetButton}</span>
+                    {content.resetButton}
                   </Button>
                 </div>
               </form>
@@ -233,64 +222,41 @@ export default function SupportPage() {
           </Card>
         </section>
 
-        {/* Placeholder Contacts & Quick Links */}
-        <aside className="space-y-5 lg:col-span-5">
+        {/* Contacts summary list & Quick Links */}
+        <aside className="space-y-4 lg:col-span-5">
           <Card>
-            <CardHeader className="border-b border-border pb-4">
-              <CardTitle className="text-base sm:text-lg">
+            <CardHeader className="border-b border-border pb-3">
+              <CardTitle>
                 <h2>{content.contactsTitle}</h2>
               </CardTitle>
               <CardDescription>{content.contactsDescription}</CardDescription>
             </CardHeader>
 
-            <CardContent className="space-y-3 pt-4">
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-background/70 p-3.5">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-[var(--brand-text)]">
-                  <Mail aria-hidden="true" className="size-4" />
-                </div>
-                <div className="min-w-0 space-y-0.5">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {content.emailContactLabel}
-                  </div>
-                  <div className="font-mono text-sm font-semibold text-foreground break-all">
+            <CardContent>
+              <dl className="ui-dl">
+                <div className="ui-dl-row">
+                  <dt className="ui-dt">{content.emailContactLabel}</dt>
+                  <dd className="ui-dd font-mono text-xs sm:text-sm break-all">
                     {content.emailContactValue}
-                  </div>
+                  </dd>
                 </div>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-background/70 p-3.5">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-[var(--brand-text)]">
-                  <Phone aria-hidden="true" className="size-4" />
-                </div>
-                <div className="min-w-0 space-y-0.5">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {content.phoneContactLabel}
-                  </div>
-                  <div className="text-sm font-semibold text-foreground break-words">
+                <div className="ui-dl-row">
+                  <dt className="ui-dt">{content.phoneContactLabel}</dt>
+                  <dd className="ui-dd font-medium">
                     {content.phoneContactValue}
-                  </div>
+                  </dd>
                 </div>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-background/70 p-3.5">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground/75">
-                  <Clock aria-hidden="true" className="size-4" />
+                <div className="ui-dl-row">
+                  <dt className="ui-dt">{content.hoursLabel}</dt>
+                  <dd className="ui-dd">{content.hoursValue}</dd>
                 </div>
-                <div className="min-w-0 space-y-0.5">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {content.hoursLabel}
-                  </div>
-                  <div className="text-sm font-medium text-foreground">
-                    {content.hoursValue}
-                  </div>
-                </div>
-              </div>
+              </dl>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
+            <CardHeader className="border-b border-border pb-3">
+              <CardTitle>
                 <h2>{content.quickLinksTitle}</h2>
               </CardTitle>
               <CardDescription>{content.quickLinksDescription}</CardDescription>

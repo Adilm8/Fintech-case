@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import type { Lang } from "@/i18n";
 import { explainCheck, type ExplainResponse } from "@/lib/explain";
 import type { CheckResult } from "@/lib/types";
@@ -28,7 +27,7 @@ type ExplainState =
 
 /**
  * Rephrases the already computed check for an accountant. The text is shown in a
- * muted card and never changes the verdict. The result belongs to one
+ * muted subpanel and never changes the verdict. The result belongs to one
  * check + language pair, so switching either one hides a stale text.
  */
 export function ExplainButton({ check, lang, labels }: ExplainButtonProps) {
@@ -69,31 +68,27 @@ export function ExplainButton({ check, lang, labels }: ExplainButtonProps) {
         >
           {loading ? (
             <Loader2 className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Sparkles aria-hidden="true" />
-          )}
+          ) : null}
           {loading ? labels.loading : labels.button}
         </Button>
       </div>
       <div aria-live="polite">
         {current?.status === "error" ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-xs font-medium text-[var(--status-danger-text)]">
             {labels.error}
           </p>
         ) : null}
         {current?.status === "done" ? (
-          <Card size="sm" className="bg-muted/40">
-            <CardContent className="flex flex-col gap-1.5">
-              <p className="text-sm leading-relaxed text-foreground">
-                {current.data.text}
+          <div className="ui-subpanel space-y-1">
+            <p className="text-sm leading-5 text-foreground break-words">
+              {current.data.text}
+            </p>
+            {current.data.source === "template" ? (
+              <p className="text-xs text-muted-foreground">
+                {labels.templateNote}
               </p>
-              {current.data.source === "template" ? (
-                <p className="text-xs text-muted-foreground">
-                  {labels.templateNote}
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>

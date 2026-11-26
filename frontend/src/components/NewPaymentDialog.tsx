@@ -9,21 +9,8 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import {
-  AlertCircle,
-  AlertTriangle,
-  Building2,
-  CheckCircle2,
-  GitCompareArrows,
-  History,
-  Landmark,
-  Loader2,
-  SearchCheck,
-  XCircle,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { InvoiceUpload } from "@/components/InvoiceUpload";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -954,22 +941,21 @@ export function NewPaymentDialog({
         id={suggestListId}
         role="listbox"
         aria-label={t.queue.supplierSuggestionsTitle}
-        className="absolute top-full left-0 right-0 z-30 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-border bg-card p-1.5 shadow-lg"
+        className="absolute top-full left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto rounded-[6px] border border-border bg-card p-1 shadow-[var(--shadow-overlay)]"
       >
-        <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <History aria-hidden="true" className="size-3.5" />
-          <span>{t.queue.supplierSuggestionsTitle}</span>
+        <div className="ui-label-meta px-2 py-1">
+          {t.queue.supplierSuggestionsTitle}
         </div>
 
         {isLoadingSuppliers && filteredSuggestions.length === 0 ? (
-          <div className="space-y-1.5 p-1.5">
+          <div className="space-y-1.5 p-1">
             {Array.from({ length: 3 }).map((_, idx) => (
               <div
                 key={`sup-skel-${idx}`}
-                className="space-y-1.5 rounded-lg border border-border/60 p-2"
+                className="space-y-1.5 rounded-[4px] border border-border p-2"
               >
-                <Skeleton className="h-4 w-44" />
-                <Skeleton className="h-3 w-64" />
+                <Skeleton className="h-4 w-44 rounded-[4px]" />
+                <Skeleton className="h-3 w-64 rounded-[4px]" />
               </div>
             ))}
           </div>
@@ -989,34 +975,34 @@ export function NewPaymentDialog({
                   }}
                   onMouseEnter={() => setHighlightedSuggestIdx(idx)}
                   className={cn(
-                    "w-full rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer",
+                    "w-full cursor-pointer rounded-[4px] px-2.5 py-2 text-left transition-colors",
                     isHighlighted
-                      ? "bg-accent/80 text-foreground"
-                      : "hover:bg-muted/70 text-foreground"
+                      ? "bg-muted text-foreground"
+                      : "text-foreground hover:bg-muted/60"
                   )}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-                    <span className="text-sm font-semibold leading-snug break-words">
+                    <span className="text-sm font-medium leading-snug break-words">
                       {supplier.name}
                     </span>
-                    <span className="font-mono text-xs text-muted-foreground">
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
                       {interpolate(t.common.binPrefix, { bin: supplier.bin })}
                     </span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                    <span className="font-mono text-foreground/85 break-all">
+                    <span className="font-mono tabular-nums text-[var(--text-secondary)] break-all">
                       {formatIikGrouped(supplier.lastIik)}
                     </span>
                     {supplier.bankName && (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span className="truncate max-w-[210px]">
+                        <span className="max-w-[210px] truncate">
                           {supplier.bankName}
                         </span>
                       </>
                     )}
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] tabular-nums text-muted-foreground">
                     {supplier.lastPaidAt && (
                       <span>
                         {interpolate(t.queue.supplierLastPaid, {
@@ -1025,7 +1011,7 @@ export function NewPaymentDialog({
                       </span>
                     )}
                     {supplier.typicalAmountKzt !== null && (
-                      <span className="font-medium text-foreground/80 tabular-nums">
+                      <span className="font-medium text-[var(--text-secondary)]">
                         {interpolate(t.queue.supplierTypicalAmount, {
                           amount: formatMoney(supplier.typicalAmountKzt),
                         })}
@@ -1051,11 +1037,11 @@ export function NewPaymentDialog({
       <DialogContent mobileSheet className="sm:max-w-xl">
         <div
           aria-hidden="true"
-          className="mx-auto -mt-1 mb-1 h-1.5 w-10 rounded-full bg-border sm:hidden"
+          className="mx-auto -mt-1 mb-1 h-1 w-10 rounded-full bg-border sm:hidden"
         />
 
         <DialogHeader>
-          <DialogTitle className="text-lg">
+          <DialogTitle>
             {isEditMode ? t.queue.fixPaymentTitle : t.queue.newPaymentTitle}
           </DialogTitle>
           <DialogDescription>
@@ -1067,12 +1053,12 @@ export function NewPaymentDialog({
 
         <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
           {formError && (
-            <Alert variant="destructive" className="bg-red-50/90 border-red-300">
-              <AlertCircle className="size-4" />
-              <AlertDescription className="break-words">
-                {formError}
-              </AlertDescription>
-            </Alert>
+            <div
+              role="alert"
+              className="ui-notice ui-notice-danger py-2 text-xs text-foreground break-words"
+            >
+              {formError}
+            </div>
           )}
 
           <InvoiceUpload
@@ -1091,48 +1077,37 @@ export function NewPaymentDialog({
               role="region"
               aria-live="polite"
               className={cn(
-                "min-w-0 space-y-3 rounded-xl border p-3.5",
+                "ui-notice min-w-0 space-y-3",
                 invoiceConflict.choice === "unresolved"
-                  ? "border-amber-400 bg-amber-50/90 text-amber-950"
-                  : "border-border bg-muted/40 text-foreground"
+                  ? "ui-notice-warn"
+                  : "ui-notice-neutral"
               )}
             >
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle
-                  aria-hidden="true"
-                  className={cn(
-                    "mt-0.5 size-4 shrink-0",
-                    invoiceConflict.choice === "unresolved"
-                      ? "text-amber-700"
-                      : "text-[var(--brand-text)]"
-                  )}
-                />
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="text-sm font-semibold leading-snug">
-                    {t.queue.invoiceConflictTitle}
-                  </div>
-                  <p className="text-xs leading-relaxed opacity-90 break-words">
-                    {interpolate(t.queue.invoiceConflictDescription, {
-                      supplier: invoiceConflict.supplier.name,
-                      bin: invoiceConflict.supplier.bin,
-                    })}
-                  </p>
+              <div className="min-w-0 space-y-0.5">
+                <div className="text-sm font-semibold leading-snug text-foreground">
+                  {t.queue.invoiceConflictTitle}
                 </div>
+                <p className="text-xs leading-5 text-muted-foreground break-words">
+                  {interpolate(t.queue.invoiceConflictDescription, {
+                    supplier: invoiceConflict.supplier.name,
+                    bin: invoiceConflict.supplier.bin,
+                  })}
+                </p>
               </div>
 
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <div
                   className={cn(
-                    "min-w-0 space-y-2 rounded-lg border bg-card p-2.5",
+                    "min-w-0 space-y-2 rounded-[6px] border bg-card p-2.5",
                     invoiceConflict.choice === "invoice"
-                      ? "border-primary ring-2 ring-primary/25"
-                      : "border-amber-300/90"
+                      ? "border-foreground"
+                      : "border-border"
                   )}
                 >
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-900">
+                  <div className="ui-label-meta">
                     {t.queue.invoiceConflictInvoiceLabel}
                   </div>
-                  <div className="space-y-0.5 font-mono text-xs text-foreground">
+                  <div className="space-y-0.5 font-mono text-xs tabular-nums text-foreground">
                     <div className="font-semibold break-all">
                       {formatIikGrouped(invoiceConflict.invoiceIik)}
                     </div>
@@ -1152,7 +1127,7 @@ export function NewPaymentDialog({
                         : "outline"
                     }
                     onClick={() => handleResolveConflict("invoice")}
-                    className="min-h-9 w-full text-xs"
+                    className="min-h-9 w-full text-xs sm:min-h-8"
                   >
                     {t.queue.invoiceConflictUseInvoice}
                   </Button>
@@ -1160,20 +1135,20 @@ export function NewPaymentDialog({
 
                 <div
                   className={cn(
-                    "min-w-0 space-y-2 rounded-lg border bg-card p-2.5",
+                    "min-w-0 space-y-2 rounded-[6px] border bg-card p-2.5",
                     invoiceConflict.choice === "history"
-                      ? "border-primary ring-2 ring-primary/25"
-                      : "border-[#00AB75]/35"
+                      ? "border-foreground"
+                      : "border-border"
                   )}
                 >
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-[#006B49]">
+                  <div className="ui-label-meta">
                     {invoiceConflict.supplier.lastPaidAt
                       ? interpolate(t.queue.invoiceConflictHistoryLabel, {
                           date: formatDate(invoiceConflict.supplier.lastPaidAt),
                         })
                       : t.queue.invoiceConflictHistoryNoDate}
                   </div>
-                  <div className="space-y-0.5 font-mono text-xs text-foreground">
+                  <div className="space-y-0.5 font-mono text-xs tabular-nums text-foreground">
                     <div className="font-semibold break-all">
                       {formatIikGrouped(invoiceConflict.supplier.lastIik)}
                     </div>
@@ -1193,7 +1168,7 @@ export function NewPaymentDialog({
                         : "outline"
                     }
                     onClick={() => handleResolveConflict("history")}
-                    className="min-h-9 w-full text-xs"
+                    className="min-h-9 w-full text-xs sm:min-h-8"
                   >
                     {t.queue.invoiceConflictUseHistory}
                   </Button>
@@ -1213,12 +1188,7 @@ export function NewPaymentDialog({
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
             {/* Recipient Name with supplier autocomplete */}
             <div className="relative min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="dialog_recipient_name"
-                className={cn(
-                  Boolean(serverFieldErrors.recipient_name) && "text-rose-900"
-                )}
-              >
+              <Label htmlFor="dialog_recipient_name">
                 {t.queue.labelRecipientName}
               </Label>
               <Input
@@ -1235,11 +1205,7 @@ export function NewPaymentDialog({
                 aria-invalid={Boolean(serverFieldErrors.recipient_name)}
                 autoComplete="off"
                 placeholder={t.queue.placeholderRecipientName}
-                className={cn(
-                  "h-11 sm:h-10",
-                  Boolean(serverFieldErrors.recipient_name) &&
-                    "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-                )}
+                className="h-10 bg-card sm:h-9"
                 value={form.recipient_name}
                 onFocus={() => {
                   if (!isEditMode) {
@@ -1262,97 +1228,67 @@ export function NewPaymentDialog({
               />
               {activeSuggestField === "name" && renderSuggestionsListbox()}
               {serverFieldErrors.recipient_name && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.recipient_name}
                 </p>
               )}
             </div>
 
-            {/* BIN / IIN with live checksum & entity type badge + autocomplete */}
+            {/* BIN / IIN with live checksum & entity type tag + autocomplete */}
             <div className="relative min-w-0 space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-1.5">
-                <Label
-                  htmlFor="dialog_recipient_bin"
-                  className={cn(isBinInvalid && "text-rose-900")}
-                >
+                <Label htmlFor="dialog_recipient_bin">
                   {t.queue.labelBin}
                 </Label>
                 {binEntityLabel && (
-                  <Badge
-                    variant="outline"
-                    className="h-auto gap-1 border-border bg-muted/70 px-1.5 py-0.5 text-[10px] font-medium text-foreground"
-                  >
-                    <Building2 className="size-2.5 shrink-0" />
-                    <span>{binEntityLabel}</span>
-                  </Badge>
+                  <span className="ui-tag">{binEntityLabel}</span>
                 )}
               </div>
-              <div className="relative">
-                <Input
-                  ref={binInputRef}
-                  id="dialog_recipient_bin"
-                  role="combobox"
-                  aria-expanded={
-                    activeSuggestField === "bin" && showSuggestionsDropdown
+              <Input
+                ref={binInputRef}
+                id="dialog_recipient_bin"
+                role="combobox"
+                aria-expanded={
+                  activeSuggestField === "bin" && showSuggestionsDropdown
+                }
+                aria-controls={
+                  activeSuggestField === "bin" ? suggestListId : undefined
+                }
+                aria-autocomplete="list"
+                autoComplete="off"
+                inputMode="numeric"
+                maxLength={12}
+                aria-invalid={isBinInvalid}
+                placeholder={t.queue.placeholderBin}
+                className="h-10 bg-card font-mono tabular-nums sm:h-9"
+                value={form.recipient_bin}
+                onFocus={() => {
+                  if (!isEditMode && form.recipient_bin.trim().length > 0) {
+                    setActiveSuggestField("bin");
+                    setHighlightedSuggestIdx(0);
                   }
-                  aria-controls={
-                    activeSuggestField === "bin" ? suggestListId : undefined
+                }}
+                onBlur={() => {
+                  setActiveSuggestField((prev) =>
+                    prev === "bin" ? null : prev
+                  );
+                }}
+                onKeyDown={handleSuggestKeyDown}
+                onChange={(e) => {
+                  if (!isEditMode) {
+                    setActiveSuggestField("bin");
                   }
-                  aria-autocomplete="list"
-                  autoComplete="off"
-                  inputMode="numeric"
-                  maxLength={12}
-                  aria-invalid={isBinInvalid}
-                  placeholder={t.queue.placeholderBin}
-                  className={cn(
-                    "h-11 pr-9 font-mono sm:h-10",
-                    isBinInvalid &&
-                      "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25",
-                    !isBinInvalid &&
-                      binValidation.status === "valid" &&
-                      "border-[#00AB75]/60 focus-visible:border-[#00AB75]"
-                  )}
-                  value={form.recipient_bin}
-                  onFocus={() => {
-                    if (!isEditMode && form.recipient_bin.trim().length > 0) {
-                      setActiveSuggestField("bin");
-                      setHighlightedSuggestIdx(0);
-                    }
-                  }}
-                  onBlur={() => {
-                    setActiveSuggestField((prev) =>
-                      prev === "bin" ? null : prev
-                    );
-                  }}
-                  onKeyDown={handleSuggestKeyDown}
-                  onChange={(e) => {
-                    if (!isEditMode) {
-                      setActiveSuggestField("bin");
-                    }
-                    updateField("recipient_bin", e.target.value);
-                  }}
-                />
-                {binValidation.status === "valid" && !isBinServerInvalid && (
-                  <CheckCircle2
-                    aria-hidden="true"
-                    className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-[#00AB75]"
-                  />
-                )}
-                {(binValidation.status === "invalid" || isBinServerInvalid) && (
-                  <XCircle
-                    aria-hidden="true"
-                    className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-rose-600"
-                  />
-                )}
-              </div>
+                  updateField("recipient_bin", e.target.value);
+                }}
+              />
               {activeSuggestField === "bin" && renderSuggestionsListbox()}
 
               {serverFieldErrors.recipient_bin ? (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.recipient_bin}
                 </p>
               ) : binInvalidReasons.length > 0 ? (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {binInvalidReasons.join(" ")}
                 </p>
               ) : binStatusMessage ? (
@@ -1360,14 +1296,12 @@ export function NewPaymentDialog({
                   className={cn(
                     "text-xs break-words",
                     binValidation.status === "valid"
-                      ? "font-medium text-[#006B49]"
+                      ? "font-medium text-[var(--status-ok-text)]"
                       : binValidation.status === "invalid"
-                        ? "font-medium text-rose-800"
+                        ? "font-medium text-[var(--status-danger-text)]"
                         : "text-muted-foreground"
                   )}
                 >
-                  {binValidation.status === "valid" ? "✓ " : ""}
-                  {binValidation.status === "invalid" ? "✗ " : ""}
                   {binStatusMessage}
                 </p>
               ) : null}
@@ -1375,10 +1309,7 @@ export function NewPaymentDialog({
 
             {/* BIK with bank name & IIK bank code mismatch warning */}
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="dialog_recipient_bik"
-                className={cn(isBikInvalid && "text-rose-900")}
-              >
+              <Label htmlFor="dialog_recipient_bik">
                 {t.queue.labelBik}
               </Label>
               <Input
@@ -1386,121 +1317,81 @@ export function NewPaymentDialog({
                 id="dialog_recipient_bik"
                 aria-invalid={isBikInvalid}
                 placeholder={t.queue.placeholderBik}
-                className={cn(
-                  "h-11 font-mono uppercase sm:h-10",
-                  isBikInvalid &&
-                    "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25",
-                  !isBikInvalid &&
-                    !bikMatchesDetectedBank &&
-                    "border-amber-400 bg-amber-50/50 focus-visible:border-amber-500"
-                )}
+                className="h-10 bg-card font-mono uppercase tabular-nums sm:h-9"
                 value={form.recipient_bik}
                 onChange={(e) => updateField("recipient_bik", e.target.value)}
               />
               {serverFieldErrors.recipient_bik ? (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.recipient_bik}
                 </p>
               ) : bikInvalidReasons.length > 0 ? (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {bikInvalidReasons.join(" ")}
                 </p>
               ) : !bikMatchesDetectedBank && detectedBank ? (
-                <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/90 px-2 py-1.5 text-xs text-amber-950">
-                  <AlertTriangle
-                    aria-hidden="true"
-                    className="size-3.5 shrink-0 text-amber-700"
-                  />
-                  <span className="min-w-0 flex-1 break-words">
+                <div className="ui-notice ui-notice-warn flex flex-wrap items-center gap-2 px-2.5 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 text-foreground break-words">
                     {interpolate(t.queue.bikMismatchWarning, {
                       expectedBik: detectedBank.bik,
                       bank: detectedBank.name,
                     })}
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="xs"
                     onClick={handleApplyDetectedBik}
-                    className="shrink-0 rounded-md border border-amber-400 bg-card px-2 py-0.5 text-[11px] font-semibold text-amber-950 transition-colors hover:bg-amber-100 cursor-pointer"
+                    className="shrink-0"
                   >
                     {interpolate(t.queue.applyExpectedBik, {
                       bik: detectedBank.bik,
                     })}
-                  </button>
+                  </Button>
                 </div>
               ) : bikBankInfo ? (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground break-words">
-                  <Landmark aria-hidden="true" className="size-3 shrink-0" />
-                  <span className="truncate">{bikBankInfo.name}</span>
+                <p className="truncate text-xs text-muted-foreground">
+                  {bikBankInfo.name}
                 </p>
               ) : null}
 
               {bikDiffersFromHistory && matchedSupplier?.lastBik && (
-                <div className="inline-flex max-w-full items-start gap-1.5 rounded-lg border border-amber-300/90 bg-amber-50/90 px-2 py-1 text-[11px] font-medium text-amber-950">
-                  <GitCompareArrows
-                    aria-hidden="true"
-                    className="mt-0.5 size-3.5 shrink-0 text-amber-700"
-                  />
-                  <span className="break-words">
-                    {interpolate(t.queue.historyDiffBadge, {
-                      old: matchedSupplier.lastBik,
-                      current: cleanBik,
-                    })}
-                  </span>
+                <div className="ui-notice ui-notice-warn px-2.5 py-1.5 text-xs text-foreground break-words">
+                  {interpolate(t.queue.historyDiffBadge, {
+                    old: matchedSupplier.lastBik,
+                    current: cleanBik,
+                  })}
                 </div>
               )}
             </div>
 
             {/* IIK input: grouped by 4, uppercase, live mod-97, auto-bank & history diff */}
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="dialog_recipient_iik"
-                className={cn(isIikInvalid && "text-rose-900")}
-              >
+              <Label htmlFor="dialog_recipient_iik">
                 {t.queue.labelIik}
               </Label>
-              <div className="relative">
-                <Input
-                  ref={iikInputRef}
-                  id="dialog_recipient_iik"
-                  aria-invalid={isIikInvalid}
-                  placeholder="KZ47 856K ZT50 0410 0100"
-                  className={cn(
-                    "h-11 pr-9 font-mono uppercase tracking-wide sm:h-10",
-                    isIikInvalid &&
-                      "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25",
-                    !isIikInvalid &&
-                      iikValidation.status === "valid" &&
-                      "border-[#00AB75]/60 focus-visible:border-[#00AB75]"
-                  )}
-                  value={form.recipient_iik}
-                  onChange={(e) =>
-                    updateField(
-                      "recipient_iik",
-                      e.target.value,
-                      e.target.selectionStart
-                    )
-                  }
-                />
-                {iikValidation.status === "valid" && !isIikServerInvalid && (
-                  <CheckCircle2
-                    aria-hidden="true"
-                    className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-[#00AB75]"
-                  />
-                )}
-                {(iikValidation.status === "invalid" || isIikServerInvalid) && (
-                  <XCircle
-                    aria-hidden="true"
-                    className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-rose-600"
-                  />
-                )}
-              </div>
+              <Input
+                ref={iikInputRef}
+                id="dialog_recipient_iik"
+                aria-invalid={isIikInvalid}
+                placeholder="KZ47 856K ZT50 0410 0100"
+                className="h-10 bg-card font-mono uppercase tabular-nums sm:h-9"
+                value={form.recipient_iik}
+                onChange={(e) =>
+                  updateField(
+                    "recipient_iik",
+                    e.target.value,
+                    e.target.selectionStart
+                  )
+                }
+              />
 
               {serverFieldErrors.recipient_iik ? (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.recipient_iik}
                 </p>
               ) : iikInvalidReasons.length > 0 ? (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {iikInvalidReasons.join(" ")}
                 </p>
               ) : iikStatusMessage ? (
@@ -1508,45 +1399,31 @@ export function NewPaymentDialog({
                   className={cn(
                     "text-xs break-words",
                     iikValidation.status === "valid"
-                      ? "font-medium text-[#006B49]"
+                      ? "font-medium text-[var(--status-ok-text)]"
                       : iikValidation.status === "invalid"
-                        ? "font-medium text-rose-800"
+                        ? "font-medium text-[var(--status-danger-text)]"
                         : "text-muted-foreground"
                   )}
                 >
-                  {iikValidation.status === "valid" ? "✓ " : ""}
-                  {iikValidation.status === "invalid" ? "✗ " : ""}
                   {iikStatusMessage}
                 </p>
               ) : null}
 
               {detectedBank && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground break-words">
-                  <Landmark
-                    aria-hidden="true"
-                    className="size-3.5 shrink-0 text-[var(--brand-text)]"
-                  />
-                  <span>
-                    {interpolate(t.queue.bankAutoDetected, {
-                      bank: detectedBank.name,
-                      bik: detectedBank.bik,
-                    })}
-                  </span>
+                <p className="text-xs text-muted-foreground break-words">
+                  {interpolate(t.queue.bankAutoDetected, {
+                    bank: detectedBank.name,
+                    bik: detectedBank.bik,
+                  })}
                 </p>
               )}
 
               {iikDiffersFromHistory && matchedSupplier?.lastIik && (
-                <div className="inline-flex max-w-full items-start gap-1.5 rounded-lg border border-amber-300/90 bg-amber-50/90 px-2.5 py-1.5 text-xs font-medium text-amber-950">
-                  <GitCompareArrows
-                    aria-hidden="true"
-                    className="mt-0.5 size-3.5 shrink-0 text-amber-700"
-                  />
-                  <span className="break-all">
-                    {interpolate(t.queue.historyDiffBadge, {
-                      old: formatIikGrouped(matchedSupplier.lastIik),
-                      current: formatIikGrouped(cleanIik),
-                    })}
-                  </span>
+                <div className="ui-notice ui-notice-warn px-2.5 py-1.5 text-xs text-foreground break-all">
+                  {interpolate(t.queue.historyDiffBadge, {
+                    old: formatIikGrouped(matchedSupplier.lastIik),
+                    current: formatIikGrouped(cleanIik),
+                  })}
                 </div>
               )}
             </div>
@@ -1554,12 +1431,7 @@ export function NewPaymentDialog({
             {/* Amount input: thousands separators, ₸ suffix, decimal comma, typical amount hint */}
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
               <div className="flex flex-wrap items-center justify-between gap-1.5">
-                <Label
-                  htmlFor="dialog_amount_kzt"
-                  className={cn(
-                    Boolean(serverFieldErrors.amount_kzt) && "text-rose-900"
-                  )}
-                >
+                <Label htmlFor="dialog_amount_kzt">
                   {t.queue.labelAmount}
                 </Label>
                 {matchedSupplier?.typicalAmountKzt !== null &&
@@ -1579,11 +1451,7 @@ export function NewPaymentDialog({
                   inputMode="decimal"
                   aria-invalid={Boolean(serverFieldErrors.amount_kzt)}
                   placeholder="450 000"
-                  className={cn(
-                    "h-11 pr-9 tabular-nums sm:h-10",
-                    Boolean(serverFieldErrors.amount_kzt) &&
-                      "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-                  )}
+                  className="h-10 bg-card pr-9 tabular-nums sm:h-9"
                   value={form.amount_kzt}
                   onChange={(e) =>
                     updateField(
@@ -1595,27 +1463,20 @@ export function NewPaymentDialog({
                 />
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-semibold text-muted-foreground"
+                  className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground"
                 >
                   ₸
                 </span>
               </div>
               {serverFieldErrors.amount_kzt && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.amount_kzt}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="dialog_kbe"
-                className={cn(
-                  Boolean(serverFieldErrors.kbe) && "text-rose-900"
-                )}
-              >
-                {t.queue.labelKbe}
-              </Label>
+              <Label htmlFor="dialog_kbe">{t.queue.labelKbe}</Label>
               <Input
                 ref={kbeInputRef}
                 id="dialog_kbe"
@@ -1623,30 +1484,19 @@ export function NewPaymentDialog({
                 maxLength={2}
                 aria-invalid={Boolean(serverFieldErrors.kbe)}
                 placeholder={t.queue.placeholderKbe}
-                className={cn(
-                  "h-11 font-mono sm:h-10",
-                  Boolean(serverFieldErrors.kbe) &&
-                    "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-                )}
+                className="h-10 bg-card font-mono tabular-nums sm:h-9"
                 value={form.kbe}
                 onChange={(e) => updateField("kbe", e.target.value)}
               />
               {serverFieldErrors.kbe && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.kbe}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="dialog_knp"
-                className={cn(
-                  Boolean(serverFieldErrors.knp) && "text-rose-900"
-                )}
-              >
-                {t.queue.labelKnp}
-              </Label>
+              <Label htmlFor="dialog_knp">{t.queue.labelKnp}</Label>
               <Input
                 ref={knpInputRef}
                 id="dialog_knp"
@@ -1654,45 +1504,30 @@ export function NewPaymentDialog({
                 maxLength={3}
                 aria-invalid={Boolean(serverFieldErrors.knp)}
                 placeholder={t.queue.placeholderKnp}
-                className={cn(
-                  "h-11 font-mono sm:h-10",
-                  Boolean(serverFieldErrors.knp) &&
-                    "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-                )}
+                className="h-10 bg-card font-mono tabular-nums sm:h-9"
                 value={form.knp}
                 onChange={(e) => updateField("knp", e.target.value)}
               />
               {serverFieldErrors.knp && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.knp}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="dialog_purpose"
-                className={cn(
-                  Boolean(serverFieldErrors.purpose) && "text-rose-900"
-                )}
-              >
-                {t.queue.labelPurpose}
-              </Label>
+              <Label htmlFor="dialog_purpose">{t.queue.labelPurpose}</Label>
               <Input
                 ref={purposeInputRef}
                 id="dialog_purpose"
                 aria-invalid={Boolean(serverFieldErrors.purpose)}
                 placeholder={t.queue.placeholderPurpose}
-                className={cn(
-                  "h-11 sm:h-10",
-                  Boolean(serverFieldErrors.purpose) &&
-                    "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25"
-                )}
+                className="h-10 bg-card sm:h-9"
                 value={form.purpose}
                 onChange={(e) => updateField("purpose", e.target.value)}
               />
               {serverFieldErrors.purpose && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs font-medium text-[var(--status-danger-text)] break-words">
                   {serverFieldErrors.purpose}
                 </p>
               )}
@@ -1703,15 +1538,9 @@ export function NewPaymentDialog({
             <p
               id={conflictHintId}
               role="status"
-              className="flex items-start gap-2 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-xs font-medium text-amber-950"
+              className="ui-notice ui-notice-warn py-2 text-xs text-foreground break-words"
             >
-              <AlertTriangle
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-amber-700"
-              />
-              <span className="min-w-0 flex-1 break-words">
-                {t.queue.invoiceConflictBlockedHint}
-              </span>
+              {t.queue.invoiceConflictBlockedHint}
             </p>
           )}
 
@@ -1719,15 +1548,9 @@ export function NewPaymentDialog({
             <p
               id={confirmHintId}
               role="status"
-              className="flex items-start gap-2 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-xs font-medium text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100"
+              className="ui-notice ui-notice-warn py-2 text-xs text-foreground break-words"
             >
-              <AlertTriangle
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
-              />
-              <span className="min-w-0 flex-1 break-words">
-                {t.invoice.submitBlockedHint}
-              </span>
+              {t.invoice.submitBlockedHint}
             </p>
           )}
 
@@ -1737,7 +1560,7 @@ export function NewPaymentDialog({
               variant="outline"
               onClick={() => handleClose(false)}
               disabled={isSubmitting}
-              className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+              className="min-h-10 w-full sm:min-h-9 sm:w-auto"
             >
               {t.common.cancel}
             </Button>
@@ -1756,22 +1579,20 @@ export function NewPaymentDialog({
                     ? confirmHintId
                     : undefined
               }
-              className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
+              className="min-h-10 w-full sm:min-h-9 sm:w-auto"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+                  <Loader2
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
                   <span>{t.queue.submitChecking}</span>
                 </>
+              ) : isEditMode ? (
+                t.queue.submitFixCheck
               ) : (
-                <>
-                  <SearchCheck className="size-4" />
-                  <span>
-                    {isEditMode
-                      ? t.queue.submitFixCheck
-                      : t.queue.submitCheck}
-                  </span>
-                </>
+                t.queue.submitCheck
               )}
             </Button>
           </DialogFooter>

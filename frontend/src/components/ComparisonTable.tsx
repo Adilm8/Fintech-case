@@ -52,8 +52,8 @@ function HighlightedDiffChars({
     <span
       className={cn(
         monospace
-          ? "font-mono text-sm tracking-normal lg:tracking-wide break-all [overflow-wrap:anywhere]"
-          : "text-sm sm:text-[15px] leading-relaxed break-words [overflow-wrap:anywhere]"
+          ? "font-mono text-sm tabular-nums break-all [overflow-wrap:anywhere]"
+          : "text-sm leading-relaxed break-words [overflow-wrap:anywhere]"
       )}
     >
       {chars.map((char, idx) => {
@@ -74,31 +74,13 @@ function HighlightedDiffChars({
           <Fragment key={idx}>
             <mark
               title={isLatinHomoglyph ? latinTooltip : undefined}
-              className={cn(
-                "inline-flex items-baseline gap-0.5 rounded-[3px] px-[2px] py-[1px] mx-[0.5px] font-bold sm:px-[3px]",
-                variant === "invoice"
-                  ? "bg-red-600 text-white shadow-xs"
-                  : "bg-[#E8F8F2] text-[#064A34] ring-1 ring-[#00AB75]/50"
-              )}
+              className={
+                variant === "invoice" ? "ui-mark-danger" : "ui-mark-ok"
+              }
             >
-              <span
-                className={cn(
-                  variant === "invoice" &&
-                    "underline decoration-white decoration-2 underline-offset-2"
-                )}
-              >
-                {char}
-              </span>
+              <span>{char}</span>
               {isLatinHomoglyph && (
-                <span
-                  title={latinTooltip}
-                  className={cn(
-                    "ml-0.5 inline-block -translate-y-0.5 rounded px-1 py-[1px] text-[10px] font-semibold leading-none tracking-normal",
-                    variant === "invoice"
-                      ? "bg-amber-300 text-red-950"
-                      : "bg-amber-200 text-amber-950"
-                  )}
-                >
+                <span title={latinTooltip} className="ui-mark-tag">
                   {latinTag}
                 </span>
               )}
@@ -167,15 +149,13 @@ export function ComparisonTable({
 
   return (
     <Card className={cn("min-w-0", className)}>
-      <CardHeader className="border-b border-border pb-3.5">
-        <CardTitle className="text-base font-semibold">
-          {t.comparison.title}
-        </CardTitle>
+      <CardHeader className="border-b border-border pb-3">
+        <CardTitle>{t.comparison.title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {preparedRows.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-muted-foreground sm:px-5">
-            {t.comparison.empty}
+          <div className="ui-empty">
+            <p className="ui-empty-desc">{t.comparison.empty}</p>
           </div>
         ) : (
           <>
@@ -197,24 +177,23 @@ export function ComparisonTable({
                   <div
                     key={row.field}
                     className={cn(
-                      "min-w-0 px-4 py-3.5 space-y-2.5",
+                      "min-w-0 px-4 py-3 space-y-2",
                       isInvalidField
-                        ? "bg-rose-50/85 border-l-4 border-l-rose-700 pl-3"
-                        : showDiff &&
-                            "bg-red-50/70 border-l-4 border-l-red-500 pl-3"
+                        ? "ui-diff-row-invalid pl-3.5"
+                        : showDiff && "ui-diff-row-danger pl-3.5"
                     )}
                   >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-foreground">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="text-sm font-medium text-foreground">
                         {t.fields[row.field] ?? row.field}
                       </span>
                       {isInvalidField ? (
-                        <span className="inline-flex items-center rounded bg-rose-200/80 px-1.5 py-0.5 text-[11px] font-semibold text-rose-950">
+                        <span className="text-xs font-medium text-[var(--status-invalid-text)]">
                           {t.comparison.invalidBadge}
                         </span>
                       ) : (
                         showDiff && (
-                          <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
+                          <span className="text-xs font-medium text-[var(--status-danger-text)]">
                             {t.comparison.differsBadge}
                           </span>
                         )
@@ -222,7 +201,7 @@ export function ComparisonTable({
                     </div>
 
                     <div className="min-w-0 space-y-0.5">
-                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <div className="ui-label-meta">
                         {t.comparison.colInInvoice}
                       </div>
                       <div className="min-w-0">
@@ -239,14 +218,14 @@ export function ComparisonTable({
                           <span
                             className={cn(
                               isMonospace
-                                ? "font-mono text-sm tracking-normal break-all [overflow-wrap:anywhere]"
+                                ? "font-mono text-sm tabular-nums break-all [overflow-wrap:anywhere]"
                                 : isAmount
                                   ? "text-sm font-medium tabular-nums whitespace-nowrap"
                                   : "text-sm break-words [overflow-wrap:anywhere]",
                               isInvalidField
-                                ? "font-semibold text-rose-950"
+                                ? "font-medium text-[var(--status-invalid-text)]"
                                 : showDiff
-                                  ? "font-semibold text-red-900"
+                                  ? "font-medium text-[var(--status-danger-text)]"
                                   : "text-foreground"
                             )}
                           >
@@ -255,18 +234,18 @@ export function ComparisonTable({
                         )}
                       </div>
                       {isInvalidField && invalidReasons.length > 0 && (
-                        <div className="pt-1 text-xs font-medium text-rose-900 break-words">
+                        <div className="pt-0.5 text-xs font-medium text-[var(--status-invalid-text)] break-words">
                           {invalidReasons.join(" ")}
                         </div>
                       )}
                     </div>
 
                     <div className="min-w-0 space-y-0.5">
-                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <div className="ui-label-meta">
                         {t.comparison.colInHistory}
                       </div>
                       {formattedHistory ? (
-                        <div className="min-w-0 space-y-1">
+                        <div className="min-w-0 space-y-0.5">
                           <div className="min-w-0">
                             {hasHistoryDiff ? (
                               <HighlightedDiffChars
@@ -281,7 +260,7 @@ export function ComparisonTable({
                               <span
                                 className={cn(
                                   isMonospace
-                                    ? "font-mono text-sm tracking-normal break-all [overflow-wrap:anywhere]"
+                                    ? "font-mono text-sm tabular-nums break-all [overflow-wrap:anywhere]"
                                     : isAmount
                                       ? "text-sm tabular-nums whitespace-nowrap"
                                       : "text-sm break-words [overflow-wrap:anywhere]",
@@ -293,7 +272,7 @@ export function ComparisonTable({
                             )}
                           </div>
                           {row.last_seen && (
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground tabular-nums">
                               {interpolate(t.comparison.lastPayment, {
                                 date: formatDate(row.last_seen),
                               })}
@@ -314,14 +293,14 @@ export function ComparisonTable({
             <div className="hidden md:block">
               <Table className="w-full table-fixed">
                 <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead className="w-[26%] lg:w-[24%] pl-4 lg:pl-5 whitespace-normal">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-[26%] lg:w-[24%] pl-4 whitespace-normal">
                       {t.comparison.colField}
                     </TableHead>
                     <TableHead className="w-[37%] lg:w-[38%] whitespace-normal">
                       {t.comparison.colInInvoice}
                     </TableHead>
-                    <TableHead className="w-[37%] lg:w-[38%] pr-4 lg:pr-5 whitespace-normal">
+                    <TableHead className="w-[37%] lg:w-[38%] pr-4 whitespace-normal">
                       {t.comparison.colInHistoryFull}
                     </TableHead>
                   </TableRow>
@@ -345,21 +324,20 @@ export function ComparisonTable({
                         key={row.field}
                         className={cn(
                           isInvalidField
-                            ? "bg-rose-50/85 hover:bg-rose-50 border-l-4 border-l-rose-700"
-                            : showDiff &&
-                                "bg-red-50/70 hover:bg-red-50/90 border-l-4 border-l-red-500"
+                            ? "ui-diff-row-invalid"
+                            : showDiff && "ui-diff-row-danger"
                         )}
                       >
-                        <TableCell className="min-w-0 pl-4 lg:pl-5 py-3.5 align-top font-medium text-foreground whitespace-normal break-words">
-                          <div className="flex flex-wrap items-center gap-2">
+                        <TableCell className="min-w-0 pl-4 align-top font-medium text-foreground whitespace-normal break-words">
+                          <div className="flex flex-wrap items-baseline gap-2">
                             <span>{t.fields[row.field] ?? row.field}</span>
                             {isInvalidField ? (
-                              <span className="inline-flex items-center rounded bg-rose-200/80 px-1.5 py-0.5 text-[11px] font-semibold text-rose-950">
+                              <span className="text-xs font-medium text-[var(--status-invalid-text)]">
                                 {t.comparison.invalidBadge}
                               </span>
                             ) : (
                               showDiff && (
-                                <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
+                                <span className="text-xs font-medium text-[var(--status-danger-text)]">
                                   {t.comparison.differsBadge}
                                 </span>
                               )
@@ -367,7 +345,7 @@ export function ComparisonTable({
                           </div>
                         </TableCell>
 
-                        <TableCell className="min-w-0 py-3.5 align-top whitespace-normal break-words">
+                        <TableCell className="min-w-0 align-top whitespace-normal break-words">
                           <div className="min-w-0 space-y-1">
                             {hasInvoiceDiff ? (
                               <HighlightedDiffChars
@@ -382,14 +360,14 @@ export function ComparisonTable({
                               <span
                                 className={cn(
                                   isMonospace
-                                    ? "font-mono text-sm tracking-normal lg:tracking-wide break-all [overflow-wrap:anywhere]"
+                                    ? "font-mono text-sm tabular-nums break-all [overflow-wrap:anywhere]"
                                     : isAmount
                                       ? "text-sm font-medium tabular-nums whitespace-nowrap"
                                       : "text-sm break-words [overflow-wrap:anywhere]",
                                   isInvalidField
-                                    ? "font-semibold text-rose-950"
+                                    ? "font-medium text-[var(--status-invalid-text)]"
                                     : showDiff
-                                      ? "font-semibold text-red-900"
+                                      ? "font-medium text-[var(--status-danger-text)]"
                                       : "text-foreground"
                                 )}
                               >
@@ -397,16 +375,16 @@ export function ComparisonTable({
                               </span>
                             )}
                             {isInvalidField && invalidReasons.length > 0 && (
-                              <div className="text-xs font-medium text-rose-900 break-words">
+                              <div className="text-xs font-medium text-[var(--status-invalid-text)] break-words">
                                 {invalidReasons.join(" ")}
                               </div>
                             )}
                           </div>
                         </TableCell>
 
-                        <TableCell className="min-w-0 pr-4 lg:pr-5 py-3.5 align-top whitespace-normal break-words">
+                        <TableCell className="min-w-0 pr-4 align-top whitespace-normal break-words">
                           {formattedHistory ? (
-                            <div className="min-w-0 space-y-1">
+                            <div className="min-w-0 space-y-0.5">
                               <div className="min-w-0">
                                 {hasHistoryDiff ? (
                                   <HighlightedDiffChars
@@ -423,7 +401,7 @@ export function ComparisonTable({
                                   <span
                                     className={cn(
                                       isMonospace
-                                        ? "font-mono text-sm tracking-normal lg:tracking-wide break-all [overflow-wrap:anywhere]"
+                                        ? "font-mono text-sm tabular-nums break-all [overflow-wrap:anywhere]"
                                         : isAmount
                                           ? "text-sm tabular-nums whitespace-nowrap"
                                           : "text-sm break-words [overflow-wrap:anywhere]",
@@ -435,7 +413,7 @@ export function ComparisonTable({
                                 )}
                               </div>
                               {row.last_seen && (
-                                <div className="text-xs text-muted-foreground">
+                                <div className="text-xs text-muted-foreground tabular-nums">
                                   {interpolate(t.comparison.lastPayment, {
                                     date: formatDate(row.last_seen),
                                   })}
