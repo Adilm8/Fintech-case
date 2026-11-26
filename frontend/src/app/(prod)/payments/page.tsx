@@ -4,8 +4,11 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
+  Download,
   FileSpreadsheet,
+  FileText,
   Inbox,
+  Loader2,
   RefreshCw,
   Search,
   SearchX,
@@ -22,15 +25,22 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useT } from "@/i18n";
 import { VERDICT_STYLES } from "@/lib/format";
-import { getBatches, getPayments, getProdErrorMessage } from "@/lib/prod/api";
+import {
+  exportPayments,
+  getBatches,
+  getPayments,
+  getProdErrorMessage,
+} from "@/lib/prod/api";
 import { useSession } from "@/lib/prod/session";
 import type {
   Batch,
+  ExportFormat,
   Payment,
   PaymentStatus,
   Verdict,
   VerdictCounts,
 } from "@/lib/prod/types";
+import { notify } from "@/lib/toast";
 import { cn } from "cn";
 
 type QueueTab =
@@ -108,6 +118,12 @@ function PaymentsPageContent() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(
+    null
+  );
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -212,12 +228,15 @@ function PaymentsPageContent() {
         let greenChecked = 0;
         let toDirectorChecked = 0;
         for (const p of checkedRes.items) {
-          if (p.check.verdict === "green") {
+          const blockedByThreshold =
+            p.permissions.sign_block_code === "threshold_requires_approval";
+          if (p.check.verdict === "green" && !blockedByThreshold) {
             greenChecked += 1;
           } else if (
             p.check.verdict === "yellow" ||
             p.check.verdict === "red" ||
-            p.check.verdict === "grey"
+            p.check.verdict === "grey" ||
+            (p.check.verdict === "green" && blockedByThreshold)
           ) {
             toDirectorChecked += 1;
           }
@@ -272,6 +291,51 @@ function PaymentsPageContent() {
   const handleRefresh = useCallback(() => {
     setRefreshNonce((n) => n + 1);
   }, []);
+
+  const handleExport = async (format: ExportFormat) => {
+    if (exportingFormat !== null) return;
+    setExportingFormat(format);
+    try {
+      const isSignedTab = activeTab === "signed";
+      const statusParam: PaymentStatus | undefined =
+        activeTab === "pending_approval" ||
+        activeTab === "rejected" ||
+        activeTab === "postponed"
+          ? activeTab
+          : undefined;
+
+      const { blob, filename } = await exportPayments(
+        {
+          format,
+          scope: isSignedTab ? "signed" : "queue",
+          status: statusParam,
+          verdict: verdictFilter === "all" ? undefined : verdictFilter,
+          batch_id: batchId ?? undefined,
+          q: debouncedQuery || undefined,
+          from: exportFrom || undefined,
+          to: exportTo || undefined,
+        },
+        lang
+      );
+
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+      notify.success(
+        format === "csv" ? t.prod.export.successCsv : t.prod.export.successPdf
+      );
+    } catch (err) {
+      notify.error(t.check.actionErrorTitle, getProdErrorMessage(err));
+    } finally {
+      setExportingFormat(null);
+    }
+  };
 
   const tabs: Array<{ key: QueueTab; label: string; count: number }> = useMemo(
     () => [
@@ -503,23 +567,93 @@ function PaymentsPageContent() {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
               <span className="text-xs font-medium text-muted-foreground tabular-nums">
                 {interpolate(t.prod.payments.totalInScope, { count: total })}
               </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isLoading}
-                className="min-h-9 gap-1.5 rounded-xl"
-              >
-                <RefreshCw
-                  className={cn("size-3.5", isLoading && "animate-spin")}
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input
+                  type="date"
+                  aria-label={t.prod.export.fromLabel}
+                  title={t.prod.export.fromLabel}
+                  value={exportFrom}
+                  onChange={(e) => setExportFrom(e.target.value)}
+                  className="h-9 w-[138px] rounded-xl bg-background/70 px-2.5 text-xs"
                 />
-                <span>{t.common.refresh}</span>
-              </Button>
+                <Input
+                  type="date"
+                  aria-label={t.prod.export.toLabel}
+                  title={t.prod.export.toLabel}
+                  value={exportTo}
+                  onChange={(e) => setExportTo(e.target.value)}
+                  className="h-9 w-[138px] rounded-xl bg-background/70 px-2.5 text-xs"
+                />
+                {(exportFrom || exportTo) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setExportFrom("");
+                      setExportTo("");
+                    }}
+                    aria-label={t.prod.export.clearDates}
+                    title={t.prod.export.clearDates}
+                    className="size-9 rounded-xl text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleExport("csv")}
+                  disabled={exportingFormat !== null}
+                  title={t.prod.export.csvTooltip}
+                  className="min-h-9 gap-1.5 rounded-xl"
+                >
+                  {exportingFormat === "csv" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Download className="size-3.5" />
+                  )}
+                  <span>{t.prod.export.csvButton}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleExport("pdf")}
+                  disabled={exportingFormat !== null}
+                  title={t.prod.export.pdfTooltip}
+                  className="min-h-9 gap-1.5 rounded-xl"
+                >
+                  {exportingFormat === "pdf" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <FileText className="size-3.5" />
+                  )}
+                  <span>{t.prod.export.pdfButton}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isLoading}
+                  className="min-h-9 gap-1.5 rounded-xl"
+                >
+                  <RefreshCw
+                    className={cn("size-3.5", isLoading && "animate-spin")}
+                  />
+                  <span>{t.common.refresh}</span>
+                </Button>
+              </div>
             </div>
           </div>
 

@@ -36,6 +36,13 @@ PROD_ERROR_CODES: frozenset[str] = frozenset(
         "invalid_payment_cannot_approve",
         "too_many_attempts",
         "internal_error",
+        "invalid_current_password",
+        "password_same_as_current",
+        "login_already_exists",
+        "last_director_protected",
+        "threshold_requires_approval",
+        "invalid_date_range",
+        "pdf_unavailable",
     }
 )
 

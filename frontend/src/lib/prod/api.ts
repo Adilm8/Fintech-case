@@ -12,9 +12,19 @@ import type {
   AuditVerifyResult,
   Batch,
   BatchActionResult,
+  CompanyDetail,
+  CompanyRole,
+  CompanySettings,
+  CompanyUser,
+  ExportFormat,
   ImportFormat,
   ImportResult,
+  InviteUserResponse,
+  MarkNotificationsReadResponse,
   MetricsResponse,
+  NotificationList,
+  NotifyOn,
+  PasswordChangeResponse,
   Payment,
   PaymentInput,
   PaymentList,
@@ -24,6 +34,7 @@ import type {
   Session,
   Supplier,
   SupplierDetail,
+  UserProfile,
   ValidationFieldError,
   Verdict,
 } from "./types";
@@ -720,4 +731,227 @@ export async function getMetrics(
     undefined,
     options
   );
+}
+
+// --- Profile (/me) ---
+
+export async function getProfile(
+  lang: Lang = getCurrentLang(),
+  options?: ProdRequestOptions
+): Promise<UserProfile> {
+  return request<UserProfile>("/me", { method: "GET" }, lang, undefined, options);
+}
+
+export async function updateProfile(
+  payload: { full_name?: string; default_lang?: Lang },
+  lang: Lang = getCurrentLang()
+): Promise<UserProfile> {
+  return request<UserProfile>(
+    "/me",
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+    lang
+  );
+}
+
+export async function changePassword(
+  payload: { current_password: string; new_password: string },
+  lang: Lang = getCurrentLang()
+): Promise<PasswordChangeResponse> {
+  return request<PasswordChangeResponse>(
+    "/me/password",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    lang,
+    undefined,
+    { suppressAuthRedirect: true }
+  );
+}
+
+// --- Company & Settings ---
+
+export async function getCompany(
+  lang: Lang = getCurrentLang(),
+  options?: ProdRequestOptions
+): Promise<CompanyDetail> {
+  return request<CompanyDetail>(
+    "/company",
+    { method: "GET" },
+    lang,
+    undefined,
+    options
+  );
+}
+
+export async function inviteCompanyUser(
+  payload: { login: string; full_name: string; role: CompanyRole },
+  lang: Lang = getCurrentLang()
+): Promise<InviteUserResponse> {
+  return request<InviteUserResponse>(
+    "/company/users",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    lang
+  );
+}
+
+export async function updateCompanyUser(
+  userId: number,
+  payload: { role?: CompanyRole; is_active?: boolean },
+  lang: Lang = getCurrentLang()
+): Promise<CompanyUser> {
+  return request<CompanyUser>(
+    `/company/users/${encodeURIComponent(String(userId))}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+    lang
+  );
+}
+
+export async function getCompanySettings(
+  lang: Lang = getCurrentLang(),
+  options?: ProdRequestOptions
+): Promise<CompanySettings> {
+  return request<CompanySettings>(
+    "/company/settings",
+    { method: "GET" },
+    lang,
+    undefined,
+    options
+  );
+}
+
+export async function updateCompanySettings(
+  payload: { notify_on?: NotifyOn; approval_threshold_kzt?: number | null },
+  lang: Lang = getCurrentLang()
+): Promise<CompanySettings> {
+  return request<CompanySettings>(
+    "/company/settings",
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+    lang
+  );
+}
+
+// --- Notifications ---
+
+export async function getNotifications(
+  params?: { limit?: number },
+  lang: Lang = getCurrentLang(),
+  options?: ProdRequestOptions
+): Promise<NotificationList> {
+  return request<NotificationList>(
+    "/notifications",
+    { method: "GET" },
+    lang,
+    params?.limit ? { limit: params.limit } : undefined,
+    options
+  );
+}
+
+export async function markNotificationsRead(
+  ids?: string[],
+  lang: Lang = getCurrentLang()
+): Promise<MarkNotificationsReadResponse> {
+  return request<MarkNotificationsReadResponse>(
+    "/notifications/read",
+    {
+      method: "POST",
+      body: JSON.stringify(ids && ids.length > 0 ? { ids } : {}),
+    },
+    lang
+  );
+}
+
+// --- Payments Export (CSV / PDF) ---
+
+export interface ExportPaymentsParams {
+  format: ExportFormat;
+  scope?: PaymentScope;
+  status?: PaymentStatus;
+  verdict?: Verdict;
+  batch_id?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+}
+
+export async function exportPayments(
+  params: ExportPaymentsParams,
+  lang: Lang = getCurrentLang()
+): Promise<{ blob: Blob; filename: string }> {
+  const dict = getDictionary(lang);
+  const url = buildUrl("/payments/export", lang, {
+    format: params.format,
+    scope: params.scope,
+    status: params.status,
+    verdict: params.verdict,
+    batch_id: params.batch_id,
+    q: params.q,
+    from: params.from,
+    to: params.to,
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError({
+      status: 0,
+      code: "network_error",
+      isNetworkError: true,
+      message: interpolate(dict.errors.networkUnreachable, {
+        url: PROD_API_BASE,
+      }),
+    });
+  }
+
+  if (!response.ok) {
+    let body: unknown = null;
+    const ct = response.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+    } else {
+      try {
+        body = await response.text();
+      } catch {
+        body = null;
+      }
+    }
+    const parsed = parseErrorPayload(body, response.status, lang);
+    if (response.status === 401) {
+      handleUnauthorized();
+    }
+    throw new ApiError({
+      status: response.status,
+      code: parsed.code,
+      detail: parsed.message,
+      message: parsed.message,
+      errors: parsed.errors,
+    });
+  }
+
+  const blob = await response.blob();
+  const cd = response.headers.get("content-disposition") || "";
+  const match = cd.match(/filename="?([^";]+)"?/i);
+  const fallbackName = `business-shield-payments.${params.format}`;
+  return { blob, filename: match?.[1] || fallbackName };
 }

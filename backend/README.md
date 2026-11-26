@@ -144,6 +144,7 @@ Demo mode remains the default and is completely unchanged: running `uv run uvico
 | `SHIELD_COOKIE_SECURE` | `0` | Set to `1` to add the `Secure` cookie flag behind HTTPS. |
 | `SHIELD_TODAY` | *(empty)* | Optional `YYYY-MM-DD` override pinning "today" for reproducible checks and seeding. |
 | `SHIELD_SEED_PASSWORD` | *(empty)* | Password for seeded users; if unset, a random password is generated and printed once to stdout. |
+| `SHIELD_PDF_FONT` | *(empty)* | Optional path to a Unicode TrueType (`.ttf`) font for Cyrillic/Kazakh PDF export (auto-detects system Arial/Segoe UI/DejaVu/Liberation fonts by default). |
 
 ### Seeding and Running Prod Mode
 
@@ -178,7 +179,15 @@ uv run uvicorn app.asgi:app --port 8000
 | `GET` | `/api/v1/meta` | public | Runtime mode (`"prod"`) and active `ruleset_version`. |
 | `POST` | `/api/v1/auth/login`, `/logout` | public / any | Session cookie login (`401`/`429`) and revocation (`204`). |
 | `GET` | `/api/v1/auth/me` | any | Current authenticated `{user, company}`. |
+| `GET`, `PUT` | `/api/v1/me` | any | Current user profile (`full_name`, `default_lang`, `company`) and profile update (audited). |
+| `POST` | `/api/v1/me/password` | any | Change password (`scrypt`), revoke all other active sessions, and record audit entry. |
+| `GET` | `/api/v1/company` | A, D | Company profile (`name`, `bin`, `iik`, `bik`) and company users with roles and active status. |
+| `POST` | `/api/v1/company/users` | D | Invite a new company user (`accountant` \| `director`); returns a one-time `temporary_password`. |
+| `PUT` | `/api/v1/company/users/{id}` | D | Update company user role or active flag (revokes sessions on deactivation; protects last active director with `409 last_director_protected`). |
+| `GET`, `PUT` | `/api/v1/company/settings` | D | Company notification filter (`notify_on`: `red` \| `red_yellow`) and `approval_threshold_kzt` (payments `>= threshold` require director approval even when `green`, returning `409 threshold_requires_approval` in `/sign` and `/batch/sign-green`). |
+| `GET`, `POST` | `/api/v1/notifications`, `/notifications/read` | any | Server-derived notifications (pending approvals, director decisions, `sign_denied`) filtered by `notify_on`, with per-user read state. |
 | `GET`, `POST` | `/api/v1/payments` | A, D, N / A | Paginated payment list with full-scope `counts`, filters, search; create & verify manual payment (`201`). |
+| `GET` | `/api/v1/payments/export` | A, D, N | Export check history (`format=csv` UTF-8 BOM for Excel; `format=pdf` A4 report «Что проверить перед подписью» with embedded Cyrillic TTF) filtered by `scope`, `from`, `to`. |
 | `GET`, `PUT` | `/api/v1/payments/{id}` | A, D, N / A | View payment (`analyst_details` only for `analyst`); edit & recheck editable statuses (`checked`, `rejected`, `postponed`). |
 | `POST` | `/api/v1/payments/{id}/sign` | A, D | Server-side signing gate (rechecks at sign time, enforces approval/ack rules, updates supplier directory atomically, logs `sign` / `sign_denied`). |
 | `POST` | `/api/v1/payments/{id}/{recheck,send-to-director,postpone,resume,cancel}` | A | Lifecycle transitions and approval submission. |

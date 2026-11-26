@@ -22,7 +22,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LANG_OPTIONS, useT } from "@/i18n";
-import { ApiError, getProdErrorMessage, login as apiLogin } from "@/lib/prod/api";
+import {
+  ApiError,
+  getProdErrorMessage,
+  getProfile,
+  login as apiLogin,
+} from "@/lib/prod/api";
 import { defaultHomeForRole, useSession } from "@/lib/prod/session";
 import { cn } from "cn";
 
@@ -54,6 +59,14 @@ export default function ProdLoginPage() {
         lang
       );
       setSession(session);
+      try {
+        const profile = await getProfile(lang, { suppressAuthRedirect: true });
+        if (profile.default_lang && profile.default_lang !== lang) {
+          setLang(profile.default_lang);
+        }
+      } catch {
+        // Non-blocking language preference sync.
+      }
       router.replace(defaultHomeForRole(session.user.role));
     } catch (err) {
       if (err instanceof ApiError) {

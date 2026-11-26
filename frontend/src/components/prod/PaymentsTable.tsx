@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Copy } from "lucide-react";
+import { ChevronRight, Copy, Lock } from "lucide-react";
 import { StatusBadge } from "@/components/prod/StatusBadge";
 import { SupplierBadge } from "@/components/prod/SupplierBadge";
 import { VerdictBadge } from "@/components/VerdictBadge";
@@ -108,6 +108,16 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                     <span>{t.prod.payments.possibleDuplicate}</span>
                   </Badge>
                 )}
+                {payment.permissions.sign_block_code ===
+                  "threshold_requires_approval" && (
+                  <Badge
+                    variant="outline"
+                    className="h-auto gap-1 border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900"
+                  >
+                    <Lock className="size-3 shrink-0" />
+                    <span>{t.prod.payments.thresholdApprovalBadge}</span>
+                  </Badge>
+                )}
               </div>
             </Link>
           );
@@ -176,6 +186,16 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                           >
                             <Copy className="size-3 shrink-0" />
                             <span>{t.prod.payments.possibleDuplicate}</span>
+                          </Badge>
+                        )}
+                        {payment.permissions.sign_block_code ===
+                          "threshold_requires_approval" && (
+                          <Badge
+                            variant="outline"
+                            className="h-auto gap-1 border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900"
+                          >
+                            <Lock className="size-3 shrink-0" />
+                            <span>{t.prod.payments.thresholdApprovalBadge}</span>
                           </Badge>
                         )}
                       </div>

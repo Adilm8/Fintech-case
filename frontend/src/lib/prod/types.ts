@@ -1,3 +1,4 @@
+import type { Lang } from "@/i18n";
 import type {
   CheckRequest,
   CheckResult,
@@ -277,4 +278,84 @@ export interface ValidationFieldError {
   field: string;
   message: string;
   message_ru?: string;
+}
+
+export type CompanyRole = "accountant" | "director";
+export type NotifyOn = "red" | "red_yellow";
+export type ExportFormat = "csv" | "pdf";
+export type NotificationKind =
+  | "approval_pending"
+  | "approval_approved"
+  | "approval_rejected"
+  | "sign_denied";
+
+export interface UserProfile {
+  id: number;
+  login: string;
+  full_name: string;
+  role: Role;
+  company_id: string | null;
+  default_lang: Lang;
+  company: Company | null;
+}
+
+export interface PasswordChangeResponse {
+  ok: boolean;
+  revoked_sessions: number;
+}
+
+export interface CompanyUser {
+  id: number;
+  login: string;
+  full_name: string;
+  role: CompanyRole;
+  is_active: boolean;
+  default_lang: Lang;
+  created_at: string;
+}
+
+export interface CompanyDetail {
+  id: string;
+  name: string;
+  bin: string;
+  iik: string;
+  bik: string;
+  created_at: string;
+  users: CompanyUser[];
+}
+
+export interface InviteUserResponse {
+  user: CompanyUser;
+  temporary_password: string;
+}
+
+export interface CompanySettings {
+  notify_on: NotifyOn;
+  approval_threshold_kzt: number | null;
+  updated_at: string | null;
+}
+
+export interface NotificationItem {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  message: string;
+  created_at: string;
+  read: boolean;
+  payment_id: string | null;
+  approval_id: string | null;
+  verdict: Verdict | null;
+  recipient_name: string | null;
+  amount_kzt: number | null;
+  link: string | null;
+}
+
+export interface NotificationList {
+  unread_count: number;
+  items: NotificationItem[];
+}
+
+export interface MarkNotificationsReadResponse {
+  marked: number;
+  unread_count: number;
 }

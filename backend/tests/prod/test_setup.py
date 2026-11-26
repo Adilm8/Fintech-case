@@ -21,6 +21,7 @@ from app.settings import BACKEND_DIR, Settings, load_settings
 
 EXPECTED_TABLES: set[str] = {
     "companies",
+    "company_settings",
     "users",
     "sessions",
     "import_batches",
@@ -32,6 +33,7 @@ EXPECTED_TABLES: set[str] = {
     "supplier_accounts",
     "supplier_changes",
     "audit_log",
+    "notification_reads",
 }
 
 
@@ -192,7 +194,7 @@ class TestProdAppMetaAndIsolation:
         # Lifespan ran migrations on startup
         conn = connect(db_file)
         try:
-            assert get_schema_version(conn) == 1
+            assert get_schema_version(conn) == 2
         finally:
             conn.close()
 
@@ -206,8 +208,8 @@ class TestDatabaseMigrationsAndConstraints:
             assert str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
 
             version_first = migrate(conn)
-            assert version_first == 1
-            assert get_schema_version(conn) == 1
+            assert version_first == 2
+            assert get_schema_version(conn) == 2
 
             tables = {
                 row["name"]
@@ -227,7 +229,7 @@ class TestDatabaseMigrationsAndConstraints:
                 )
 
             version_second = migrate(conn)
-            assert version_second == 1
+            assert version_second == 2
             count = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
             assert count == 1
         finally:

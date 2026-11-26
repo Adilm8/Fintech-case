@@ -20,7 +20,10 @@ from app.prod.errors import ProdError, localize_prod_error
 from app.prod.routers import approvals as approvals_router
 from app.prod.routers import audit as audit_router
 from app.prod.routers import auth as auth_router
+from app.prod.routers import company as company_router
+from app.prod.routers import me as me_router
 from app.prod.routers import meta as meta_router
+from app.prod.routers import notifications as notifications_router
 from app.prod.routers import payments as payments_router
 from app.prod.routers import suppliers as suppliers_router
 from app.prod.security import LoginRateLimiter
@@ -101,6 +104,9 @@ def create_prod_app(
     api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_csrf_header)])
     api_v1.include_router(meta_router.router)
     api_v1.include_router(auth_router.router)
+    api_v1.include_router(me_router.router)
+    api_v1.include_router(company_router.router)
+    api_v1.include_router(notifications_router.router)
     api_v1.include_router(payments_router.router)
     api_v1.include_router(payments_router.batches_router)
     api_v1.include_router(approvals_router.router)

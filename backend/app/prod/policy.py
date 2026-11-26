@@ -113,8 +113,10 @@ def sign_decision(
     approval_status: ProdApprovalStatus | None,
     approval_request_sha256: str | None,
     accountant_ack: bool,
+    amount_tiyn: int | None = None,
+    approval_threshold_tiyn: int | None = None,
 ) -> SignDecision:
-    """Evaluate all 11 rows of the §5 server-side signing rule table in exact order."""
+    """Evaluate all rows of the §5 server-side signing rule table plus approval threshold."""
     # Rows 1-4: non-signable lifecycle statuses
     pre_block = pre_sign_status_check(status)
     if pre_block is not None:
@@ -141,13 +143,21 @@ def sign_decision(
     if has_matching_approval:
         return SignDecision(allowed=True)
 
-    # Row 8: green verdict
-    if fresh_verdict == "green":
-        return SignDecision(allowed=True)
-
-    # Row 9: red verdict without matching approval
+    # Row 8: red verdict without matching approval
     if fresh_verdict == "red":
         return SignDecision(allowed=False, block_code="red_requires_approval")
+
+    # Threshold policy: payments >= company approval threshold require director approval even if green
+    if (
+        approval_threshold_tiyn is not None
+        and amount_tiyn is not None
+        and amount_tiyn >= approval_threshold_tiyn
+    ):
+        return SignDecision(allowed=False, block_code="threshold_requires_approval")
+
+    # Row 9: green verdict (below threshold or no threshold set)
+    if fresh_verdict == "green":
+        return SignDecision(allowed=True)
 
     # Row 10: yellow or grey with explicit accountant acknowledgement (accountant role only)
     if fresh_verdict in ("yellow", "grey") and accountant_ack and role == "accountant":
@@ -165,6 +175,8 @@ def permissions_for(
     payment_request_sha256: str,
     approval_status: ProdApprovalStatus | None = None,
     approval_request_sha256: str | None = None,
+    amount_tiyn: int | None = None,
+    approval_threshold_tiyn: int | None = None,
 ) -> PaymentPermissions:
     """Compute server-authoritative UI and API permissions derived from sign_decision()."""
     is_accountant = role == "accountant"
@@ -199,6 +211,8 @@ def permissions_for(
         approval_status=approval_status,
         approval_request_sha256=approval_request_sha256,
         accountant_ack=False,
+        amount_tiyn=amount_tiyn,
+        approval_threshold_tiyn=approval_threshold_tiyn,
     )
     if without_ack.allowed:
         can_sign = True
@@ -214,6 +228,8 @@ def permissions_for(
             approval_status=approval_status,
             approval_request_sha256=approval_request_sha256,
             accountant_ack=True,
+            amount_tiyn=amount_tiyn,
+            approval_threshold_tiyn=approval_threshold_tiyn,
         )
         if with_ack.allowed:
             can_sign = True

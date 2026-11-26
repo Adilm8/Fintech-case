@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
+from app.i18n import Lang
 from app.schemas import (
     CheckRequest,
     CheckResult,
@@ -452,3 +454,197 @@ class AuditVerifyResult(BaseModel):
     ok: bool
     checked: int
     broken_at: int | None = None
+
+
+CompanyRole = Literal["accountant", "director"]
+NotifyOn = Literal["red", "red_yellow"]
+ExportFormat = Literal["csv", "pdf"]
+NotificationKind = Literal[
+    "approval_pending",
+    "approval_approved",
+    "approval_rejected",
+    "sign_denied",
+]
+
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+class UserProfile(BaseModel):
+    """Full user profile returned by GET/PUT /api/v1/me."""
+
+    id: int
+    login: str
+    full_name: str
+    role: Role
+    company_id: str | None
+    default_lang: Lang = "ru"
+    company: Company | None = None
+
+
+class UpdateProfileRequest(BaseModel):
+    """Update current user profile payload for PUT /api/v1/me."""
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=120)
+    default_lang: Lang | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def _clean_full_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = clean_text_field(value)
+        if not cleaned or meaningful_length(cleaned) == 0:
+            raise ValueError("Укажите имя и фамилию.")
+        return cleaned
+
+
+class ChangePasswordRequest(BaseModel):
+    """Password change payload for POST /api/v1/me/password."""
+
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class PasswordChangeResponse(BaseModel):
+    """Response payload for POST /api/v1/me/password."""
+
+    ok: bool = True
+    revoked_sessions: int
+
+
+class CompanyUser(BaseModel):
+    """Company member details returned under GET /api/v1/company."""
+
+    id: int
+    login: str
+    full_name: str
+    role: CompanyRole
+    is_active: bool
+    default_lang: Lang = "ru"
+    created_at: str
+
+
+class CompanyDetail(BaseModel):
+    """Company profile with users list returned by GET /api/v1/company."""
+
+    id: str
+    name: str
+    bin: str
+    iik: str
+    bik: str
+    created_at: str
+    users: list[CompanyUser]
+
+
+class InviteUserRequest(BaseModel):
+    """Director invite payload for POST /api/v1/company/users."""
+
+    login: str = Field(min_length=3, max_length=64)
+    full_name: str = Field(min_length=1, max_length=120)
+    role: CompanyRole
+
+    @field_validator("login")
+    @classmethod
+    def _validate_login(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned or not _LOGIN_RE.match(cleaned):
+            raise ValueError(
+                "Логин может содержать только латинские буквы, цифры, точку, дефис и подчёркивание."
+            )
+        return cleaned
+
+    @field_validator("full_name")
+    @classmethod
+    def _validate_full_name(cls, value: str) -> str:
+        cleaned = clean_text_field(value)
+        if not cleaned or meaningful_length(cleaned) == 0:
+            raise ValueError("Укажите имя и фамилию.")
+        return cleaned
+
+
+class InviteUserResponse(BaseModel):
+    """Response for POST /api/v1/company/users returning temporary_password once."""
+
+    user: CompanyUser
+    temporary_password: str
+
+
+class UpdateCompanyUserRequest(BaseModel):
+    """Director update payload for PUT /api/v1/company/users/{id}."""
+
+    role: CompanyRole | None = None
+    is_active: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("is_active", "active"),
+    )
+
+
+class CompanySettings(BaseModel):
+    """Company notification and approval threshold policy (GET/PUT /api/v1/company/settings)."""
+
+    notify_on: NotifyOn = "red_yellow"
+    approval_threshold_kzt: float | None = None
+    updated_at: str | None = None
+
+
+class UpdateCompanySettingsRequest(BaseModel):
+    """Director update payload for PUT /api/v1/company/settings."""
+
+    notify_on: NotifyOn | None = None
+    approval_threshold_kzt: float | None = Field(
+        default=None,
+        gt=0,
+        le=1e12,
+        allow_inf_nan=False,
+    )
+
+    @field_validator("approval_threshold_kzt")
+    @classmethod
+    def _validate_threshold(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if not math.isfinite(value):
+            raise ValueError("Порог согласования должен быть конечным числом.")
+        if round(value * 100) <= 0:
+            raise ValueError("Порог согласования должен быть не менее 0.01 ₸.")
+        return value
+
+
+class NotificationItem(BaseModel):
+    """Server-derived notification item for GET /api/v1/notifications."""
+
+    id: str
+    kind: NotificationKind
+    title: str
+    message: str
+    created_at: str
+    read: bool
+    payment_id: str | None = None
+    approval_id: str | None = None
+    verdict: Verdict | None = None
+    recipient_name: str | None = None
+    amount_kzt: float | None = None
+    link: str | None = None
+
+
+class NotificationList(BaseModel):
+    """Response payload for GET /api/v1/notifications."""
+
+    unread_count: int
+    items: list[NotificationItem]
+
+
+class MarkNotificationsReadRequest(BaseModel):
+    """Optional request body for POST /api/v1/notifications/read."""
+
+    ids: list[str] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ids", "notification_ids"),
+    )
+
+
+class MarkNotificationsReadResponse(BaseModel):
+    """Response payload for POST /api/v1/notifications/read."""
+
+    marked: int
+    unread_count: int

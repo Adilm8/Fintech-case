@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Upload,
 } from "lucide-react";
+import { notifyProdNotificationsUpdated } from "@/components/prod/NotificationBell";
 import { notifyProdApprovalsUpdated } from "@/components/prod/ProdShell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +100,7 @@ export function BatchToolbar({
         );
         setResult(res);
         onBatchCompleted();
+        notifyProdNotificationsUpdated();
         notify.success(
           t.prod.batch.signGreenToastTitle,
           interpolate(t.prod.batch.signGreenToastDesc, {

@@ -1115,6 +1115,125 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "Сервистің ішкі қатесі. Сұрауды кейінірек қайталап көріңіз.",
         "en": "Internal service error. Please try again later.",
     },
+    "error.prod.invalid_current_password": {
+        "ru": "Текущий пароль указан неверно.",
+        "kk": "Ағымдағы құпиясөз қате енгізілді.",
+        "en": "The current password is incorrect.",
+    },
+    "error.prod.password_same_as_current": {
+        "ru": "Новый пароль должен отличаться от текущего.",
+        "kk": "Жаңа құпиясөз ағымдағы құпиясөзден өзгеше болуы тиіс.",
+        "en": "The new password must differ from the current password.",
+    },
+    "error.prod.login_already_exists": {
+        "ru": "Пользователь с таким логином уже существует.",
+        "kk": "Мұндай логині бар пайдаланушы жүйеде бұрыннан бар.",
+        "en": "A user with this login already exists.",
+    },
+    "error.prod.last_director_protected": {
+        "ru": "Нельзя понизить или отключить единственного активного директора компании.",
+        "kk": "Компанияның жалғыз белсенді директорының рөлін төмендетуге немесе оны өшіруге болмайды.",
+        "en": "Cannot demote or deactivate the last active director of the company.",
+    },
+    "error.prod.threshold_requires_approval": {
+        "ru": "Сумма платежа достигла порога согласования компании — требуется одобрение директора.",
+        "kk": "Төлем сомасы компанияның келісу шегіне жетті — директордың мақұлдауы қажет.",
+        "en": "Payment amount meets or exceeds the company approval threshold — director approval is required.",
+    },
+    "error.prod.invalid_date_range": {
+        "ru": "Некорректный диапазон дат: дата начала не может быть позже даты окончания.",
+        "kk": "Күндер аралығы қате: басталу күні аяқталу күнінен кейін болмауы тиіс.",
+        "en": "Invalid date range: start date cannot be later than end date.",
+    },
+    "error.prod.pdf_unavailable": {
+        "ru": "Экспорт в PDF сейчас недоступен.",
+        "kk": "PDF пішіміне экспорттау қазір қолжетімсіз.",
+        "en": "PDF export is currently unavailable.",
+    },
+    # --- Prod notification templates ---
+    "prod.notif.approval_pending.title": {
+        "ru": "Заявка на согласование",
+        "kk": "Келісуге өтінім түсті",
+        "en": "Approval requested",
+    },
+    "prod.notif.approval_pending.body": {
+        "ru": "{recipient} · {amount} — отправлено на согласование ({verdict}).",
+        "kk": "{recipient} · {amount} — төлем шоты келісуге жіберілді ({verdict}).",
+        "en": "{recipient} · {amount} — submitted for approval ({verdict}).",
+    },
+    "prod.notif.approval_approved.title": {
+        "ru": "Платёж одобрен директором",
+        "kk": "Төлемді директор мақұлдады",
+        "en": "Payment approved by director",
+    },
+    "prod.notif.approval_approved.body": {
+        "ru": "{recipient} · {amount} — можно подписывать.",
+        "kk": "{recipient} · {amount} — төлем шотына қол қоюға болады.",
+        "en": "{recipient} · {amount} — ready to sign.",
+    },
+    "prod.notif.approval_rejected.title": {
+        "ru": "Платёж отклонён директором",
+        "kk": "Төлемді директор қабылдамады",
+        "en": "Payment rejected by director",
+    },
+    "prod.notif.approval_rejected.body": {
+        "ru": "{recipient} · {amount} — требуется исправление реквизитов или отмена.",
+        "kk": "{recipient} · {amount} — деректемелерді түзету немесе төлемнен бас тарту қажет.",
+        "en": "{recipient} · {amount} — edit requisites or cancel the payment.",
+    },
+    "prod.notif.sign_denied.title": {
+        "ru": "Подпись заблокирована сервером",
+        "kk": "Қол қою сервермен бұғатталды",
+        "en": "Signing blocked by server",
+    },
+    "prod.notif.sign_denied.body": {
+        "ru": "{recipient} · {amount} — {reason}",
+        "kk": "{recipient} · {amount} — {reason}",
+        "en": "{recipient} · {amount} — {reason}",
+    },
+    # --- Prod export labels ---
+    "prod.export.pdf_title": {
+        "ru": "Что проверить перед подписью",
+        "kk": "Қол қояр алдында нені тексеру керек",
+        "en": "What to Check Before Signing",
+    },
+    "prod.export.pdf_subtitle": {
+        "ru": "Отчёт проверки платёжных поручений · BCC Business Shield",
+        "kk": "Төлем шоттарын тексеру есебі · BCC Business Shield",
+        "en": "Payment Verification Report · BCC Business Shield",
+    },
+    "prod.export.company": {"ru": "Компания", "kk": "Компания", "en": "Company"},
+    "prod.export.generated": {"ru": "Сформировано", "kk": "Қалыптастырылды", "en": "Generated"},
+    "prod.export.scope": {"ru": "Выборка", "kk": "Іріктеме", "en": "Scope"},
+    "prod.export.period": {"ru": "Период", "kk": "Кезең", "en": "Period"},
+    "prod.export.total": {"ru": "Платежей", "kk": "Төлемдер саны", "en": "Payments"},
+    "prod.export.empty": {
+        "ru": "По заданным параметрам платежи не найдены.",
+        "kk": "Көрсетілген параметрлер бойынша төлемдер табылмады.",
+        "en": "No payments found for the selected filters.",
+    },
+    "prod.export.reasons": {"ru": "Причины и сигналы", "kk": "Себептер мен белгілер", "en": "Reasons & signals"},
+    "prod.export.no_signals": {
+        "ru": "Замечаний не выявлено.",
+        "kk": "Ескертулер анықталған жоқ.",
+        "en": "No risk signals detected.",
+    },
+    "prod.export.advice": {"ru": "Рекомендация", "kk": "Ұсыным", "en": "Advice"},
+    "prod.export.purpose": {"ru": "Назначение", "kk": "Төлем мақсаты", "en": "Purpose"},
+    "prod.export.approval": {"ru": "Согласование", "kk": "Келісу", "en": "Approval"},
+    "prod.export.page": {"ru": "Стр. {page} из {pages}", "kk": "{page} / {pages}-бет", "en": "Page {page} of {pages}"},
+    "prod.verdict.green": {"ru": "Зелёный", "kk": "Жасыл", "en": "Green"},
+    "prod.verdict.yellow": {"ru": "Жёлтый", "kk": "Сары", "en": "Yellow"},
+    "prod.verdict.red": {"ru": "Красный", "kk": "Қызыл", "en": "Red"},
+    "prod.verdict.grey": {"ru": "Серый", "kk": "Сұр", "en": "Grey"},
+    "prod.verdict.invalid": {"ru": "Ошибка реквизитов", "kk": "Деректеме қатесі", "en": "Invalid"},
+    "prod.status.checked": {"ru": "Проверен", "kk": "Тексерілді", "en": "Checked"},
+    "prod.status.pending_approval": {"ru": "У директора", "kk": "Директорда", "en": "With director"},
+    "prod.status.approved": {"ru": "Одобрен", "kk": "Мақұлданды", "en": "Approved"},
+    "prod.status.rejected": {"ru": "Отклонён", "kk": "Қабылданбады", "en": "Rejected"},
+    "prod.status.postponed": {"ru": "Отложен", "kk": "Кейінге қалдырылды", "en": "Postponed"},
+    "prod.status.signed": {"ru": "Подписан", "kk": "Қол қойылды", "en": "Signed"},
+    "prod.status.cancelled": {"ru": "Отменён", "kk": "Бас тартылды", "en": "Cancelled"},
 }
 
 KIND_LABELS: dict[str, dict[Lang, str]] = {
@@ -1276,6 +1395,22 @@ FIELD_LABELS: dict[str, dict[Lang, str]] = {
         "en": "Accountant acknowledgement",
     },
     "filename": {"ru": "Имя файла", "kk": "Файл атауы", "en": "Filename"},
+    "full_name": {"ru": "Имя и фамилия", "kk": "Аты-жөні", "en": "Full name"},
+    "default_lang": {"ru": "Язык интерфейса", "kk": "Интерфейс тілі", "en": "Default language"},
+    "current_password": {"ru": "Текущий пароль", "kk": "Ағымдағы құпиясөз", "en": "Current password"},
+    "new_password": {"ru": "Новый пароль", "kk": "Жаңа құпиясөз", "en": "New password"},
+    "role": {"ru": "Роль", "kk": "Рөл", "en": "Role"},
+    "is_active": {"ru": "Статус активности", "kk": "Белсенділік күйі", "en": "Active status"},
+    "active": {"ru": "Статус активности", "kk": "Белсенділік күйі", "en": "Active status"},
+    "notify_on": {"ru": "Режим уведомлений", "kk": "Хабарлама режимі", "en": "Notification filter"},
+    "approval_threshold_kzt": {
+        "ru": "Порог согласования (₸)",
+        "kk": "Келісу шегі (₸)",
+        "en": "Approval threshold (KZT)",
+    },
+    "from": {"ru": "Дата начала", "kk": "Басталу күні", "en": "Start date"},
+    "to": {"ru": "Дата окончания", "kk": "Аяқталу күні", "en": "End date"},
+    "format": {"ru": "Формат экспорта", "kk": "Экспорт пішімі", "en": "Export format"},
 }
 
 

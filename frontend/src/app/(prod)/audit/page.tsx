@@ -57,6 +57,14 @@ const AUDIT_ACTIONS = [
   "resume",
   "cancel",
   "trust_revoked",
+  "profile_updated",
+  "password_changed",
+  "password_change_failed",
+  "user_invited",
+  "company_user_updated",
+  "company_settings_updated",
+  "notifications_read",
+  "payments_exported",
 ] as const;
 
 const LIMIT_OPTIONS = [50, 100, 250, 500] as const;
@@ -88,7 +96,11 @@ function summarizeDetails(details: Record<string, unknown>): string {
 }
 
 function actionBadgeClass(action: string): string {
-  if (action === "sign_denied" || action === "login_failed") {
+  if (
+    action === "sign_denied" ||
+    action === "login_failed" ||
+    action === "password_change_failed"
+  ) {
     return "border-red-300 bg-red-50 text-red-800";
   }
   if (

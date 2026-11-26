@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from app.i18n import DEFAULT_LANG, Lang, t
 from app.prod import policy
 from app.prod.audit_db import append_audit
+from app.prod.company_settings import get_company_settings, load_company_settings_map
 from app.prod.db import tx
 from app.prod.deps import company_scope_id, ensure_company_access
 from app.prod.directory import lookup_supplier_ref, register_signed_payment
@@ -295,6 +296,7 @@ def hydrate_payments(
     users_cache: dict[int, UserBrief] = {}
     _load_users_brief(conn, user_ids, users_cache)
     dup_map = _find_duplicate_map(conn, rows)
+    settings_map = load_company_settings_map(conn, {str(r["company_id"]) for r in rows})
 
     payments: list[Payment] = []
     for row in rows:
@@ -354,6 +356,7 @@ def hydrate_payments(
             )
         )
 
+        comp_settings = settings_map.get(comp_id)
         perms = policy.permissions_for(
             role=viewer.role,
             status=status,
@@ -361,6 +364,10 @@ def hydrate_payments(
             payment_request_sha256=str(row["request_sha256"]),
             approval_status=appr_status,
             approval_request_sha256=appr_sha,
+            amount_tiyn=int(row["amount_tiyn"]),
+            approval_threshold_tiyn=(
+                comp_settings.approval_threshold_tiyn if comp_settings is not None else None
+            ),
         )
 
         payments.append(
@@ -714,6 +721,91 @@ def list_payments(
             by_verdict=VerdictCounts(**verdict_tally),
         ),
     )
+
+
+def list_payments_for_export(
+    conn: sqlite3.Connection,
+    *,
+    user: User,
+    today: date,
+    scope: PaymentScope = "all",
+    status: PaymentStatus | None = None,
+    verdict: Verdict | None = None,
+    batch_id: str | None = None,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 1000,
+    lang: Lang = DEFAULT_LANG,
+) -> list[Payment]:
+    """Return filtered payments for CSV/PDF export, respecting company scope and date range."""
+    parsed_from: date | None = None
+    parsed_to: date | None = None
+    if date_from is not None and date_from.strip():
+        try:
+            parsed_from = date.fromisoformat(date_from.strip())
+        except ValueError as exc:
+            raise ProdError(422, "validation_error") from exc
+    if date_to is not None and date_to.strip():
+        try:
+            parsed_to = date.fromisoformat(date_to.strip())
+        except ValueError as exc:
+            raise ProdError(422, "validation_error") from exc
+    if parsed_from is not None and parsed_to is not None and parsed_from > parsed_to:
+        raise ProdError(422, "invalid_date_range")
+
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    scoped_company = company_scope_id(user)
+    if scoped_company is not None:
+        clauses.append("p.company_id = ?")
+        params.append(scoped_company)
+
+    if scope == "queue":
+        clauses.append("p.status NOT IN ('signed', 'cancelled')")
+    elif scope == "signed":
+        clauses.append("p.status = 'signed'")
+
+    if status is not None:
+        clauses.append("p.status = ?")
+        params.append(status)
+    if verdict is not None:
+        clauses.append("COALESCE(c.verdict, 'green') = ?")
+        params.append(verdict)
+    if batch_id is not None and batch_id.strip():
+        clauses.append("p.batch_id = ?")
+        params.append(batch_id.strip())
+    if q is not None and q.strip():
+        needle = f"%{q.strip().casefold()}%"
+        clauses.append(
+            "(py_lower(p.recipient_name) LIKE ? OR py_lower(p.recipient_bin) LIKE ? "
+            "OR py_lower(p.recipient_iik) LIKE ? OR py_lower(p.doc_number) LIKE ?)"
+        )
+        params.extend([needle, needle, needle, needle])
+
+    date_expr = "substr(COALESCE(p.paid_at, NULLIF(p.doc_date, ''), p.created_at), 1, 10)"
+    if parsed_from is not None:
+        clauses.append(f"{date_expr} >= ?")
+        params.append(parsed_from.isoformat())
+    if parsed_to is not None:
+        clauses.append(f"{date_expr} <= ?")
+        params.append(parsed_to.isoformat())
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    bounded_limit = max(1, min(int(limit), 2000))
+    rows = conn.execute(
+        f"""
+        SELECT p.*
+        FROM payments p
+        LEFT JOIN checks c ON c.id = p.check_id
+        {where_sql}
+        ORDER BY p.created_at DESC, COALESCE(p.line_no, 2147483647) ASC, p.rowid DESC
+        LIMIT ?
+        """,
+        [*params, bounded_limit],
+    ).fetchall()
+    return hydrate_payments(conn, rows, viewer=user, today=today, lang=lang)
 
 
 def edit_payment(
@@ -1340,6 +1432,7 @@ def sign_payment(
                 created_at=now_iso,
             )
 
+            comp_settings = get_company_settings(conn, company_id)
             decision = policy.sign_decision(
                 role=user.role,
                 status=status,
@@ -1349,6 +1442,8 @@ def sign_payment(
                 approval_status=approval_status,
                 approval_request_sha256=approval_sha,
                 accountant_ack=accountant_ack,
+                amount_tiyn=int(row["amount_tiyn"]),
+                approval_threshold_tiyn=comp_settings.approval_threshold_tiyn,
             )
 
             if not decision.allowed:
@@ -2254,6 +2349,8 @@ def batch_send_to_director(
         batch_id=batch_id,
         payment_ids=payment_ids,
     )
+    comp_settings = get_company_settings(conn, company_id)
+    threshold_tiyn = comp_settings.approval_threshold_tiyn
 
     done: list[Payment] = []
     skipped: list[BatchSkippedItem] = [
@@ -2297,7 +2394,9 @@ def batch_send_to_director(
                 )
             )
             continue
-        if verdict == "green":
+        if verdict == "green" and (
+            threshold_tiyn is None or int(row["amount_tiyn"]) < threshold_tiyn
+        ):
             skipped.append(
                 BatchSkippedItem(
                     id=pid,

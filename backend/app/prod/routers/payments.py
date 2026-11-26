@@ -7,11 +7,12 @@ from email.parser import BytesParser
 from email.policy import default as email_default_policy
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request, Response
 
 from app.i18n import DEFAULT_LANG
-from app.prod import payments_service
-from app.prod.db import get_db
+from app.prod import export_service, payments_service
+from app.prod.audit_db import append_audit
+from app.prod.db import get_db, tx
 from app.prod.deps import LangQuery, get_app_settings, require_role
 from app.prod.errors import ProdError
 from app.prod.importers import MAX_IMPORT_BYTES
@@ -20,6 +21,7 @@ from app.prod.schemas import (
     BatchActionResult,
     BatchSendToDirectorRequest,
     BatchSignGreenRequest,
+    ExportFormat,
     ImportFormat,
     ImportResult,
     Payment,
@@ -197,6 +199,90 @@ def create_payment_endpoint(
         payload=payload,
         today=cfg.today(),
         lang=lang,
+    )
+
+
+@router.get("/export")
+def export_payments_endpoint(
+    conn: Annotated[sqlite3.Connection, Depends(get_db)],
+    user: Annotated[User, Depends(require_role("accountant", "director", "analyst"))],
+    cfg: Annotated[Settings, Depends(get_app_settings)],
+    export_format: Annotated[ExportFormat, Query(alias="format")] = "csv",
+    scope: Annotated[PaymentScope, Query()] = "all",
+    status: Annotated[PaymentStatus | None, Query()] = None,
+    verdict: Annotated[Verdict | None, Query()] = None,
+    batch_id: Annotated[str | None, Query()] = None,
+    q: Annotated[str | None, Query()] = None,
+    date_from: Annotated[str | None, Query(alias="from")] = None,
+    date_to: Annotated[str | None, Query(alias="to")] = None,
+    lang: LangQuery = DEFAULT_LANG,
+) -> Response:
+    """Export payment check history as UTF-8 BOM CSV or A4 Cyrillic PDF report."""
+    today = cfg.today()
+    payments = payments_service.list_payments_for_export(
+        conn,
+        user=user,
+        today=today,
+        scope=scope,
+        status=status,
+        verdict=verdict,
+        batch_id=batch_id,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        lang=lang,
+    )
+
+    if user.company_id is not None:
+        comp_row = payments_service.load_company_row(conn, user.company_id)
+        company_label = f"{comp_row['name']} ({comp_row['bin']})"
+    else:
+        company_label = "BCC · All companies"
+
+    with tx(conn):
+        append_audit(
+            conn,
+            action="payments_exported",
+            user_id=user.id,
+            user_login=user.login,
+            role=user.role,
+            company_id=user.company_id,
+            details={
+                "format": export_format,
+                "scope": scope,
+                "from": date_from,
+                "to": date_to,
+                "count": len(payments),
+            },
+        )
+
+    if export_format == "csv":
+        csv_bytes = export_service.render_payments_csv(payments, lang=lang)
+        filename = f"business-shield-payments-{scope}-{today.isoformat()}.csv"
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    try:
+        pdf_bytes = export_service.render_payments_pdf(
+            payments,
+            company_label=company_label,
+            scope=scope,
+            today=today,
+            date_from=date_from,
+            date_to=date_to,
+            lang=lang,
+        )
+    except Exception as exc:
+        raise ProdError(422, "pdf_unavailable") from exc
+
+    filename = f"business-shield-report-{scope}-{today.isoformat()}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

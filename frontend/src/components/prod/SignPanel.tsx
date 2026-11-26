@@ -14,6 +14,7 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
+import { notifyProdNotificationsUpdated } from "@/components/prod/NotificationBell";
 import { notifyProdApprovalsUpdated } from "@/components/prod/ProdShell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -160,8 +161,10 @@ export function SignPanel({
       );
       onPaymentUpdated(updated);
       notifyProdApprovalsUpdated();
+      notifyProdNotificationsUpdated();
       notify.success(t.prod.detail.toastSigned);
     } catch (err) {
+      notifyProdNotificationsUpdated();
       if (err instanceof ApiError && err.code === "verdict_changed") {
         setAccountantAck(false);
         if (err.payment) {
