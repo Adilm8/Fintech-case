@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse
 
 from app.audit import append_audit_entry, read_audit_entries
 from app.i18n import DEFAULT_LANG, Lang, field_label, resolve_lang, t
+from app.invoice_ai.env import load_env_file
+from app.invoice_ai.service import router as invoice_router
 from app.risk.config import ANALYST_ROLE_VALUE
 from app.risk.engine import check_payment, localize_check_result
 from app.risk.evaluation import DEFAULT_EVAL_FILENAME, evaluate_dataset, localize_metrics
@@ -87,6 +89,9 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+load_env_file()
+app.include_router(invoice_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=CORS_ORIGIN_REGEX,
@@ -154,8 +159,8 @@ async def _validation_exception_handler(
         field_key, message_ru = _format_validation_message(err, "ru")
         _, message = _format_validation_message(err, lang)
         formatted.append({"field": field_key, "message_ru": message_ru, "message": message})
-    detail = (
-        "; ".join(item["message"] for item in formatted) or t("error.validation_fallback", lang)
+    detail = "; ".join(item["message"] for item in formatted) or t(
+        "error.validation_fallback", lang
     )
     return JSONResponse(status_code=422, content={"detail": detail, "errors": formatted})
 

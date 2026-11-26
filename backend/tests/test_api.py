@@ -1151,6 +1151,7 @@ class TestStep4DedupMetricsLocalizationAndAudit:
 
         live_audit = Path(__file__).resolve().parents[1] / "data" / "audit.jsonl"
         assert store.audit_log_path != live_audit
+        live_before = live_audit.read_bytes() if live_audit.exists() else None
 
         q3_item = next(q for q in store.queue if q["id"] == "Q-003")
         q3_req = _queue_item_to_check_request(q3_item)
@@ -1182,7 +1183,8 @@ class TestStep4DedupMetricsLocalizationAndAudit:
 
         # 2. Verify temporary audit.jsonl exists, live data/audit.jsonl was NOT created
         assert store.audit_log_path.exists()
-        assert not live_audit.exists()
+        live_after = live_audit.read_bytes() if live_audit.exists() else None
+        assert live_after == live_before  # tests never write to the live audit log
         raw_log = store.audit_log_path.read_text(encoding="utf-8")
 
         # 3. Privacy check: ZERO plaintext names, BINs, IIKs, amounts, or purposes in audit log
