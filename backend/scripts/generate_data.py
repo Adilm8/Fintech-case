@@ -41,21 +41,37 @@ CLIENT_PAYER_ID = "client-technostroy"
 CLIENT_NAME = "ТОО «ТехноСтрой Астана»"
 
 BANKS_NOTE = (
-    "Synthetic reference directory of Kazakhstan banks (to verify against NB RK reference)."
+    "Kazakhstan bank codes and BIC, checked against the National Bank of Kazakhstan "
+    "BIC reference (nationalbank.kz/ru/page/spravochnik-bik-rk-ps) on 2026-11-26."
 )
 
 BANKS_CATALOG: list[BankRecord] = [
     {"code": "601", "bik": "HSBKKZKX", "name": "АО «Народный Банк Казахстана»"},
     {"code": "722", "bik": "CASPKZKA", "name": "АО «Kaspi Bank»"},
     {"code": "965", "bik": "IRTYKZKA", "name": "АО «ForteBank»"},
-    {"code": "998", "bik": "TSESKZKA", "name": "АО «First Heartland Jusan Bank»"},
+    {"code": "998", "bik": "TSESKZKA", "name": "АО «Alatau City Bank»"},
     {"code": "856", "bik": "KCJBKZKX", "name": "АО «Банк ЦентрКредит»"},
     {"code": "551", "bik": "KSNVKZKA", "name": "АО «Фридом Банк Казахстан»"},
-    {"code": "948", "bik": "EURIKZKA", "name": "АО «Евразийский банк»"},
+    {"code": "948", "bik": "EURIKZKA", "name": "АО «Евразийский Банк»"},
     {"code": "821", "bik": "KINCKZKA", "name": "АО «Bank RBK»"},
-    {"code": "250", "bik": "HCSKKZKA", "name": "АО «Отбасы банк»"},
+    {"code": "972", "bik": "HCSKKZKA", "name": "АО «Отбасы банк»"},
     {"code": "886", "bik": "INLMKZKA", "name": "АО «Home Credit Bank»"},
     {"code": "125", "bik": "NBRKKZKX", "name": "РГУ «Национальный Банк Республики Казахстан»"},
+    {"code": "949", "bik": "ATYNKZKA", "name": "АО «Altyn Bank»"},
+    {"code": "913", "bik": "BKCHKZKA", "name": "АО ДБ «Банк Китая в Казахстане»"},
+    {"code": "914", "bik": "BRKEKZKA", "name": "АО «Bereke Bank»"},
+    {"code": "832", "bik": "CITIKZKA", "name": "АО «Ситибанк Казахстан»"},
+    {"code": "907", "bik": "DVKAKZKA", "name": "АО «Банк Развития Казахстана»"},
+    {"code": "246", "bik": "HLALKZKZ", "name": "АО «Исламский Банк ADCB»"},
+    {"code": "930", "bik": "ICBKKZKX", "name": "АО «Торгово-промышленный Банк Китая в г. Алматы»"},
+    {"code": "719", "bik": "KMFBKZKK", "name": "АО «KMF Банк»"},
+    {"code": "563", "bik": "KPSTKZKA", "name": "АО «Казпочта»"},
+    {"code": "885", "bik": "KZIBKZKA", "name": "АО ДБ «Казахстан-Зираат Интернешнл Банк»"},
+    {"code": "724", "bik": "MOKFKZKA", "name": "АО «Коммерческий Банк БиЭнКей»"},
+    {"code": "849", "bik": "NURSKZKX", "name": "АО «Нурбанк»"},
+    {"code": "435", "bik": "SHBKKZKA", "name": "АО «Шинхан Банк Казахстан»"},
+    {"code": "432", "bik": "VTBAKZKZ", "name": "ДО АО Банк ВТБ (Казахстан)"},
+    {"code": "896", "bik": "ZAJSKZ22", "name": "АО «Исламский банк Заман-Банк»"},
 ]
 
 BIK_BY_CODE: dict[str, str] = {bank["code"]: bank["bik"] for bank in BANKS_CATALOG}
@@ -206,7 +222,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "name": "ТОО «КазЛогистик Групп»",
             "reg_year": 18,
             "reg_month": 9,
-            "bank_code": "998",  # Jusan Bank
+            "bank_code": "998",  # Alatau City Bank
             "iik_prefix": "000",
             # 6 payments with median = 820_000 KZT
             "amounts": [760_000, 790_000, 810_000, 830_000, 850_000, 875_000],

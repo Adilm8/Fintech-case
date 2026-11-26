@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic reference directory of Kazakhstan banks (to verify against NB RK reference).",
+  "note": "Kazakhstan bank codes and BIC, checked against the National Bank of Kazakhstan BIC reference (nationalbank.kz/ru/page/spravochnik-bik-rk-ps) on 2026-11-26.",
   "banks": [
     {
       "code": "601",
@@ -19,7 +19,7 @@
     {
       "code": "998",
       "bik": "TSESKZKA",
-      "name": "АО «First Heartland Jusan Bank»"
+      "name": "АО «Alatau City Bank»"
     },
     {
       "code": "856",
@@ -34,7 +34,7 @@
     {
       "code": "948",
       "bik": "EURIKZKA",
-      "name": "АО «Евразийский банк»"
+      "name": "АО «Евразийский Банк»"
     },
     {
       "code": "821",
@@ -42,7 +42,7 @@
       "name": "АО «Bank RBK»"
     },
     {
-      "code": "250",
+      "code": "972",
       "bik": "HCSKKZKA",
       "name": "АО «Отбасы банк»"
     },
@@ -55,6 +55,81 @@
       "code": "125",
       "bik": "NBRKKZKX",
       "name": "РГУ «Национальный Банк Республики Казахстан»"
+    },
+    {
+      "code": "949",
+      "bik": "ATYNKZKA",
+      "name": "АО «Altyn Bank»"
+    },
+    {
+      "code": "913",
+      "bik": "BKCHKZKA",
+      "name": "АО ДБ «Банк Китая в Казахстане»"
+    },
+    {
+      "code": "914",
+      "bik": "BRKEKZKA",
+      "name": "АО «Bereke Bank»"
+    },
+    {
+      "code": "832",
+      "bik": "CITIKZKA",
+      "name": "АО «Ситибанк Казахстан»"
+    },
+    {
+      "code": "907",
+      "bik": "DVKAKZKA",
+      "name": "АО «Банк Развития Казахстана»"
+    },
+    {
+      "code": "246",
+      "bik": "HLALKZKZ",
+      "name": "АО «Исламский Банк ADCB»"
+    },
+    {
+      "code": "930",
+      "bik": "ICBKKZKX",
+      "name": "АО «Торгово-промышленный Банк Китая в г. Алматы»"
+    },
+    {
+      "code": "719",
+      "bik": "KMFBKZKK",
+      "name": "АО «KMF Банк»"
+    },
+    {
+      "code": "563",
+      "bik": "KPSTKZKA",
+      "name": "АО «Казпочта»"
+    },
+    {
+      "code": "885",
+      "bik": "KZIBKZKA",
+      "name": "АО ДБ «Казахстан-Зираат Интернешнл Банк»"
+    },
+    {
+      "code": "724",
+      "bik": "MOKFKZKA",
+      "name": "АО «Коммерческий Банк БиЭнКей»"
+    },
+    {
+      "code": "849",
+      "bik": "NURSKZKX",
+      "name": "АО «Нурбанк»"
+    },
+    {
+      "code": "435",
+      "bik": "SHBKKZKA",
+      "name": "АО «Шинхан Банк Казахстан»"
+    },
+    {
+      "code": "432",
+      "bik": "VTBAKZKZ",
+      "name": "ДО АО Банк ВТБ (Казахстан)"
+    },
+    {
+      "code": "896",
+      "bik": "ZAJSKZ22",
+      "name": "АО «Исламский банк Заман-Банк»"
     }
   ]
 }
