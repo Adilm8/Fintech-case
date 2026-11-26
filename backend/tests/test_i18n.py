@@ -102,7 +102,13 @@ class TestI18nCatalogIntegrity:
             "next_action.red",
             "rule.iik_changed",
             "rule.lookalike_supplier",
+            "rule.lookalike_supplier_exact",
             "rule.bcc_account_other_owner",
+            "rule.iik_reported_by_clients",
+            "rule.iik_reported_by_clients_many",
+            "rule.iik_on_watchlist",
+            "rule.fresh_iik_many_payers",
+            "rule.fresh_iik_many_payers_many",
             "rule.entity_type_mismatch_legal_iin",
             "rule.urgent_wording",
         ):

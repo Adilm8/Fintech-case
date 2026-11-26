@@ -5,14 +5,18 @@ from __future__ import annotations
 import pytest
 
 from app.risk.names import (
+    canonical_cyrillic_token,
     confusable_skeleton,
     detect_legal_form_kind,
+    extract_ie_initials,
     find_mixed_script_positions,
+    is_generic_company_token,
     load_confusables,
     map_homoglyphs,
     map_latin_lookalikes,
     name_similarity,
     normalize_company_name,
+    normalize_company_name_translated,
     normalize_company_name_translit,
     sanitize_unicode,
     token_set_similarity,
@@ -219,3 +223,67 @@ class TestDetectLegalFormKind:
     )
     def test_detect_legal_form_kind(self, name: str, expected: str | None) -> None:
         assert detect_legal_form_kind(name) == expected
+
+
+class TestGenericTokensTranslationAndIeInitials:
+    def test_generic_token_classification_is_script_and_case_invariant(self) -> None:
+        for tok in (
+            "сервис",
+            "Сервис",
+            "СЕРВИС",
+            "servis",
+            "SERVIS",
+            "service",
+            "SERVICE",
+            "снаб",
+            "СНАБ",
+            "snab",
+            "supply",
+            "монтаж",
+            "МОНТАЖ",
+            "montazh",
+            "групп",
+            "grupp",
+            "group",
+            "астана",
+            "АСТАНА",
+            "astana",
+            "караганда",
+        ):
+            assert is_generic_company_token(tok) is True, tok
+
+        for brand in (
+            "алатау",
+            "АЛАТАУ",
+            "alatau",
+            "тазасу",
+            "tazasu",
+            "цементпром",
+            "номадклауд",
+        ):
+            assert is_generic_company_token(brand) is False, brand
+
+        assert canonical_cyrillic_token("servis") == "сервис"
+        assert canonical_cyrillic_token("СЕРВИС") == "сервис"
+        assert canonical_cyrillic_token("supply") == "снаб"
+
+    def test_translated_company_name_normalization(self) -> None:
+        assert normalize_company_name_translated("ТОО «Alatau Supply»") == "алатау снаб"
+        assert normalize_company_name_translated('LLP "Alatau Supply"') == "алатау снаб"
+        assert normalize_company_name_translated('LLP "Trading House Alatau"') == "торговый дом алатау"
+        assert normalize_company_name_translated('ТОО "Almaty Service"') == "алматы сервис"
+
+    def test_extract_ie_initials(self) -> None:
+        assert extract_ie_initials("ИП Байжанов К.Т.") == ("к", "т")
+        assert extract_ie_initials("ИП Байжанова А.К.") == ("а", "к")
+        assert extract_ie_initials("ИП К.Т. Байжанов") == ("к", "т")
+        assert extract_ie_initials("IP Baizhanov K.T.") == ("к", "т")
+        assert extract_ie_initials("ЖК Байжанов Қ.Т.") == ("к", "т")
+        assert extract_ie_initials("ИП Байжанов Кайрат Талгатович") == ("к", "т")
+        assert extract_ie_initials("ИП Байжанова Асель Канатовна") == ("а", "к")
+        assert extract_ie_initials("ИП Байжанов Сервис") == ()
+        assert extract_ie_initials("ИП Байжанов") == ()
+        # Trailing initials А.К. / А.О. on an IE must not be misread as dotted А.Қ. / А.О.
+        assert detect_legal_form_kind("ИП Байжанова А.К.") == "iin"
+        assert detect_legal_form_kind("ИП Сериков А.О.") == "iin"
+        assert detect_legal_form_kind("А.О. «КазТранс»") == "bin"

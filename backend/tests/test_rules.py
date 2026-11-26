@@ -214,21 +214,24 @@ class TestRiskRules:
         grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields if k in grey_item})
         assert rule_lookalike_supplier(grey_req, store) is None
 
-        # Attack 1: Latin C lookalike with different BIN
+        # Attack 1: Latin C lookalike with different BIN (similarity 100 >= 95 -> block red)
         red_item = next(q for q in store.queue if q["scenario"] == "red")
         red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields if k in red_item})
         sig = rule_lookalike_supplier(red_req, store)
         assert sig is not None
         assert sig.rule_id == "lookalike_supplier"
-        assert sig.points == 60
-        assert sig.severity == "primary"
+        assert sig.points == 100
+        assert sig.severity == "block"
 
         # Attack 2 (H4): all normalized tokens of known supplier (len >= 8) contained in new name
+        # True similarity < 95 -> primary 60 (yellow alone)
         h4_req = red_req.model_copy(
             update={"recipient_name": "ТОО «Алатау Снаб Трейдинг Казахстан»"}
         )
         sig_h4 = rule_lookalike_supplier(h4_req, store)
         assert sig_h4 is not None and sig_h4.rule_id == "lookalike_supplier"
+        assert sig_h4.points == 60
+        assert sig_h4.severity == "primary"
 
         # Attack 3 (M2): exact match after folding triggers regardless of short length (< 8)
         rng = random.Random(111)
@@ -320,6 +323,134 @@ class TestRiskRules:
             )
             is None
         )
+
+    def test_k2_exact_name_different_bin_is_block_and_variants_detected(self) -> None:
+        from app.risk.engine import check_payment
+
+        store = _make_store()
+        rng = random.Random(20262)
+        old_other_bin = generate_bin(rng, year=15, month=4)  # 11-year-old BIN (not young)
+        ext_iik = generate_iik(rng, "965", prefix="000")
+        base_req = CheckRequest(
+            payer_id=store.default_payer_id,
+            recipient_name="ТОО «Алатау Снаб»",
+            recipient_bin=old_other_bin,
+            recipient_iik=ext_iik,
+            recipient_bik="IRTYKZKA",
+            amount_kzt=1_350_000,
+            purpose="Оплата по счёту № 810",
+        )
+
+        # Exact name of known supplier with different OLD BIN -> block (red, 100)
+        sig_exact = rule_lookalike_supplier(base_req, store)
+        assert sig_exact is not None
+        assert sig_exact.severity == "block"
+        assert sig_exact.points == 100
+        res_exact = check_payment(base_req, store)
+        assert res_exact.verdict == "red"
+        assert res_exact.score == 100
+
+        # Near-exact single-char typo (similarity >= 95) with old BIN -> block (red, 100)
+        typo_req = base_req.model_copy(update={"recipient_name": "ТОО «Алатау Снабб»"})
+        sig_typo = rule_lookalike_supplier(typo_req, store)
+        assert sig_typo is not None and sig_typo.severity == "block" and sig_typo.points == 100
+        assert check_payment(typo_req, store).verdict == "red"
+
+        # K2 variants against ТОО «Алатау Снаб» -> caught as lookalike (at least yellow)
+        for variant_name in (
+            "ТОО «Торговый дом Алатау»",
+            "ТОО «А-Снаб»",
+            "ТОО «Alatau Supply»",
+            "ТОО «Алатоо Снаб»",
+        ):
+            var_req = base_req.model_copy(update={"recipient_name": variant_name})
+            sig_var = rule_lookalike_supplier(var_req, store)
+            assert sig_var is not None, f"Expected lookalike for {variant_name!r}"
+            assert sig_var.rule_id == "lookalike_supplier"
+            assert "Алатау Снаб" in sig_var.reason_ru
+            res_var = check_payment(var_req, store)
+            assert res_var.verdict in ("yellow", "red"), f"{variant_name!r} got {res_var.verdict}"
+
+    def test_k3_generic_words_ie_initials_and_amount_similarity_guard(self) -> None:
+        from app.risk.engine import check_payment
+
+        store = _make_store()
+        rng = random.Random(20263)
+
+        # Legitimate new corporate suppliers sharing generic words -> NOT flagged (grey, 0)
+        for legit_corp in (
+            "ТОО «Астана Сервис»",
+            "ТОО «Монтаж Сервис»",
+            "ТОО «Алматы Сервис»",
+            "ТОО «Актау Снаб»",
+            'ТОО "Almaty Service"',
+            'ТОО "Astana Trade Group"',
+        ):
+            corp_req = CheckRequest(
+                payer_id=store.default_payer_id,
+                recipient_name=legit_corp,
+                recipient_bin=generate_bin(rng, year=18, month=6),
+                recipient_iik=generate_iik(rng, "722", prefix="000"),
+                recipient_bik="CASPKZKA",
+                amount_kzt=950_000,
+                purpose="Оплата услуг по договору, счёт № 820",
+            )
+            assert rule_lookalike_supplier(corp_req, store) is None, legit_corp
+            res = check_payment(corp_req, store)
+            assert res.verdict == "grey", f"{legit_corp!r} falsely got {res.verdict} ({res.score})"
+            assert res.score == 0
+
+        # IE with different initials against ИП Байжанов К.Т. -> NOT flagged (grey, 0)
+        for legit_ie in (
+            "ИП Байжанова А.К.",
+            "ИП Байжанов А.С.",
+            "ИП Байжанова Асель Канатовна",
+        ):
+            ie_req = CheckRequest(
+                payer_id=store.default_payer_id,
+                recipient_name=legit_ie,
+                recipient_bin=generate_iin(rng),
+                recipient_iik=generate_iik(rng, "722", prefix="000"),
+                recipient_bik="CASPKZKA",
+                amount_kzt=900_000,
+                purpose="Оплата подрядных работ по акту № 825",
+            )
+            assert rule_lookalike_supplier(ie_req, store) is None, legit_ie
+            res_ie = check_payment(ie_req, store)
+            assert res_ie.verdict == "grey", f"{legit_ie!r} falsely got {res_ie.verdict}"
+            assert res_ie.score == 0
+
+        # IE with SAME initials and different IIN -> exact clone -> block (red, 100)
+        clone_ie_req = CheckRequest(
+            payer_id=store.default_payer_id,
+            recipient_name="ИП Байжанов К.Т.",
+            recipient_bin=generate_iin(rng),
+            recipient_iik=generate_iik(rng, "722", prefix="000"),
+            recipient_bik="CASPKZKA",
+            amount_kzt=190_000,
+            purpose="Оплата услуг по акту № 826",
+        )
+        sig_clone_ie = rule_lookalike_supplier(clone_ie_req, store)
+        assert sig_clone_ie is not None and sig_clone_ie.severity == "block"
+        assert check_payment(clone_ie_req, store).verdict == "red"
+
+        # Amount comparison guard: lookalike with similarity < 92 must compare amount against
+        # client p90 (not matched supplier's low median). ТазаСу Сервис has median 56k;
+        # a 600k payment to "ТОО «ТазаСу Сервис Групп Казахстан»" (sim < 92) must NOT trigger
+        # supplier amount_anomaly (stays yellow 60, not red 95).
+        low_sim_req = CheckRequest(
+            payer_id=store.default_payer_id,
+            recipient_name="ТОО «ТазаСу Сервис Групп Казахстан»",
+            recipient_bin=generate_bin(rng, year=18, month=3),
+            recipient_iik=generate_iik(rng, "722", prefix="000"),
+            recipient_bik="CASPKZKA",
+            amount_kzt=600_000,
+            purpose="Оплата по счёту № 830",
+        )
+        res_low_sim = check_payment(low_sim_req, store)
+        assert res_low_sim.verdict == "yellow"
+        assert res_low_sim.score == 60
+        assert [s.rule_id for s in res_low_sim.signals] == ["lookalike_supplier", "first_payment"]
 
     def test_mixed_script_name_rule(self) -> None:
         store = _make_store()

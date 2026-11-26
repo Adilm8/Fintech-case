@@ -59,7 +59,11 @@ uv run ruff format .
   - Strips combining marks (`Mn`/`Me`), format controls (`Cf`), Hangul/Braille fillers, and variation selectors before NFKC normalization.
   - Skeleton mapping from `data/confusables_subset.json` (Unicode TR39-style subset covering Latin, Greek, IPA `ɑ`, Cherokee `Ꮯ`, Kazakh Cyrillic, and confusable digits `0`/`3`/`6`/`4`/`1`).
   - `mixed_script_name` flags homoglyphs and confusable digits embedded inside Cyrillic words (e.g., `Ка3Л0гистик`) while sparing legitimate brand compounds (`ЭкоSTAR`, `QazaqСтрой`) and normal numbers (`Алматы-2`, `Строй 2020`, `Бетон М350`, `1С`).
-  - `lookalike_supplier` detects homoglyph clones, derivative/suffix variants (`Алатау Снабжение`, `АлатауСнабСервис`), and Latin↔Cyrillic transliterations (`Alatau Snab`, `KazLogistik Grupp`).
+  - `lookalike_supplier` detects homoglyph clones, derivative/suffix variants (`Алатау Снабжение`, `АлатауСнабСервис`), Latin↔Cyrillic transliterations (`Alatau Snab`, `KazLogistik Grupp`), entity-wrapper clones (`Торговый дом Алатау`), initial-letter abbreviations (`А-Снаб`), English business-term translations (`Alatau Supply`), and distinctive-stem vowel swaps (`Алатоо Снаб`):
+    - Exact or near-exact normalized matches (`similarity >= 95`) with a different BIN escalate directly to `block` (`red`, `100` pts) regardless of BIN age, because a legal entity's BIN does not change.
+    - Generic vs. distinctive business and geographic tokens (e.g., `сервис`/`servis`/`service`, `снаб`/`snab`/`supply`, `монтаж`, `астана`, `караганда`) are classified once on lower-case Cyrillic form and carried over to transliterated/upper-case forms, preventing false alarms on legitimate new suppliers such as `ТОО «Астана Сервис»` or `ТОО «Монтаж Сервис»`.
+    - For individual entrepreneurs (`ИП`/`ЖК`), initials must match (different initials such as `ИП Байжанова А.К.` vs. `ИП Байжанов К.Т.` are treated as distinct individuals and not flagged).
+    - Payment amounts are compared against a matched lookalike supplier's history only when normalized name similarity is `>= 92`; otherwise they are compared against the client's overall payment profile (`p90`).
 - **Pre-checks & budget fast-path**:
   - Validates BIN/IIN mod-11 checksum & date prefix, IIK ISO 13616 mod-97 checksum & bank code, and BIK↔IIK consistency.
   - Syntactically valid BCC (`856`) IIKs absent from `data/bcc_accounts.json` return `invalid` (`bcc_account_not_found`).
@@ -69,6 +73,13 @@ uv run ruff format .
   - Known supplier + new IIK in a **different bank** + amount `>=` supplier median escalates to `red`.
   - Amount `>= 10×` supplier p90 or new recipient `> 10×` client p90 escalates to `red`; new recipient `> 3×` client p90 escalates to `yellow` (`send_to_director`); first payment with urgency cues escalates to `yellow` (bypassing the amplifier-only cap of 29).
   - Urgency detector matches Russian/Kazakh/English stems (`срочн*`, `шұғыл`, `жедел`, `urgent`, `asap`, `сегодня`, translit, spaced/dotted letters) while ignoring benign forms (`несрочно`, `досрочно`).
+- **Bank-wide cross-client signals (`data/bank_signals.json`)**:
+  - Closes the "typo-free external-bank dropper" blind spot using anonymized signals visible only at the bank level, loaded directly inside `app/risk/bank_signals.py` (`seed=42`, no third-party client names or payer BINs).
+  - `iik_reported_by_clients`: triggers when other BCC clients have reported the recipient IIK as fraudulent (`1..2` reports → `primary` `60` pts; `>= 3` reports → `block` `red`).
+  - `iik_on_watchlist`: triggers `block` `red` (`100` pts) when the recipient IIK matches the synthetic antifraud-center mule watchlist (NBRK antifraud-center style mock).
+  - `fresh_iik_many_payers`: triggers when a fresh account (including accounts in external banks) receives first-time payments from `>= 3` unrelated BCC clients within 7 days (`primary` `50` pts; `>= 5` clients → `primary` `70` pts, `red`).
+  - **`bank_known_bin` exemption**: `fresh_iik_many_payers` is automatically skipped when the recipient BIN has long-standing history in BCC (`>= 2` years in `bank_known_bin`), so legitimate high-inflow organizations (e.g., a new branch account of a major utility or telecom provider) are never falsely flagged.
+  - **Anonymity & banking secrecy**: Client-facing messages (`ru`/`kk`/`en`) and evidence are strictly aggregated and bucketed (`"несколько"` / `"3+"` / `"5+"`), never disclosing third-party client names, payer BINs, exact counts, report dates, or cumulative inflow amounts; exact figures are surfaced only in `analyst_details` for `X-Role: analyst`.
 - **Optional Kazakhstan payment codes (`kbe`, `knp`)**:
   - `kbe="17"` paired with an individual IIN triggers `kbe_mismatch` (`40` pts, catches droppers even without a legal-form prefix in the name).
   - Unusual `knp` for a known supplier triggers `knp_unusual` (`15` pts amplifier).
@@ -79,7 +90,7 @@ uv run ruff format .
   - Re-checking the exact same payment form (including switching `lang`) is deduplicated via canonical request `sha256` (excluding `lang`) so repeat UI checks never self-trigger memory rules.
 - **Context-aware `next_action`**: Adapts advice to the dominant risk driver (amount-only spike, duplicate invoice, account change / impersonation, or naming the exact invalid field: BIN/IIN, IIK, or BIK).
 - **Append-only audit log & ruleset versioning**:
-  - Every `CheckResult` and `MetricsResponse` carries `ruleset_version` (configured in `app/risk/config.py`, currently `2026.11.26-r1`).
+  - Every `CheckResult` and `MetricsResponse` carries `ruleset_version` (configured in `app/risk/config.py`, currently `2026.11.26-r3`).
   - Every `POST /api/payments/check` and `POST /api/approvals/{id}/decision` appends a JSON line to `data/audit.jsonl` (gitignored) containing only `timestamp`, `check_id`, `request_sha256`, `ruleset_version`, `verdict`, `signal_ids`, `action`, and optional `approval_id` — never plaintext company names, BINs, IIKs, amounts, or purposes.
 
 ## Localization (`lang`)
@@ -96,22 +107,98 @@ All BIN/IIN/IIK values pass Kazakhstan checksums (mod-11 for BIN/IIN, ISO 13616 
 - `data/confusables_subset.json` — Confusable character skeleton map (Latin, Greek, IPA, Cherokee, Kazakh Cyrillic, confusable digits).
 - `data/registry.json` — Synthetic taxpayer registry mapping BIN/IIN to company or IE names.
 - `data/bcc_accounts.json` — Internal BCC (`856` / `KCJBKZKX`) account directory with owner BIN and account opening date.
+- `data/bank_signals.json` — Deterministic anonymized bank-wide signals (`complaints`, `fresh_inflows`, `mule_watchlist`, and `bank_known_bin` exemptions; no third-party client names or payer BINs).
 - `data/history.json` — 12 months of deterministic history for `ТОО «ТехноСтрой Астана»`: **150 payments** across **12 suppliers** in 11 banks (with typical `knp` codes, seasonal spikes, advance/balance cycles, a mid-year legal account switch for `ТОО «ЕвразияКранМонтаж»`, and an IE supplier `ИП Байжанов К.Т.` paid by IIN).
 - `data/queue.json` — **10 signing-queue items** (`Q-001`..`Q-010`) with current engine verdicts:
   - `Q-001` (`green`), `Q-002` (`yellow` — known supplier + new IIK in another bank, amount `700 000 ₸` below median; at/above median the same change is `red`), `Q-003` (`red`), `Q-004` (`grey`), `Q-005` (`green`), `Q-006` (`green`), `Q-007` (`invalid`), `Q-008` (`green`), `Q-009` (`red`), `Q-010` (`yellow`).
-- `data/eval_set.json` — **400 labeled cases** (`200 legit`, `200 attack`, `seed=42`) across 20 scenario kinds (`9 legit`, `11 attack`), including budget payments, legitimate brand/numeric names, Unicode & digit-in-word evasion, lookalike variants/transliteration, KBe=17 droppers, duplicate invoices, and 72-hour structuring.
+- `data/eval_set.json` — **400 labeled cases** (`200 legit`, `200 attack`, `seed=42`) across 23 scenario kinds (`11 legit`, `12 attack`), including budget payments, legitimate brand/numeric names, new legitimate suppliers with generic words or differing IE initials (`legit_new_supplier_generic_word`), established `bank_known_bin` popular suppliers with high first-payment inflows, Unicode & digit-in-word evasion, lookalike variants/transliteration/translation/wrapper/abbreviation clones, KBe=17 droppers, external-bank droppers caught by bank-wide signals, duplicate invoices, and 72-hour structuring.
 
-## Evaluation Summary (`ruleset=2026.11.26-r1`)
+## Evaluation Summary (`ruleset=2026.11.26-r3`)
 
 Running `uv run python scripts/evaluate.py` on `data/eval_set.json` (`seed=42`, `n=400`, positive = `yellow` or `red`):
 
 | Metric | Value |
 |---|---|
-| Detection rate (attack `yellow`/`red`) | **85.5%** (`171/200`) |
-| — Stopped (`red`) | **47.5%** (`95/200`) |
-| — Escalated (`yellow`) | **38.0%** (`76/200`) |
-| False positive rate (legit `yellow`/`red`) | **11.5%** (`23/200`: `red=5`, `yellow=18`) |
-| Precision / F1 / Accuracy | **88.1%** / **86.8%** / **87.0%** |
+| Detection rate (attack `yellow`/`red`) | **87.0%** (`174/200`) |
+| — Stopped (`red`) | **50.0%** (`100/200`) |
+| — Escalated (`yellow`) | **37.0%** (`74/200`) |
+| False positive rate (legit `yellow`/`red`) | **11.5%** (`23/200`: `red=8`, `yellow=15`) |
+| Precision / F1 / Accuracy | **88.3%** / **87.7%** / **87.8%** |
 | Chronological `history_replay` (`n=150`) | `green=136`, `yellow=2`, `red=0`, `grey=12`, **alert rate 1.3%** (`2/150`) |
 
-> **Synthetic Evaluation Notice**: `data/eval_set.json` is a synthetic dataset built by the same team that wrote the rule engine, using the synthetic payment history of a single SME client. Metrics from `scripts/evaluate.py` and `GET /api/metrics` illustrate engine behavior across representative scenarios, do **not** represent real banking fraud incidence, and cannot replace validation on real production payment logs. Known blind spots (clean typo-free drops in external banks without history, moderate amount inflation without requisite changes, IIN droppers omitting both legal-form prefix and KBe, out-of-window `>90d` invoice repeats, low-sum structuring splits, and first-time unconfirmed legitimate account switches) are intentionally preserved in the dataset and reflected in the reported numbers.
+> **Synthetic Evaluation Notice**: `data/eval_set.json` is a synthetic dataset built by the same team that wrote the rule engine, using the synthetic payment history of a single SME client. Metrics from `scripts/evaluate.py` and `GET /api/metrics` illustrate engine behavior across representative scenarios, do **not** represent real banking fraud incidence, and cannot replace validation on real production payment logs. Known blind spots (brand-new external drops prior to complaints or multi-client inflows, moderate amount inflation without requisite changes, IIN droppers omitting both legal-form prefix and KBe, out-of-window `>90d` invoice repeats, low-sum structuring splits, and first-time unconfirmed legitimate account switches) are intentionally preserved in the dataset and reflected in the reported numbers.
+
+## Prod Mode
+
+Alongside the stateless in-memory demo (`app.main:app`), the backend includes a local production-like mode (`app.prod.app:app`) under `/api/v1/*` backed by SQLite (WAL mode, stdlib `sqlite3`), session-cookie authentication (`hashlib.scrypt`), role-based access control (`accountant`, `director`, `analyst`), a server-enforced pre-signing gate, a confirmed supplier directory, 1C/CSV batch import, and a SHA-256 hash-chained append-only audit log.
+
+Demo mode remains the default and is completely unchanged: running `uv run uvicorn app.main:app --port 8000` or `uv run uvicorn app.asgi:app --port 8000` without `APP_MODE` serves the demo API (`/api/*`). Setting an unrecognized `APP_MODE` value fails fast at startup.
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `APP_MODE` | `demo` | Application mode: `demo` or `prod` (any other value raises a startup error). |
+| `SHIELD_DB_PATH` | `backend/var/shield.db` | SQLite database file path (`var/` is gitignored). |
+| `SHIELD_SESSION_TTL_HOURS` | `12` | Session cookie lifetime in hours. |
+| `SHIELD_COOKIE_SECURE` | `0` | Set to `1` to add the `Secure` cookie flag behind HTTPS. |
+| `SHIELD_TODAY` | *(empty)* | Optional `YYYY-MM-DD` override pinning "today" for reproducible checks and seeding. |
+| `SHIELD_SEED_PASSWORD` | *(empty)* | Password for seeded users; if unset, a random password is generated and printed once to stdout. |
+
+### Seeding and Running Prod Mode
+
+Run from `backend/`:
+
+```bash
+# Seed SQLite DB (1 company, 3 users, 150 shifted signed payments, 12 suppliers)
+# Add --with-queue to also import data/queue.json into the signing queue
+APP_MODE=prod uv run python -m app.prod.seed --reset --with-queue
+
+# Start the prod ASGI server
+APP_MODE=prod uv run uvicorn app.asgi:app --port 8000
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:APP_MODE="prod"
+uv run python -m app.prod.seed --reset --with-queue
+uv run uvicorn app.asgi:app --port 8000
+```
+
+- The seed command refuses to run unless `APP_MODE=prod` and never modifies files in `data/`.
+- **Seed users**: `accountant` and `director` (scoped to `ТОО «ТехноСтрой Астана»`), plus `analyst` (bank-wide read-only view, no company).
+- **Password & session security**: no plaintext passwords are stored in the repository or database (`hashlib.scrypt` with `n=2^15, r=8, p=1` and 16-byte random salt); login attempts are rate-limited (5 failures per 15 minutes per login → `429`); opaque tokens are issued via `HttpOnly; SameSite=Lax` cookie `shield_session` with only their SHA-256 hash stored in SQLite; all non-GET `/api/v1/*` requests require header `X-Shield-Request: 1`; demo `X-Role` headers are ignored in prod mode.
+- **Sample import files**: `data/samples/sample_1c.txt` (`cp1251`, 1CClientBankExchange with 6 documents) and `data/samples/sample.csv` (`;` delimiter).
+
+### Prod API Endpoints (`/api/v1/*`)
+
+| Method | Path | Roles | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/meta` | public | Runtime mode (`"prod"`) and active `ruleset_version`. |
+| `POST` | `/api/v1/auth/login`, `/logout` | public / any | Session cookie login (`401`/`429`) and revocation (`204`). |
+| `GET` | `/api/v1/auth/me` | any | Current authenticated `{user, company}`. |
+| `GET`, `POST` | `/api/v1/payments` | A, D, N / A | Paginated payment list with full-scope `counts`, filters, search; create & verify manual payment (`201`). |
+| `GET`, `PUT` | `/api/v1/payments/{id}` | A, D, N / A | View payment (`analyst_details` only for `analyst`); edit & recheck editable statuses (`checked`, `rejected`, `postponed`). |
+| `POST` | `/api/v1/payments/{id}/sign` | A, D | Server-side signing gate (rechecks at sign time, enforces approval/ack rules, updates supplier directory atomically, logs `sign` / `sign_denied`). |
+| `POST` | `/api/v1/payments/{id}/{recheck,send-to-director,postpone,resume,cancel}` | A | Lifecycle transitions and approval submission. |
+| `POST` | `/api/v1/payments/import` | A | Import 1C (`utf-8`/`cp1251`/`cp866`) or CSV (`;` / `,`) batch (`application/octet-stream`, `≤ 2 MB`, `≤ 500` docs). |
+| `GET` | `/api/v1/batches` | A, D, N | List recent import batches. |
+| `POST` | `/api/v1/payments/batch/{sign-green,send-to-director}` | A, D / A | Batch-sign verified `green` payments or batch-escalate `yellow`/`red`/`grey` payments. |
+| `GET` | `/api/v1/approvals` | A, D, N | List approvals (`pending` first, excludes `superseded` by default). |
+| `POST` | `/api/v1/approvals/{id}/decision` | D | Director approve/reject with optional `trust_account` (same `422` validation rules as demo). |
+| `GET` | `/api/v1/suppliers`, `/suppliers/{id}` | A, D, N | Confirmed supplier directory, accounts, change chronology, and latest 50 payments. |
+| `POST` | `/api/v1/suppliers/{id}/accounts/{account_id}/untrust` | D | Revoke director account trust with mandatory comment (`≥ 10` meaningful chars). |
+| `GET` | `/api/v1/audit`, `/audit/verify` | D, N / N | Hash-chained SQLite audit trail and chain integrity check (`{ok, checked, broken_at}`). |
+| `GET` | `/api/v1/metrics` | N | Cached evaluation dataset metrics (same schema as demo `/api/metrics`). |
+
+### Running Prod Tests
+
+```bash
+# Run prod-mode test suite only
+uv run pytest -q tests/prod
+
+# Run full test suite (demo + prod) and linter
+uv run pytest -q
+uv run ruff check .
+```

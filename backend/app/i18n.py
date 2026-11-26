@@ -120,6 +120,20 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "but has a different BIN."
         ),
     },
+    "rule.lookalike_supplier_exact": {
+        "ru": (
+            "Название получателя совпадает с вашим поставщиком {supplier_name}, "
+            "но указан другой БИН — у действующей компании БИН не меняется."
+        ),
+        "kk": (
+            "Алушының атауы сіздің жеткізушіңізбен ({supplier_name}) сәйкес келеді, "
+            "бірақ басқа БСН көрсетілген — заңды тұлғаның БСН-і өзгермейді."
+        ),
+        "en": (
+            "The recipient name matches your supplier {supplier_name}, "
+            "but a different BIN was entered — a company's BIN never changes."
+        ),
+    },
     "rule.mixed_script_name": {
         "ru": "В названии получателя есть символы другого алфавита или цифры вместо букв.",
         "kk": "Алушының атауында басқа әліпби таңбалары немесе әріп орнына цифрлар бар.",
@@ -260,6 +274,92 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Счёт подтверждён банком: принадлежит этому поставщику.",
         "kk": "Шот банкпен расталған: осы жеткізушіге тиесілі.",
         "en": "Account verified by the bank: belongs to this supplier.",
+    },
+    # --- Bank-wide cross-client anonymized risk rules ---
+    "rule.iik_reported_by_clients": {
+        "ru": "На этот счёт уже поступали жалобы от других клиентов банка.",
+        "kk": "Бұл шотқа банктің басқа клиенттерінен бұрын шағымдар түскен.",
+        "en": "Other clients of the bank have previously reported this account.",
+    },
+    "rule.iik_reported_by_clients_many": {
+        "ru": "На этот счёт поступило несколько (3+) жалоб о мошенничестве от других клиентов банка.",
+        "kk": "Бұл шотқа банктің басқа клиенттерінен алаяқтық туралы бірнеше (3+) шағым түскен.",
+        "en": "Multiple (3+) other clients of the bank have reported this account for fraud.",
+    },
+    "analyst.iik_reported_by_clients": {
+        "ru": (
+            "По счёту зафиксировано жалоб от других клиентов BCC: {count} "
+            "(последняя: {last_reported_at})."
+        ),
+        "kk": (
+            "Бұл шот бойынша BCC-дің басқа клиенттерінен тіркелген шағымдар саны: {count} "
+            "(соңғысы: {last_reported_at})."
+        ),
+        "en": (
+            "Other BCC clients submitted {count} fraud report(s) on this account "
+            "(latest: {last_reported_at})."
+        ),
+    },
+    "rule.iik_on_watchlist": {
+        "ru": "Счёт получателя находится в списке подозрительных (дропперских) счетов антифрод-центра.",
+        "kk": "Алушының шоты антифрод-орталықтың күдікті (дропперлік) шоттар тізімінде тұр.",
+        "en": "The recipient's account is listed on the antifraud center's suspicious (mule) account watchlist.",
+    },
+    "analyst.iik_on_watchlist": {
+        "ru": (
+            "Счёт числится в списке подозрительных счетов: {source} "
+            "(категория: {category}, добавлен: {added_at})."
+        ),
+        "kk": (
+            "Шот күдікті шоттар тізімінде тұр: {source} "
+            "(санат: {category}, қосылған күні: {added_at})."
+        ),
+        "en": (
+            "Account is listed on watchlist: {source} "
+            "(category: {category}, added: {added_at})."
+        ),
+    },
+    "rule.fresh_iik_many_payers": {
+        "ru": (
+            "Этот новый счёт за последние дни впервые получил платежи "
+            "от нескольких (3+) не связанных компаний."
+        ),
+        "kk": (
+            "Бұл жаңа шот соңғы күндері өзара байланысы жоқ бірнеше (3+) "
+            "компаниядан алғаш рет төлемдер алған."
+        ),
+        "en": (
+            "Over the past few days, this new account received first-time payments "
+            "from several (3+) unrelated companies."
+        ),
+    },
+    "rule.fresh_iik_many_payers_many": {
+        "ru": (
+            "Этот новый счёт за последние дни впервые получил платежи "
+            "от многих (5+) не связанных компаний."
+        ),
+        "kk": (
+            "Бұл жаңа шот соңғы күндері өзара байланысы жоқ көптеген (5+) "
+            "компаниядан алғаш рет төлемдер алған."
+        ),
+        "en": (
+            "Over the past few days, this new account received first-time payments "
+            "from many (5+) unrelated companies."
+        ),
+    },
+    "analyst.fresh_iik_many_payers": {
+        "ru": (
+            "За последние {window_days} дн. на счёт поступили первые платежи от "
+            "{distinct_payers} не связанных клиентов BCC на сумму {total_kzt}."
+        ),
+        "kk": (
+            "Соңғы {window_days} күнде осы шотқа BCC-дің өзара байланысы жоқ "
+            "{distinct_payers} клиентінен {total_kzt} сомасына алғашқы төлемдер түскен."
+        ),
+        "en": (
+            "Over the past {window_days} days, {distinct_payers} unrelated BCC clients "
+            "made first-time payments to this account totaling {total_kzt}."
+        ),
     },
     "rule.duplicate_invoice": {
         "ru": "Возможна повторная оплата счёта № {invoice_no} (уже встречался {prev_date}).",
@@ -772,6 +872,66 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "{age_days} күн бұрын ашылған ({opened_at})",
         "en": "opened {age_days}d ago ({opened_at})",
     },
+    "ev.bank_complaints_expected": {
+        "ru": "нет жалоб от других клиентов банка",
+        "kk": "банктің басқа клиенттерінен шағым жоқ",
+        "en": "no reports from other bank clients",
+    },
+    "ev.bank_complaints_actual_some": {
+        "ru": "поступали жалобы от других клиентов банка",
+        "kk": "банктің басқа клиенттерінен шағымдар түскен",
+        "en": "reported by other bank clients",
+    },
+    "ev.bank_complaints_actual_many": {
+        "ru": "несколько (3+) жалоб от других клиентов банка",
+        "kk": "банктің басқа клиенттерінен бірнеше (3+) шағым",
+        "en": "multiple (3+) reports from other bank clients",
+    },
+    "ev.analyst_complaints_actual": {
+        "ru": "жалоб: {count} (последняя: {last_reported_at})",
+        "kk": "шағымдар: {count} (соңғысы: {last_reported_at})",
+        "en": "{count} report(s) (latest: {last_reported_at})",
+    },
+    "ev.watchlist_expected": {
+        "ru": "счёт отсутствует в списке подозрительных счетов",
+        "kk": "шот күдікті шоттар тізімінде жоқ",
+        "en": "account not on suspicious account watchlist",
+    },
+    "ev.watchlist_actual": {
+        "ru": "счёт в стоп-листе антифрод-центра",
+        "kk": "шот антифрод-орталықтың стоп-тізімінде",
+        "en": "account on antifraud center watchlist",
+    },
+    "ev.analyst_watchlist_actual": {
+        "ru": "{source} ({category}, {added_at})",
+        "kk": "{source} ({category}, {added_at})",
+        "en": "{source} ({category}, {added_at})",
+    },
+    "ev.fresh_inflows_expected": {
+        "ru": "обычная активность новых входящих платежей",
+        "kk": "жаңа кіріс төлемдерінің әдеттегі белсенділігі",
+        "en": "normal pattern of incoming first-time payments",
+    },
+    "ev.fresh_inflows_actual_medium": {
+        "ru": "первые платежи от нескольких (3+) не связанных компаний",
+        "kk": "өзара байланысы жоқ бірнеше (3+) компаниядан алғашқы төлемдер",
+        "en": "first-time payments from several (3+) unrelated companies",
+    },
+    "ev.fresh_inflows_actual_high": {
+        "ru": "первые платежи от многих (5+) не связанных компаний",
+        "kk": "өзара байланысы жоқ көптеген (5+) компаниядан алғашқы төлемдер",
+        "en": "first-time payments from many (5+) unrelated companies",
+    },
+    "ev.analyst_fresh_inflows_expected": {
+        "ru": "менее {threshold} новых не связанных плательщиков за {window_days} дн.",
+        "kk": "{window_days} күнде өзара байланысы жоқ {threshold}-тен аз жаңа төлеуші",
+        "en": "fewer than {threshold} unrelated first-time payers in {window_days}d",
+    },
+    "ev.analyst_fresh_inflows_actual": {
+        "ru": "{distinct_payers} не связанных клиентов, {total_kzt} за {window_days} дн.",
+        "kk": "өзара байланысы жоқ {distinct_payers} клиент, {window_days} күнде {total_kzt}",
+        "en": "{distinct_payers} unrelated clients, {total_kzt} over {window_days}d",
+    },
     # --- Evaluation disclaimers ---
     "metrics.disclaimer": {
         "ru": (
@@ -779,27 +939,181 @@ MESSAGES: dict[str, dict[Lang, str]] = {
             "которая разрабатывала правила проверки, на основе синтетической истории одного клиента. "
             "Метрики показывают поведение движка на заданных сценариях, не отражают реальную "
             "банковскую статистику мошенничества и не заменяют проверку на исторических боевых данных. "
-            "Известные слепые зоны (чистый дроп в стороннем банке без истории, умеренное завышение "
-            "суммы без смены реквизитов, ИИН-дроп без ОПФ/КБе и первая неподтверждённая смена счёта) "
-            "намеренно сохранены в наборе без подгонки детектора."
+            "Известные слепые зоны (новый дроп в стороннем банке до первых жалоб и притока, умеренное "
+            "завышение суммы без смены реквизитов, ИИН-дроп без ОПФ/КБе и первая неподтверждённая "
+            "смена счёта) намеренно сохранены в наборе без подгонки детектора."
         ),
         "kk": (
             "Ашық ескерту: бағалау жинағы синтетикалық, ол тексеру ережелерін әзірлеген сол топпен "
             "бір клиенттің синтетикалық төлем тарихы негізінде жасалған. Көрсеткіштер тексеру жүйесінің "
             "үлгіленген сценарийлердегі жұмысын бейнелейді, нақты банктік алаяқтық статистикасын "
             "көрсетпейді және нақты тарихи өндірістік деректерде тексеруді алмастырмайды. Белгілі соқыр аймақтар "
-            "(тарихсыз сыртқы банктегі таза дроп, деректемелерді өзгертпей соманы орташа арттыру, ҰҚН/КБе жоқ ЖСН-дроп "
-            "және алғашқы расталмаған шот ауыстыру) жинақта детекторды бейімдемей, әдейі сақталған."
+            "(алғашқы шағымдар мен ағынға дейінгі сыртқы банктегі жаңа дроп, деректемелерді өзгертпей соманы "
+            "орташа арттыру, ҰҚН/КБе жоқ ЖСН-дроп және алғашқы расталмаған шот ауыстыру) жинақта детекторды "
+            "бейімдемей, әдейі сақталған."
         ),
         "en": (
             "Synthetic evaluation notice: this dataset is synthetic and generated by the same team "
             "that wrote the verification rules, based on one client's synthetic payment history. "
             "Metrics illustrate engine behavior on modeled scenarios, do not represent real banking "
             "fraud incidence, and do not replace validation on production payment logs. Known blind "
-            "spots (typo-free external drops without history, moderate amount inflation without "
-            "requisite changes, IIN droppers without legal form/KBe, and first unconfirmed account "
-            "switches) are intentionally preserved without tuning the detector to the set."
+            "spots (brand-new external drops prior to complaints or multi-client inflows, moderate "
+            "amount inflation without requisite changes, IIN droppers without legal form/KBe, and first "
+            "unconfirmed account switches) are intentionally preserved without tuning the detector to the set."
         ),
+    },
+    # --- Prod API error messages (error.prod.*) ---
+    "error.prod.not_authenticated": {
+        "ru": "Требуется вход в систему.",
+        "kk": "Жүйеге кіру қажет.",
+        "en": "Authentication required.",
+    },
+    "error.prod.invalid_credentials": {
+        "ru": "Неверный логин или пароль.",
+        "kk": "Логин немесе құпиясөз қате.",
+        "en": "Invalid login or password.",
+    },
+    "error.prod.forbidden_role": {
+        "ru": "Недостаточно прав для выполнения этого действия.",
+        "kk": "Бұл әрекетті орындау үшін құқықтар жеткіліксіз.",
+        "en": "You do not have permission to perform this action.",
+    },
+    "error.prod.csrf_header_missing": {
+        "ru": "Отсутствует обязательный заголовок безопасности запроса.",
+        "kk": "Сұраудың міндетті қауіпсіздік тақырыбы жоқ.",
+        "en": "Missing required security request header.",
+    },
+    "error.prod.not_found": {
+        "ru": "Запрошенный ресурс не найден.",
+        "kk": "Сұралған ресурс табылмады.",
+        "en": "Requested resource not found.",
+    },
+    "error.prod.already_signed": {
+        "ru": "Платёж уже подписан.",
+        "kk": "Бұл төлемге қол қойылып қойған.",
+        "en": "This payment has already been signed.",
+    },
+    "error.prod.not_signable_status": {
+        "ru": "Платёж в текущем статусе нельзя подписать.",
+        "kk": "Ағымдағы күйдегі төлемге қол қоюға болмайды.",
+        "en": "Payment cannot be signed in its current status.",
+    },
+    "error.prod.approval_pending": {
+        "ru": "Платёж ожидает решения директора.",
+        "kk": "Төлем директордың шешімін күтуде.",
+        "en": "Payment is awaiting director approval.",
+    },
+    "error.prod.approval_rejected": {
+        "ru": "Платёж отклонён директором. Измените реквизиты или отмените платёж.",
+        "kk": "Төлемді директор қабылдамады. Деректемелерді түзетіңіз немесе төлемді болдырмаңыз.",
+        "en": "Payment was rejected by the director. Edit the requisites or cancel the payment.",
+    },
+    "error.prod.verdict_changed": {
+        "ru": "При перепроверке уровень риска повысился — проверьте обновлённый разбор.",
+        "kk": "Қайта тексеру кезінде тәуекел деңгейі өсті — жаңартылған нәтижені тексеріңіз.",
+        "en": "Risk verdict worsened upon recheck — review the updated check result.",
+    },
+    "error.prod.invalid_requisites": {
+        "ru": "В реквизитах платежа есть ошибка — исправьте их перед отправкой или подписанием.",
+        "kk": "Төлем деректемелерінде қате бар — жіберу немесе қол қою алдында түзетіңіз.",
+        "en": "Payment requisites are invalid — fix them before sending or signing.",
+    },
+    "error.prod.red_requires_approval": {
+        "ru": "Платёж с красным вердиктом нельзя подписать без одобрения директора.",
+        "kk": "Қызыл деңгейлі төлемге директордың мақұлдауынсыз қол қоюға болмайды.",
+        "en": "A red-verdict payment cannot be signed without director approval.",
+    },
+    "error.prod.ack_or_approval_required": {
+        "ru": "Для подписи требуется подтверждение бухгалтера или одобрение директора.",
+        "kk": "Қол қою үшін бухгалтердің растауы немесе директордың мақұлдауы қажет.",
+        "en": "Accountant acknowledgement or director approval is required to sign.",
+    },
+    "error.prod.not_editable": {
+        "ru": "Платёж в текущем статусе нельзя редактировать или перепроверять.",
+        "kk": "Ағымдағы күйдегі төлемді өңдеуге немесе қайта тексеруге болмайды.",
+        "en": "Payment cannot be edited or rechecked in its current status.",
+    },
+    "error.prod.invalid_transition": {
+        "ru": "Недопустимый переход статуса для этого платежа.",
+        "kk": "Бұл төлем үшін күйді осылай ауыстыруға болмайды.",
+        "en": "Invalid status transition for this payment.",
+    },
+    "error.prod.approval_already_decided": {
+        "ru": "Решение по этой заявке уже принято.",
+        "kk": "Бұл өтінім бойынша шешім қабылданып қойған.",
+        "en": "A decision has already been recorded for this approval request.",
+    },
+    "error.prod.approval_superseded": {
+        "ru": "Согласование устарело из-за изменения реквизитов или вердикта.",
+        "kk": "Деректемелер немесе вердикт өзгергендіктен келісу ескірді.",
+        "en": "Approval has been superseded due to changed requisites or verdict.",
+    },
+    "error.prod.duplicate_file": {
+        "ru": "Этот файл уже загружался ранее. Подтвердите повторную загрузку.",
+        "kk": "Бұл файл бұрын жүктелген. Қайта жүктеуді растаңыз.",
+        "en": "This file has already been imported. Confirm repeat upload to continue.",
+    },
+    "error.prod.file_too_large": {
+        "ru": "Размер файла превышает допустимый лимит (2 МБ).",
+        "kk": "Файл көлемі рұқсат етілген шектен (2 МБ) асады.",
+        "en": "File size exceeds the maximum allowed limit (2 MB).",
+    },
+    "error.prod.validation_error": {
+        "ru": "Ошибка проверки данных запроса.",
+        "kk": "Сұрау деректерін тексеру қатесі.",
+        "en": "Request validation error.",
+    },
+    "error.prod.unsupported_file": {
+        "ru": "Не удалось распознать формат файла. Загрузите выгрузку 1С или CSV.",
+        "kk": "Файл пішімін тану мүмкін болмады. 1С немесе CSV файлын жүктеңіз.",
+        "en": "Unsupported or unrecognized file format. Upload a 1C exchange or CSV file.",
+    },
+    "error.prod.empty_file": {
+        "ru": "Файл пуст и не содержит платёжных документов.",
+        "kk": "Файл бос және төлем құжаттарын қамтымайды.",
+        "en": "File is empty and contains no payment documents.",
+    },
+    "error.prod.red_comment_required": {
+        "ru": (
+            "Для одобрения платежа с красным вердиктом обязателен комментарий директора "
+            "(не менее 10 символов)."
+        ),
+        "kk": (
+            "Қызыл деңгейлі төлемді мақұлдау үшін директордың түсініктемесі міндетті "
+            "(кемінде 10 таңба)."
+        ),
+        "en": "A director comment of at least 10 characters is required to approve a red-verdict payment.",
+    },
+    "error.prod.trust_comment_required": {
+        "ru": (
+            "Для добавления счёта в доверенные обязателен комментарий директора "
+            "(не менее 10 символов)."
+        ),
+        "kk": (
+            "Шотты сенімділер тізіміне қосу үшін директордың түсініктемесі міндетті "
+            "(кемінде 10 таңба)."
+        ),
+        "en": "A director comment of at least 10 characters is required to trust this account.",
+    },
+    "error.prod.trust_not_allowed": {
+        "ru": "Доверие недоступно для этого платежа.",
+        "kk": "Бұл төлем үшін шотқа сенім білдіру қолжетімсіз.",
+        "en": "Account trust is not available for this payment.",
+    },
+    "error.prod.invalid_payment_cannot_approve": {
+        "ru": "Платёж с ошибкой в реквизитах нельзя одобрить.",
+        "kk": "Деректемелерінде қате бар төлемді мақұлдауға болмайды.",
+        "en": "A payment with invalid requisites cannot be approved.",
+    },
+    "error.prod.too_many_attempts": {
+        "ru": "Слишком много неудачных попыток входа. Повторите через 15 минут.",
+        "kk": "Кіру әрекеттері тым көп сәтсіз аяқталды. 15 минуттан кейін қайталаңыз.",
+        "en": "Too many failed login attempts. Please try again in 15 minutes.",
+    },
+    "error.prod.internal_error": {
+        "ru": "Внутренняя ошибка сервиса. Попробуйте повторить запрос позже.",
+        "kk": "Сервистің ішкі қатесі. Сұрауды кейінірек қайталап көріңіз.",
+        "en": "Internal service error. Please try again later.",
     },
 }
 
@@ -848,6 +1162,16 @@ KIND_LABELS: dict[str, dict[Lang, str]] = {
         "ru": "Бюджетный платёж (казначейство / ГК)",
         "kk": "Бюджеттік төлем (қазынашылық / МК)",
         "en": "Budget payment (treasury / gov)",
+    },
+    "legit_popular_known_supplier": {
+        "ru": "Крупный известный банку поставщик (много первых платежей)",
+        "kk": "Банкке бұрыннан белгілі ірі жеткізуші (көп алғашқы төлем)",
+        "en": "Established bank-known supplier (high first-payment inflow)",
+    },
+    "legit_new_supplier_generic_word": {
+        "ru": "Новый легитимный поставщик с общим словом в названии",
+        "kk": "Атауында жалпы сөз бар жаңа заңды жеткізуші",
+        "en": "New legitimate supplier with a generic word",
     },
     "attack_iik_swap_same_bin": {
         "ru": "Подмена ИИК при том же БИН",
@@ -904,6 +1228,11 @@ KIND_LABELS: dict[str, dict[Lang, str]] = {
         "kk": "Кешенді BEC-шабуыл",
         "en": "Combined multi-signal BEC attack",
     },
+    "attack_bankwide_external_drop": {
+        "ru": "Дроппер в стороннем банке (межклиентские сигналы BCC)",
+        "kk": "Сыртқы банктегі дроппер (BCC клиенттері бойынша ортақ сигналдар)",
+        "en": "External-bank dropper (bank-wide BCC signals)",
+    },
 }
 
 FIELD_LABELS: dict[str, dict[Lang, str]] = {
@@ -935,6 +1264,18 @@ FIELD_LABELS: dict[str, dict[Lang, str]] = {
     "check_request": {"ru": "Данные платежа", "kk": "Төлем деректері", "en": "Payment details"},
     "lang": {"ru": "Язык ответа", "kk": "Жауап тілі", "en": "Response language"},
     "limit": {"ru": "Лимит записей", "kk": "Жазбалар лимиті", "en": "Record limit"},
+    "login": {"ru": "Логин", "kk": "Логин", "en": "Login"},
+    "password": {"ru": "Пароль", "kk": "Құпиясөз", "en": "Password"},
+    "doc_number": {"ru": "Номер документа", "kk": "Құжат нөмірі", "en": "Document number"},
+    "doc_date": {"ru": "Дата документа", "kk": "Құжат күні", "en": "Document date"},
+    "note": {"ru": "Комментарий", "kk": "Түсініктеме", "en": "Note"},
+    "comment": {"ru": "Комментарий", "kk": "Түсініктеме", "en": "Comment"},
+    "accountant_ack": {
+        "ru": "Подтверждение бухгалтера",
+        "kk": "Бухгалтердің растауы",
+        "en": "Accountant acknowledgement",
+    },
+    "filename": {"ru": "Имя файла", "kk": "Файл атауы", "en": "Filename"},
 }
 
 

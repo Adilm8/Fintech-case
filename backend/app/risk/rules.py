@@ -15,26 +15,35 @@ from typing import Any
 from rapidfuzz import fuzz
 
 from app.i18n import DEFAULT_LANG, Lang, t
+from app.risk.bank_signals import get_bank_signals, is_bank_known_bin
 from app.risk.config import (
     AMOUNT_ANOMALY_MIN_HISTORY,
     AMOUNT_FIRST_PAYMENT_RED_P90_MULT,
     AMOUNT_FIRST_PAYMENT_YELLOW_P90_MULT,
     AMOUNT_SUPPLIER_EXTREME_P90_MULT,
+    BANK_COMPLAINTS_BLOCK_COUNT,
+    BANK_COMPLAINTS_MIN_COUNT,
+    BANK_FRESH_INFLOWS_HIGH_PAYERS,
+    BANK_FRESH_INFLOWS_MEDIUM_PAYERS,
+    BANK_FRESH_INFLOWS_WINDOW_DAYS,
     BCC_BANK_CODE,
     BCC_BIK,
     BIN_YOUNG_MAX_MONTHS,
     CLIENT_P90_MIN_HISTORY,
     DEMO_TODAY,
     DUPLICATE_INVOICE_WINDOW_DAYS,
-    GENERIC_COMPANY_TOKENS,
+    ENTITY_WRAPPER_PHRASES,
     KBE_INDIVIDUAL_CODES,
     KBE_LEGAL_ENTITY_CODES,
+    LOOKALIKE_BLOCK_SIMILARITY_THRESHOLD,
+    LOOKALIKE_DISTINCTIVE_FUZZY_THRESHOLD,
+    LOOKALIKE_DISTINCTIVE_PREFIX_FUZZY_THRESHOLD,
     LOOKALIKE_DISTINCTIVE_THRESHOLD,
     LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN,
+    LOOKALIKE_DISTINCTIVE_WRAPPER_MIN_LEN,
     LOOKALIKE_PREFIX_MIN_LEN,
     LOOKALIKE_SIMILARITY_THRESHOLD,
     LOOKALIKE_TOKEN_SET_MIN_LEN,
-    LOOKALIKE_TOKEN_SET_THRESHOLD,
     NEW_BCC_ACCOUNT_MAX_DAYS,
     NEW_RECIPIENT_ACCUM_WINDOW_DAYS,
     STRUCTURING_PAIR_MIN_RATIO,
@@ -55,8 +64,11 @@ from app.risk.config import (
     WEIGHT_DUPLICATE_INVOICE,
     WEIGHT_ENTITY_TYPE_MISMATCH,
     WEIGHT_ENTITY_TYPE_MISMATCH_LEGAL_IIN,
+    WEIGHT_FRESH_IIK_MANY_PAYERS_HIGH,
+    WEIGHT_FRESH_IIK_MANY_PAYERS_MEDIUM,
     WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
     WEIGHT_IIK_CHANGED,
+    WEIGHT_IIK_REPORTED_BY_CLIENTS,
     WEIGHT_KBE_MISMATCH_INDIVIDUAL_BIN,
     WEIGHT_KBE_MISMATCH_LEGAL_IIN,
     WEIGHT_KNP_UNUSUAL,
@@ -72,11 +84,15 @@ from app.risk.config import (
 from app.risk.names import (
     confusable_skeleton,
     detect_legal_form_kind,
+    extract_ie_initials,
     find_mixed_script_positions,
+    is_generic_company_token,
     name_similarity,
     normalize_company_name,
+    normalize_company_name_translated,
     normalize_company_name_translit,
     sanitize_unicode,
+    transliterate_cyr_to_lat,
 )
 from app.schemas import (
     AnalystDetails,
@@ -429,13 +445,198 @@ def rule_bcc_account_other_owner(
     )
 
 
-def _distinctive_tokens(tokens: list[str]) -> list[str]:
-    """Return non-generic tokens long enough to identify a supplier brand."""
-    return [
+def rule_iik_reported_by_clients(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+    bank_signals: dict[str, Any] | None = None,
+) -> Signal | None:
+    """Flag an IIK reported as fraudulent by other BCC clients (1-2 -> primary 60; >=3 -> block).
+
+    Client-facing message and evidence remain anonymous and bucketed without reporter identities,
+    exact counts, or report dates; exact metadata is exposed only via analyst_details.
+    """
+    signals_data = get_bank_signals(store, bank_signals=bank_signals)
+    entry = signals_data["complaints"].get(req.recipient_iik)
+    if not isinstance(entry, dict):
+        return None
+
+    count = int(entry.get("count", 0))
+    if count < BANK_COMPLAINTS_MIN_COUNT:
+        return None
+
+    if count >= BANK_COMPLAINTS_BLOCK_COUNT:
+        return _make_signal(
+            rule_id="iik_reported_by_clients",
+            points=100,
+            severity="block",
+            message_key="rule.iik_reported_by_clients_many",
+            evidence=_make_evidence(
+                "iik",
+                lang=lang,
+                expected_key="ev.bank_complaints_expected",
+                actual_key="ev.bank_complaints_actual_many",
+                since=None,
+            ),
+            lang=lang,
+        )
+
+    return _make_signal(
+        rule_id="iik_reported_by_clients",
+        points=WEIGHT_IIK_REPORTED_BY_CLIENTS,
+        severity="primary",
+        message_key="rule.iik_reported_by_clients",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.bank_complaints_expected",
+            actual_key="ev.bank_complaints_actual_some",
+            since=None,
+        ),
+        lang=lang,
+    )
+
+
+def rule_iik_on_watchlist(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+    bank_signals: dict[str, Any] | None = None,
+) -> Signal | None:
+    """Block payment when the recipient IIK appears on the antifraud center mule watchlist."""
+    signals_data = get_bank_signals(store, bank_signals=bank_signals)
+    entry = signals_data["mule_watchlist"].get(req.recipient_iik)
+    if entry is None or entry is False:
+        return None
+
+    return _make_signal(
+        rule_id="iik_on_watchlist",
+        points=100,
+        severity="block",
+        message_key="rule.iik_on_watchlist",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.watchlist_expected",
+            actual_key="ev.watchlist_actual",
+            since=None,
+        ),
+        lang=lang,
+    )
+
+
+def rule_fresh_iik_many_payers(
+    req: CheckRequest,
+    store: Store,
+    *,
+    today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
+    bank_signals: dict[str, Any] | None = None,
+) -> Signal | None:
+    """Flag a fresh account receiving first-time payments from >=3 (>=5) unrelated BCC clients.
+
+    Exempts recipients whose BIN has long-standing history in BCC (bank_known_bin).
+    Client-facing text uses only anonymous bucketed ranges (3+ / 5+); exact payer counts
+    and cumulative volumes appear only in analyst_details.
+    """
+    signals_data = get_bank_signals(store, bank_signals=bank_signals)
+    entry = signals_data["fresh_inflows"].get(req.recipient_iik)
+    if not isinstance(entry, dict):
+        return None
+
+    distinct_payers = int(entry.get("distinct_payers_7d", 0))
+    if distinct_payers < BANK_FRESH_INFLOWS_MEDIUM_PAYERS:
+        return None
+
+    if is_bank_known_bin(req.recipient_bin, signals_data, today=today):
+        return None
+
+    if distinct_payers >= BANK_FRESH_INFLOWS_HIGH_PAYERS:
+        points = WEIGHT_FRESH_IIK_MANY_PAYERS_HIGH
+        msg_key = "rule.fresh_iik_many_payers_many"
+        actual_key = "ev.fresh_inflows_actual_high"
+    else:
+        points = WEIGHT_FRESH_IIK_MANY_PAYERS_MEDIUM
+        msg_key = "rule.fresh_iik_many_payers"
+        actual_key = "ev.fresh_inflows_actual_medium"
+
+    return _make_signal(
+        rule_id="fresh_iik_many_payers",
+        points=points,
+        severity="primary",
+        message_key=msg_key,
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.fresh_inflows_expected",
+            actual_key=actual_key,
+            since=None,
+        ),
+        lang=lang,
+    )
+
+
+def _classify_supplier_distinctive_tokens(sup_cyr_tokens: list[str]) -> tuple[list[str], list[str]]:
+    """Decide distinctive vs generic tokens ONCE on lower-case Cyrillic and project to Latin."""
+    distinctive_cyr = [
         tok
-        for tok in tokens
-        if len(tok) >= LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN and tok not in GENERIC_COMPANY_TOKENS
+        for tok in sup_cyr_tokens
+        if len(tok) >= LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN and not is_generic_company_token(tok)
     ]
+    distinctive_lat = [transliterate_cyr_to_lat(tok) for tok in distinctive_cyr]
+    return distinctive_cyr, distinctive_lat
+
+
+def _common_prefix_len(a: str, b: str) -> int:
+    limit = min(len(a), len(b))
+    i = 0
+    while i < limit and a[i] == b[i]:
+        i += 1
+    return i
+
+
+def _strip_wrapper_phrases(tokens: list[str]) -> list[str]:
+    """Remove entity wrapper phrases (e.g. 'торговый дом', 'тд', 'фирма') from Cyrillic tokens."""
+    out: list[str] = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        matched_len = 0
+        for phrase in ENTITY_WRAPPER_PHRASES:
+            plen = len(phrase)
+            if plen <= n - i and tuple(tokens[i : i + plen]) == phrase:
+                matched_len = max(matched_len, plen)
+        if matched_len > 0:
+            i += matched_len
+        else:
+            out.append(tokens[i])
+            i += 1
+    return out
+
+
+def _ie_initials_compatible(
+    cand_name: str,
+    sup_name: str,
+    cand_bin: str,
+    sup_bin: str,
+) -> bool:
+    """For IE-to-IE comparisons, require initials to match (different initials -> different person)."""
+    cand_is_ie = detect_legal_form_kind(cand_name) == "iin" or bin_kind(cand_bin) == "iin"
+    sup_is_ie = detect_legal_form_kind(sup_name) == "iin" or bin_kind(sup_bin) == "iin"
+    if not (cand_is_ie and sup_is_ie):
+        return True
+
+    sup_init = extract_ie_initials(sup_name)
+    if not sup_init:
+        return True
+    cand_init = extract_ie_initials(cand_name)
+    if not cand_init:
+        return False
+
+    min_len = min(len(cand_init), len(sup_init))
+    return cand_init[:min_len] == sup_init[:min_len]
 
 
 def _all_supplier_tokens_matched(sup_tokens: list[str], cand_tokens: list[str]) -> bool:
@@ -452,26 +653,82 @@ def _all_supplier_tokens_matched(sup_tokens: list[str], cand_tokens: list[str]) 
 
 
 def _has_distinctive_token_match(
-    sup_tokens: list[str],
+    distinctive_tokens: list[str],
     cand_tokens: list[str],
     cand_compact: str,
 ) -> bool:
-    """Return True if a distinctive supplier token matches as token, prefix, or compact stem."""
-    distinctive = _distinctive_tokens(sup_tokens)
-    if not distinctive:
+    """Return True if a supplier distinctive token matches a non-generic candidate token."""
+    if not distinctive_tokens or not cand_tokens:
         return False
-    for dt in distinctive:
-        if any(ct == dt or ct.startswith(dt) for ct in cand_tokens):
+    cand_non_generic = [ct for ct in cand_tokens if not is_generic_company_token(ct)]
+    for dt in distinctive_tokens:
+        if any(ct == dt or ct.startswith(dt) for ct in cand_non_generic):
             return True
         if dt in cand_compact:
             return True
+        if len(dt) >= 5:
+            for ct in cand_non_generic:
+                if len(ct) < 5:
+                    continue
+                tok_sim = float(fuzz.ratio(ct, dt))
+                if tok_sim >= LOOKALIKE_DISTINCTIVE_FUZZY_THRESHOLD:
+                    return True
+                if (
+                    _common_prefix_len(ct, dt) >= 4
+                    and tok_sim >= LOOKALIKE_DISTINCTIVE_PREFIX_FUZZY_THRESHOLD
+                    and abs(len(ct) - len(dt)) <= 2
+                ):
+                    return True
     return False
 
 
-def _score_lookalike_pair(cand: str, sup: str) -> float:
-    """Return lookalike match score (> 0 when matched, else 0.0) for two normalized forms."""
+def _matches_abbreviated_supplier(
+    cand_cyr_tokens: list[str],
+    sup_cyr_tokens: list[str],
+    distinctive_cyr: list[str],
+) -> bool:
+    """Detect initial-letter abbreviation of a distinctive token + matching companion token(s).
+
+    Example: 'ТОО «А-Снаб»' (['а', 'снаб']) against 'ТОО «Алатау Снаб»' (['алатау', 'снаб']).
+    """
+    if len(sup_cyr_tokens) < 2 or len(cand_cyr_tokens) != len(sup_cyr_tokens) or not distinctive_cyr:
+        return False
+    distinctive_set = set(distinctive_cyr)
+    has_abbr = False
+    has_full = False
+    for ct, st in zip(cand_cyr_tokens, sup_cyr_tokens, strict=True):
+        if 1 <= len(ct) <= 2 and st in distinctive_set and st.startswith(ct):
+            has_abbr = True
+        elif len(st) >= LOOKALIKE_PREFIX_MIN_LEN and (ct == st or ct.startswith(st)):
+            has_full = True
+        else:
+            return False
+    return has_abbr and has_full
+
+
+def _true_pair_similarity(cand: str, sup: str) -> float:
+    """Compute true normalized similarity (0..100) without containment inflation."""
     if not cand or not sup:
         return 0.0
+    cand_compact = "".join(cand.split())
+    sup_compact = "".join(sup.split())
+    if cand == sup or cand_compact == sup_compact:
+        return 100.0
+    return max(
+        float(fuzz.ratio(cand, sup)),
+        float(fuzz.token_sort_ratio(cand, sup)),
+        float(fuzz.ratio(cand_compact, sup_compact)),
+    )
+
+
+def _score_lookalike_pair(
+    cand: str,
+    sup: str,
+    distinctive_tokens: list[str],
+) -> tuple[float, float]:
+    """Return (match_score, true_similarity) for a normalized candidate/supplier pair."""
+    if not cand or not sup:
+        return 0.0, 0.0
 
     cand_tokens = cand.split()
     sup_tokens = sup.split()
@@ -480,7 +737,7 @@ def _score_lookalike_pair(cand: str, sup: str) -> float:
 
     # 1. Exact match after folding or transliteration (including spacing differences), any length.
     if cand == sup or cand_compact == sup_compact:
-        return 100.0
+        return 100.0, 100.0
 
     sim = max(
         float(fuzz.ratio(cand, sup)),
@@ -488,35 +745,40 @@ def _score_lookalike_pair(cand: str, sup: str) -> float:
         float(fuzz.ratio(cand_compact, sup_compact)),
     )
 
-    # 2. High overall similarity (>= 85).
-    if sim >= LOOKALIKE_SIMILARITY_THRESHOLD:
-        return sim
+    has_generic_split = bool(distinctive_tokens) and len(distinctive_tokens) < len(sup_tokens)
+    distinctive_ok = (not has_generic_split) or _has_distinctive_token_match(
+        distinctive_tokens, cand_tokens, cand_compact
+    )
+
+    # 2. High overall similarity (>= 85); guard against generic-word inflation when supplier mixes
+    #    distinctive and generic tokens (e.g. 'Актау Снаб' vs 'Алатау Снаб').
+    if sim >= LOOKALIKE_SIMILARITY_THRESHOLD and distinctive_ok:
+        return sim, sim
 
     # 3. Full supplier prefix/token containment (for supplier names >= 8 compact chars).
     if len(sup_compact) >= LOOKALIKE_TOKEN_SET_MIN_LEN:
         if sup_compact in cand_compact:
-            return max(sim, LOOKALIKE_TOKEN_SET_THRESHOLD)
+            return max(sim, LOOKALIKE_SIMILARITY_THRESHOLD), sim
         if _all_supplier_tokens_matched(sup_tokens, cand_tokens):
-            return max(sim, float(fuzz.token_set_ratio(cand, sup)), LOOKALIKE_SIMILARITY_THRESHOLD)
+            return max(sim, float(fuzz.token_set_ratio(cand, sup)), LOOKALIKE_SIMILARITY_THRESHOLD), sim
 
     # 4. Distinctive token match with lowered similarity threshold (~70).
     if sim >= LOOKALIKE_DISTINCTIVE_THRESHOLD and _has_distinctive_token_match(
-        sup_tokens, cand_tokens, cand_compact
+        distinctive_tokens, cand_tokens, cand_compact
     ):
-        return sim
+        return sim, sim
 
-    return 0.0
+    return 0.0, sim
 
 
-def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] | None:
+def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] | None:
     """Find the closest known client supplier with lookalike similarity and a different BIN.
 
     Skipped (M1) if recipient_bin already has its own payment history or is trusted.
-    Triggers across visual confusable skeleton and ru<->lat transliterated forms on:
-    - exact match after folding/transliteration regardless of length,
-    - similarity >= 85,
-    - full supplier prefix/token containment (len >= 8), or
-    - similarity >= 70 when a distinctive supplier token matches.
+    Decides distinctive vs generic supplier tokens ONCE on lower-case Cyrillic and carries
+    that decision to transliterated/cased forms. For IE pairs, requires matching initials.
+    Returns dict with bin, name, first_seen, similarity (true normalized similarity 0..100),
+    and match_score.
     """
     if store.get_supplier_history(req.recipient_bin, req.payer_id):
         return None
@@ -525,8 +787,14 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] |
 
     norm_req = normalize_company_name(req.recipient_name)
     cyr_req, lat_req = normalize_company_name_translit(req.recipient_name)
+    trans_req = normalize_company_name_translated(req.recipient_name)
     if not norm_req and not cyr_req:
         return None
+
+    cand_is_ie = (
+        detect_legal_form_kind(req.recipient_name) == "iin"
+        or bin_kind(req.recipient_bin) == "iin"
+    )
 
     history = store.get_client_history(req.payer_id)
     suppliers_by_bin: dict[str, dict[str, str]] = {}
@@ -541,22 +809,82 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] |
                 "first_seen": payment["paid_at"],
             }
 
-    best_match: dict[str, str] | None = None
+    best_match: dict[str, Any] | None = None
     best_score = 0.0
+    best_similarity = 0.0
     for supplier in suppliers_by_bin.values():
+        if not _ie_initials_compatible(
+            req.recipient_name,
+            supplier["name"],
+            req.recipient_bin,
+            supplier["bin"],
+        ):
+            continue
+
         norm_sup = normalize_company_name(supplier["name"])
         cyr_sup, lat_sup = normalize_company_name_translit(supplier["name"])
+        trans_sup = normalize_company_name_translated(supplier["name"])
         if not norm_sup and not cyr_sup:
             continue
 
-        matched_score = max(
-            _score_lookalike_pair(norm_req, norm_sup),
-            _score_lookalike_pair(cyr_req, cyr_sup),
-            _score_lookalike_pair(lat_req, lat_sup),
+        sup_base_cyr_tokens = norm_sup.split() or cyr_sup.split()
+        distinctive_cyr, distinctive_lat = _classify_supplier_distinctive_tokens(
+            sup_base_cyr_tokens
         )
-        if matched_score > best_score:
+        sup_is_ie = (
+            detect_legal_form_kind(supplier["name"]) == "iin"
+            or bin_kind(supplier["bin"]) == "iin"
+        )
+
+        view_results = (
+            _score_lookalike_pair(norm_req, norm_sup, distinctive_cyr),
+            _score_lookalike_pair(cyr_req, cyr_sup, distinctive_cyr),
+            _score_lookalike_pair(lat_req, lat_sup, distinctive_lat),
+        )
+        matched_score = max(score for score, _ in view_results)
+        true_sim = max(sim for _, sim in view_results)
+
+        # 5. Translated business-term equivalence (e.g. 'Alatau Supply' -> 'алатау снаб').
+        if trans_req and trans_sup and distinctive_cyr:
+            trans_sim = _true_pair_similarity(trans_req, trans_sup)
+            trans_req_tokens = trans_req.split()
+            if trans_sim >= LOOKALIKE_SIMILARITY_THRESHOLD and _has_distinctive_token_match(
+                distinctive_cyr, trans_req_tokens, "".join(trans_req_tokens)
+            ):
+                matched_score = max(
+                    matched_score,
+                    min(trans_sim, LOOKALIKE_BLOCK_SIMILARITY_THRESHOLD - 1.0),
+                )
+
+        # 6. Entity-wrapper clone (e.g. 'Торговый дом Алатау' -> ['алатау'] vs 'Алатау Снаб').
+        if not sup_is_ie and trans_req and distinctive_cyr:
+            trans_req_tokens = trans_req.split()
+            cand_core = _strip_wrapper_phrases(trans_req_tokens)
+            if (
+                cand_core
+                and cand_core != trans_req_tokens
+                and len("".join(distinctive_cyr)) >= LOOKALIKE_DISTINCTIVE_WRAPPER_MIN_LEN
+                and cand_core == distinctive_cyr
+            ):
+                matched_score = max(matched_score, LOOKALIKE_DISTINCTIVE_THRESHOLD)
+
+        # 7. Initial-letter abbreviation of distinctive brand token (e.g. 'А-Снаб' vs 'Алатау Снаб').
+        if not sup_is_ie and not cand_is_ie and distinctive_cyr:
+            for cand_toks in (norm_req.split(), cyr_req.split(), trans_req.split()):
+                if _matches_abbreviated_supplier(cand_toks, sup_base_cyr_tokens, distinctive_cyr):
+                    matched_score = max(matched_score, LOOKALIKE_DISTINCTIVE_THRESHOLD)
+                    break
+
+        if matched_score > best_score or (
+            matched_score > 0.0 and matched_score == best_score and true_sim > best_similarity
+        ):
             best_score = matched_score
-            best_match = supplier
+            best_similarity = true_sim
+            best_match = {
+                **supplier,
+                "similarity": true_sim,
+                "match_score": matched_score,
+            }
 
     return best_match
 
@@ -567,15 +895,26 @@ def rule_lookalike_supplier(
     *,
     lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
-    """Detect supplier name impersonation against known client suppliers with a different BIN."""
+    """Detect supplier name impersonation against known client suppliers with a different BIN.
+
+    Exact or near-exact normalized match (similarity >= 95) with a different BIN escalates to
+    block (red, 100 pts) regardless of BIN age because a legal entity's BIN never changes.
+    Fuzzy/variant/wrapper/translated/abbreviated lookalikes return primary (60 pts).
+    """
     match = find_lookalike_supplier(req, store)
     if match is None:
         return None
+
+    is_exact = float(match.get("similarity", 0.0)) >= LOOKALIKE_BLOCK_SIMILARITY_THRESHOLD
+    points = 100 if is_exact else WEIGHT_LOOKALIKE_SUPPLIER
+    severity: Severity = "block" if is_exact else "primary"
+    message_key = "rule.lookalike_supplier_exact" if is_exact else "rule.lookalike_supplier"
+
     return _make_signal(
         rule_id="lookalike_supplier",
-        points=WEIGHT_LOOKALIKE_SUPPLIER,
-        severity="primary",
-        message_key="rule.lookalike_supplier",
+        points=points,
+        severity=severity,
+        message_key=message_key,
         evidence=_make_evidence(
             "name",
             lang=lang,
@@ -979,8 +1318,9 @@ def build_analyst_details(
     *,
     today: date = DEMO_TODAY,
     lang: Lang = DEFAULT_LANG,
+    bank_signals: dict[str, Any] | None = None,
 ) -> AnalystDetails:
-    """Build restricted antifraud analyst details (banking secrecy and character-level offsets)."""
+    """Build restricted antifraud analyst details (banking secrecy, bank-wide counts, offsets)."""
     bcc_info: BccAccountAnalystInfo | None = None
     account = store.bcc_accounts.get(req.recipient_iik)
     if account is not None:
@@ -996,6 +1336,13 @@ def build_analyst_details(
             age_days=age_days,
             owner_matches_recipient=(owner_bin == req.recipient_bin),
         )
+
+    bankwide_rule_ids = {"iik_reported_by_clients", "iik_on_watchlist", "fresh_iik_many_payers"}
+    signals_data = (
+        get_bank_signals(store, bank_signals=bank_signals)
+        if any(s.rule_id in bankwide_rule_ids for s in signals)
+        else None
+    )
 
     details: list[AnalystSignalDetail] = []
     for sig in signals:
@@ -1072,6 +1419,86 @@ def build_analyst_details(
                     ),
                 )
             )
+        elif sig.rule_id == "iik_reported_by_clients" and signals_data is not None:
+            comp = signals_data["complaints"].get(req.recipient_iik)
+            if isinstance(comp, dict):
+                count = int(comp.get("count", 0))
+                last_reported_at = str(comp.get("last_reported_at") or "-")
+                params = {"count": count, "last_reported_at": last_reported_at}
+                details.append(
+                    AnalystSignalDetail(
+                        rule_id="iik_reported_by_clients",
+                        reason_ru=t("analyst.iik_reported_by_clients", "ru", **params),
+                        reason=t("analyst.iik_reported_by_clients", lang, **params),
+                        message_key="analyst.iik_reported_by_clients",
+                        message_params=params,
+                        evidence=_make_evidence(
+                            "iik",
+                            lang=lang,
+                            expected_key="ev.bank_complaints_expected",
+                            actual_key="ev.analyst_complaints_actual",
+                            actual_params=params,
+                            since=last_reported_at if last_reported_at != "-" else None,
+                        ),
+                    )
+                )
+        elif sig.rule_id == "iik_on_watchlist" and signals_data is not None:
+            watch = signals_data["mule_watchlist"].get(req.recipient_iik)
+            if watch is not None and watch is not False:
+                entry = watch if isinstance(watch, dict) else {}
+                source = str(entry.get("source") or "Антифрод-центр НБ РК")
+                category = str(entry.get("category") or "dropper_account")
+                added_at = str(entry.get("added_at") or "-")
+                params = {"source": source, "category": category, "added_at": added_at}
+                details.append(
+                    AnalystSignalDetail(
+                        rule_id="iik_on_watchlist",
+                        reason_ru=t("analyst.iik_on_watchlist", "ru", **params),
+                        reason=t("analyst.iik_on_watchlist", lang, **params),
+                        message_key="analyst.iik_on_watchlist",
+                        message_params=params,
+                        evidence=_make_evidence(
+                            "iik",
+                            lang=lang,
+                            expected_key="ev.watchlist_expected",
+                            actual_key="ev.analyst_watchlist_actual",
+                            actual_params=params,
+                            since=added_at if added_at != "-" else None,
+                        ),
+                    )
+                )
+        elif sig.rule_id == "fresh_iik_many_payers" and signals_data is not None:
+            inflow = signals_data["fresh_inflows"].get(req.recipient_iik)
+            if isinstance(inflow, dict):
+                distinct_payers = int(inflow.get("distinct_payers_7d", 0))
+                total_amount = float(inflow.get("total_amount_kzt_7d", 0))
+                window_days = int(inflow.get("window_days", BANK_FRESH_INFLOWS_WINDOW_DAYS))
+                total_kzt = _format_kzt(total_amount)
+                params = {
+                    "distinct_payers": distinct_payers,
+                    "window_days": window_days,
+                    "total_kzt": total_kzt,
+                }
+                details.append(
+                    AnalystSignalDetail(
+                        rule_id="fresh_iik_many_payers",
+                        reason_ru=t("analyst.fresh_iik_many_payers", "ru", **params),
+                        reason=t("analyst.fresh_iik_many_payers", lang, **params),
+                        message_key="analyst.fresh_iik_many_payers",
+                        message_params=params,
+                        evidence=_make_evidence(
+                            "iik",
+                            lang=lang,
+                            expected_key="ev.analyst_fresh_inflows_expected",
+                            expected_params={
+                                "threshold": BANK_FRESH_INFLOWS_MEDIUM_PAYERS,
+                                "window_days": window_days,
+                            },
+                            actual_key="ev.analyst_fresh_inflows_actual",
+                            actual_params=params,
+                        ),
+                    )
+                )
 
     return AnalystDetails(bcc_account=bcc_info, signal_details=details)
 

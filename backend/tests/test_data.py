@@ -37,6 +37,7 @@ class TestGeneratedDatasets:
             "bcc_accounts.json",
             "history.json",
             "queue.json",
+            "bank_signals.json",
         ):
             assert (DATA_DIR / name).exists(), f"Missing generated file: {name}"
 
@@ -107,6 +108,22 @@ class TestGeneratedDatasets:
                 ok, err = iik_ok(item["recipient_iik"])
                 assert ok, f"Invalid queue IIK {item['recipient_iik']}: {err}"
                 assert bik_matches_iik(item["recipient_bik"], item["recipient_iik"])
+
+        # Bank-wide anonymized signals
+        bank_signals: dict = _load_json("bank_signals.json")
+        assert bank_signals["seed"] == 42
+        for section in ("complaints", "fresh_inflows", "mule_watchlist"):
+            assert len(bank_signals[section]) >= 5
+            for sig_iik in bank_signals[section]:
+                ok, err = iik_ok(sig_iik)
+                assert ok, f"Invalid bank_signals.{section} IIK {sig_iik}: {err}"
+        assert len(bank_signals["bank_known_bin"]) >= 5
+        for known_bin, meta in bank_signals["bank_known_bin"].items():
+            assert bin_iin_checksum_ok(known_bin), f"Invalid bank_known_bin: {known_bin}"
+            assert bin_kind(known_bin) == "bin"
+            for known_iik in meta.get("known_iiks", []):
+                ok, err = iik_ok(known_iik)
+                assert ok, f"Invalid bank_known_bin IIK {known_iik}: {err}"
 
     def test_history_constraints(self) -> None:
         history = _load_json("history.json")
@@ -273,6 +290,8 @@ class TestEvaluationDatasetAndMetrics:
             "legit_account_change_confirmed",
             "legit_seasonal_amount",
             "legit_budget_payment",
+            "legit_popular_known_supplier",
+            "legit_new_supplier_generic_word",
             "attack_iik_swap_same_bin",
             "attack_lookalike_name",
             "attack_unicode_and_digit_evasion",
@@ -282,6 +301,7 @@ class TestEvaluationDatasetAndMetrics:
             "attack_duplicate_invoice",
             "attack_structuring_72h",
             "attack_typo_free_valid_drop",
+            "attack_bankwide_external_drop",
         }.issubset(kinds)
         for kind in kinds:
             assert kind in KIND_LABELS, f"Missing KIND_LABELS entry for {kind}"

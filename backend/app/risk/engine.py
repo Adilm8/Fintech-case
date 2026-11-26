@@ -11,6 +11,7 @@ from app.i18n import DEFAULT_LANG, Lang, t
 from app.risk.config import (
     AMPLIFIER_ONLY_CAP,
     DEMO_TODAY,
+    LOOKALIKE_AMOUNT_COMPARE_SIMILARITY,
     RULESET_VERSION,
     SINGLE_SIGNAL_NO_RAISE_MAX,
     THRESHOLD_RED,
@@ -35,10 +36,13 @@ from app.risk.rules import (
     rule_duplicate_invoice,
     rule_entity_type_mismatch,
     rule_first_payment,
+    rule_fresh_iik_many_payers,
     rule_iik_bank_code_vs_bik,
     rule_iik_belongs_to_other_counterparty,
     rule_iik_changed,
     rule_iik_format,
+    rule_iik_on_watchlist,
+    rule_iik_reported_by_clients,
     rule_kbe_mismatch,
     rule_knp_unusual,
     rule_lookalike_supplier,
@@ -566,18 +570,23 @@ def check_payment(
     # 2. Identify comparison / anomaly / summary reference history (direct BIN or lookalike)
     lookalike_match = find_lookalike_supplier(effective_req, store)
     if supplier_history:
-        reference_bin = effective_req.recipient_bin
+        amount_reference_bin = effective_req.recipient_bin
         comparison_history = supplier_history
         history_summary = _build_history_summary(supplier_history)
     elif lookalike_match is not None:
-        reference_bin = lookalike_match["bin"]
         comparison_history = store.get_supplier_history(lookalike_match["bin"], effective_payer_id)
         history_summary = _build_history_summary(
             comparison_history,
             compared_with=lookalike_match["name"],
         )
+        # Only compare payment amount against matched supplier history when name similarity >= 92;
+        # otherwise fall back to overall client profile (p90) to avoid distorted ratios.
+        if float(lookalike_match.get("similarity", 0.0)) >= LOOKALIKE_AMOUNT_COMPARE_SIMILARITY:
+            amount_reference_bin = lookalike_match["bin"]
+        else:
+            amount_reference_bin = effective_req.recipient_bin
     else:
-        reference_bin = effective_req.recipient_bin
+        amount_reference_bin = effective_req.recipient_bin
         comparison_history = []
         history_summary = _build_history_summary([])
 
@@ -592,6 +601,9 @@ def check_payment(
 
     candidates: list[Signal | None] = [
         rule_bcc_account_other_owner(effective_req, store, lang=lang),
+        rule_iik_on_watchlist(effective_req, store, lang=lang),
+        rule_iik_reported_by_clients(effective_req, store, lang=lang),
+        rule_fresh_iik_many_payers(effective_req, store, today=today, lang=lang),
         rule_lookalike_supplier(effective_req, store, lang=lang),
         rule_bin_name_mismatch(effective_req, store, lang=lang),
         rule_iik_belongs_to_other_counterparty(effective_req, store, lang=lang),
@@ -603,7 +615,7 @@ def check_payment(
         rule_mixed_script_name(effective_req, lang=lang),
         rule_new_bcc_account(effective_req, store, today=today, lang=lang),
         rule_bin_young(effective_req, today=today, lang=lang),
-        rule_amount_anomaly(effective_req, store, reference_bin=reference_bin, lang=lang),
+        rule_amount_anomaly(effective_req, store, reference_bin=amount_reference_bin, lang=lang),
         rule_duplicate_invoice(
             effective_req,
             store,

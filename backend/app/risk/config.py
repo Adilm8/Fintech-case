@@ -8,7 +8,7 @@ from datetime import date
 DEMO_TODAY: date = date(2026, 4, 20)
 
 # Active risk ruleset identifier returned in CheckResult and audit log records.
-RULESET_VERSION: str = "2026.11.26-r1"
+RULESET_VERSION: str = "2026.11.26-r3"
 
 # Bank CenterCredit identifiers (matching data/banks.json: BCC code 856, BIK KCJBKZKX).
 BCC_BANK_CODE: str = "856"
@@ -25,10 +25,13 @@ AMPLIFIER_ONLY_CAP: int = 29
 SINGLE_SIGNAL_NO_RAISE_MAX: int = 25
 
 # Primary and standalone signal weights.
+WEIGHT_FRESH_IIK_MANY_PAYERS_HIGH: int = 70
 WEIGHT_AMOUNT_ANOMALY_EXTREME: int = 65
 WEIGHT_LOOKALIKE_SUPPLIER: int = 60
+WEIGHT_IIK_REPORTED_BY_CLIENTS: int = 60
 WEIGHT_BIN_NAME_MISMATCH: int = 50
 WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY: int = 50
+WEIGHT_FRESH_IIK_MANY_PAYERS_MEDIUM: int = 50
 WEIGHT_ENTITY_TYPE_MISMATCH_LEGAL_IIN: int = 40
 WEIGHT_KBE_MISMATCH_LEGAL_IIN: int = 40
 WEIGHT_IIK_CHANGED: int = 35
@@ -71,8 +74,13 @@ KBE_LEGAL_ENTITY_CODES: frozenset[str] = frozenset({"17"})
 KBE_INDIVIDUAL_CODES: frozenset[str] = frozenset({"19"})
 
 # Rule parameters.
+LOOKALIKE_BLOCK_SIMILARITY_THRESHOLD: float = 95.0
+LOOKALIKE_AMOUNT_COMPARE_SIMILARITY: float = 92.0
 LOOKALIKE_SIMILARITY_THRESHOLD: float = 85.0
 LOOKALIKE_DISTINCTIVE_THRESHOLD: float = 70.0
+LOOKALIKE_DISTINCTIVE_FUZZY_THRESHOLD: float = 80.0
+LOOKALIKE_DISTINCTIVE_PREFIX_FUZZY_THRESHOLD: float = 65.0
+LOOKALIKE_DISTINCTIVE_WRAPPER_MIN_LEN: int = 5
 LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN: int = 4
 LOOKALIKE_PREFIX_MIN_LEN: int = 4
 LOOKALIKE_TOKEN_SET_THRESHOLD: float = 95.0
@@ -81,6 +89,14 @@ NEW_BCC_ACCOUNT_MAX_DAYS: int = 30
 BIN_YOUNG_MAX_MONTHS: int = 12
 AMOUNT_ANOMALY_MIN_HISTORY: int = 5
 CLIENT_P90_MIN_HISTORY: int = 5
+
+# Bank-wide cross-client signal thresholds.
+BANK_COMPLAINTS_MIN_COUNT: int = 1
+BANK_COMPLAINTS_BLOCK_COUNT: int = 3
+BANK_FRESH_INFLOWS_WINDOW_DAYS: int = 7
+BANK_FRESH_INFLOWS_MEDIUM_PAYERS: int = 3
+BANK_FRESH_INFLOWS_HIGH_PAYERS: int = 5
+BANK_KNOWN_BIN_MIN_YEARS: float = 2.0
 
 # Antifraud analyst role header value (X-Role: analyst).
 ANALYST_ROLE_VALUE: str = "analyst"
@@ -109,59 +125,192 @@ INVISIBLE_CODEPOINTS: frozenset[str] = frozenset(
 )
 
 # Common generic business tokens that do not qualify as distinctive brand tokens on their own.
+# Classification is always performed once on canonical lower-case Cyrillic form.
 GENERIC_COMPANY_TOKENS: frozenset[str] = frozenset(
     {
+        "авто",
+        "актау",
+        "актобе",
+        "алматы",
         "альянс",
+        "астана",
+        "атырау",
+        "балхаш",
         "бизнес",
+        "гк",
         "групп",
         "группа",
         "девелопмент",
+        "дом",
+        "доставка",
+        "жезказган",
         "импорт",
         "инвест",
         "инжиниринг",
         "казахстан",
         "капитал",
+        "караганда",
         "кз",
+        "кокшетау",
         "коммерц",
         "компани",
         "компания",
         "комплект",
+        "комплектация",
+        "консалтинг",
         "контракт",
+        "костанай",
+        "кызылорда",
         "логистик",
         "логистика",
         "маркет",
         "мастер",
         "материалы",
+        "монтаж",
+        "оборудование",
         "опт",
+        "оскемен",
+        "павлодар",
         "партнер",
+        "петропавл",
         "плюс",
         "поставка",
+        "поставки",
+        "предприятие",
         "принт",
         "пром",
+        "ремонт",
         "ресурс",
+        "семей",
         "сервис",
         "сервисы",
         "системы",
         "снаб",
+        "снабжение",
         "софт",
         "строй",
+        "стройматериалы",
+        "талдыкорган",
+        "тараз",
+        "тд",
+        "темиртау",
+        "техника",
         "торг",
+        "торговый",
+        "транс",
         "трейд",
         "трейдинг",
+        "туркестан",
+        "уральск",
         "услуги",
+        "фирма",
         "холдинг",
         "центр",
+        "шымкент",
+        "экибастуз",
         "экспорт",
+        "электро",
+        "энерго",
+        "almaty",
+        "astana",
         "group",
         "kz",
         "plus",
         "service",
         "snab",
         "soft",
+        "supply",
         "trade",
         "trading",
     }
 )
+
+# Entity wrapper phrases (canonical Cyrillic lower-case) that wrap a brand without changing domain.
+ENTITY_WRAPPER_PHRASES: tuple[tuple[str, ...], ...] = (
+    ("торговый", "дом"),
+    ("группа", "компаний"),
+    ("компания",),
+    ("фирма",),
+    ("тд",),
+    ("гк",),
+)
+
+# Multi-word English business phrases mapped to canonical Cyrillic lower-case tokens.
+BUSINESS_PHRASE_TRANSLATIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (("trading", "house"), ("торговый", "дом")),
+    (("trade", "house"), ("торговый", "дом")),
+    (("group", "of", "companies"), ("группа", "компаний")),
+)
+
+# Common English business terms mapped to canonical Cyrillic lower-case equivalents.
+BUSINESS_TERM_TRANSLATIONS: dict[str, str] = {
+    "supply": "снаб",
+    "supplies": "снаб",
+    "supplier": "поставка",
+    "delivery": "поставка",
+    "group": "групп",
+    "logistics": "логистик",
+    "logistic": "логистик",
+    "service": "сервис",
+    "services": "сервис",
+    "trade": "трейд",
+    "trading": "трейдинг",
+    "house": "дом",
+    "metal": "металл",
+    "metals": "металл",
+    "energy": "энерго",
+    "power": "энерго",
+    "concrete": "бетон",
+    "cement": "цемент",
+    "crane": "кран",
+    "office": "офис",
+    "soft": "софт",
+    "software": "софт",
+    "cloud": "клауд",
+    "build": "строй",
+    "building": "строй",
+    "construction": "строй",
+    "print": "принт",
+    "printing": "принт",
+    "insulation": "изоляция",
+    "thermal": "тепло",
+    "heat": "тепло",
+    "mount": "монтаж",
+    "mounting": "монтаж",
+    "holding": "холдинг",
+    "center": "центр",
+    "centre": "центр",
+    "plus": "плюс",
+    "invest": "инвест",
+    "engineering": "инжиниринг",
+    "resource": "ресурс",
+    "resources": "ресурс",
+    "materials": "материалы",
+    "material": "материалы",
+    "import": "импорт",
+    "export": "экспорт",
+    "systems": "системы",
+    "system": "системы",
+    "company": "компания",
+    "companies": "компаний",
+    "firm": "фирма",
+    "industrial": "пром",
+    "industry": "пром",
+    "capital": "капитал",
+    "partner": "партнер",
+    "alliance": "альянс",
+    "business": "бизнес",
+    "market": "маркет",
+    "master": "мастер",
+    "contract": "контракт",
+    "commerce": "коммерц",
+    "development": "девелопмент",
+    "wholesale": "опт",
+    "repair": "ремонт",
+    "consulting": "консалтинг",
+    "equipment": "оборудование",
+    "kz": "кз",
+}
 
 # Phonetic transliteration tables (Latin <-> Cyrillic) for cross-script lookalike detection.
 LATIN_TO_CYRILLIC_DIGRAPHS: tuple[tuple[str, str], ...] = (

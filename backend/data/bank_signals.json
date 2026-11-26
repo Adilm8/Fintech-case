@@ -1,0 +1,359 @@
+{
+  "seed": 42,
+  "generated_for_date": "2026-04-20",
+  "note": "Synthetic anonymized bank-wide antifraud signals (seed=42). Contains only aggregated counters and account flags without third-party client names or payer BINs.",
+  "complaints": {
+    "KZ51856KZT2486117574": {
+      "count": 2,
+      "last_reported_at": "2026-04-18"
+    },
+    "KZ609480007694717794": {
+      "count": 1,
+      "last_reported_at": "2026-04-19"
+    },
+    "KZ757220003496570226": {
+      "count": 1,
+      "last_reported_at": "2026-04-17"
+    },
+    "KZ496010003883420343": {
+      "count": 1,
+      "last_reported_at": "2026-04-18"
+    },
+    "KZ949650000120611995": {
+      "count": 2,
+      "last_reported_at": "2026-04-18"
+    },
+    "KZ865510005285171113": {
+      "count": 2,
+      "last_reported_at": "2026-04-19"
+    },
+    "KZ207220003286517425": {
+      "count": 3,
+      "last_reported_at": "2026-04-19"
+    },
+    "KZ939480005876397298": {
+      "count": 4,
+      "last_reported_at": "2026-04-19"
+    },
+    "KZ388860001170895656": {
+      "count": 6,
+      "last_reported_at": "2026-04-19"
+    },
+    "KZ708210008043365164": {
+      "count": 2,
+      "last_reported_at": "2026-04-18"
+    },
+    "KZ487220002987261057": {
+      "count": 1,
+      "last_reported_at": "2026-04-18"
+    },
+    "KZ028210009297280926": {
+      "count": 2,
+      "last_reported_at": "2026-04-19"
+    },
+    "KZ229480008547148755": {
+      "count": 2,
+      "last_reported_at": "2026-04-19"
+    }
+  },
+  "fresh_inflows": {
+    "KZ51856KZT2486117574": {
+      "distinct_payers_7d": 4,
+      "total_amount_kzt_7d": 14800000,
+      "window_days": 7
+    },
+    "KZ609480007694717794": {
+      "distinct_payers_7d": 3,
+      "total_amount_kzt_7d": 6750000,
+      "window_days": 7
+    },
+    "KZ319140003224794896": {
+      "distinct_payers_7d": 5,
+      "total_amount_kzt_7d": 11200000,
+      "window_days": 7
+    },
+    "KZ029980002828816296": {
+      "distinct_payers_7d": 2,
+      "total_amount_kzt_7d": 1450000,
+      "window_days": 7
+    },
+    "KZ228490005320381705": {
+      "distinct_payers_7d": 2,
+      "total_amount_kzt_7d": 1820000,
+      "window_days": 7
+    },
+    "KZ277220006168344619": {
+      "distinct_payers_7d": 3,
+      "total_amount_kzt_7d": 4200000,
+      "window_days": 7
+    },
+    "KZ315510002118050905": {
+      "distinct_payers_7d": 3,
+      "total_amount_kzt_7d": 5100000,
+      "window_days": 7
+    },
+    "KZ329480005938774537": {
+      "distinct_payers_7d": 4,
+      "total_amount_kzt_7d": 7650000,
+      "window_days": 7
+    },
+    "KZ796010008096861183": {
+      "distinct_payers_7d": 5,
+      "total_amount_kzt_7d": 9850000,
+      "window_days": 7
+    },
+    "KZ489650004759161650": {
+      "distinct_payers_7d": 7,
+      "total_amount_kzt_7d": 15400000,
+      "window_days": 7
+    },
+    "KZ908860004213552211": {
+      "distinct_payers_7d": 9,
+      "total_amount_kzt_7d": 21300000,
+      "window_days": 7
+    },
+    "KZ487220002987261057": {
+      "distinct_payers_7d": 3,
+      "total_amount_kzt_7d": 4900000,
+      "window_days": 7
+    },
+    "KZ028210009297280926": {
+      "distinct_payers_7d": 4,
+      "total_amount_kzt_7d": 8200000,
+      "window_days": 7
+    },
+    "KZ229480008547148755": {
+      "distinct_payers_7d": 6,
+      "total_amount_kzt_7d": 13900000,
+      "window_days": 7
+    },
+    "KZ636010007717127908": {
+      "distinct_payers_7d": 11,
+      "total_amount_kzt_7d": 4850000,
+      "window_days": 7
+    },
+    "KZ217220001406679911": {
+      "distinct_payers_7d": 6,
+      "total_amount_kzt_7d": 2900000,
+      "window_days": 7
+    },
+    "KZ539650001586212505": {
+      "distinct_payers_7d": 8,
+      "total_amount_kzt_7d": 3620000,
+      "window_days": 7
+    },
+    "KZ846010006776659568": {
+      "distinct_payers_7d": 5,
+      "total_amount_kzt_7d": 2400000,
+      "window_days": 7
+    },
+    "KZ947220009046560587": {
+      "distinct_payers_7d": 14,
+      "total_amount_kzt_7d": 7200000,
+      "window_days": 7
+    },
+    "KZ379980004591402472": {
+      "distinct_payers_7d": 7,
+      "total_amount_kzt_7d": 3850000,
+      "window_days": 7
+    },
+    "KZ099140001811102257": {
+      "distinct_payers_7d": 6,
+      "total_amount_kzt_7d": 2150000,
+      "window_days": 7
+    },
+    "KZ545510008417527796": {
+      "distinct_payers_7d": 4,
+      "total_amount_kzt_7d": 1650000,
+      "window_days": 7
+    },
+    "KZ425510009056486606": {
+      "distinct_payers_7d": 7,
+      "total_amount_kzt_7d": 5400000,
+      "window_days": 7
+    },
+    "KZ259480006811197513": {
+      "distinct_payers_7d": 9,
+      "total_amount_kzt_7d": 6100000,
+      "window_days": 7
+    }
+  },
+  "mule_watchlist": {
+    "KZ807220003165829139": {
+      "source": "Антифрод-центр НБ РК (синтетический реестр)",
+      "added_at": "2026-04-15",
+      "category": "dropper_account"
+    },
+    "KZ089650002730059140": {
+      "source": "Антифрод-центр НБ РК (синтетический реестр)",
+      "added_at": "2026-04-17",
+      "category": "dropper_account"
+    },
+    "KZ936010000855950902": {
+      "source": "Антифрод-центр НБ РК (синтетический реестр)",
+      "added_at": "2026-04-18",
+      "category": "transit_mule"
+    },
+    "KZ708210008043365164": {
+      "source": "Антифрод-центр НБ РК (синтетический реестр)",
+      "added_at": "2026-04-16",
+      "category": "dropper_account"
+    },
+    "KZ319140003224794896": {
+      "source": "Антифрод-центр НБ РК (синтетический реестр)",
+      "added_at": "2026-04-19",
+      "category": "transit_mule"
+    }
+  },
+  "bank_known_bin": {
+    "120448076021": {
+      "first_seen_at": "2016-05-10",
+      "history_years": 9.9,
+      "active_payers_count": 680,
+      "category": "utility",
+      "known_iiks": [
+        "KZ636010007717127908",
+        "KZ217220001406679911"
+      ]
+    },
+    "110845680400": {
+      "first_seen_at": "2017-02-14",
+      "history_years": 9.2,
+      "active_payers_count": 520,
+      "category": "utility",
+      "known_iiks": [
+        "KZ539650001586212505",
+        "KZ846010006776659568"
+      ]
+    },
+    "080342154417": {
+      "first_seen_at": "2015-01-20",
+      "history_years": 11.2,
+      "active_payers_count": 940,
+      "category": "telecom",
+      "known_iiks": [
+        "KZ947220009046560587",
+        "KZ379980004591402472"
+      ]
+    },
+    "130642370880": {
+      "first_seen_at": "2018-06-01",
+      "history_years": 7.9,
+      "active_payers_count": 410,
+      "category": "utility",
+      "known_iiks": [
+        "KZ099140001811102257",
+        "KZ545510008417527796"
+      ]
+    },
+    "101044140456": {
+      "first_seen_at": "2017-09-18",
+      "history_years": 8.6,
+      "active_payers_count": 390,
+      "category": "utility",
+      "known_iiks": [
+        "KZ425510009056486606",
+        "KZ259480006811197513"
+      ]
+    },
+    "160542439625": {
+      "first_seen_at": "2017-05-15",
+      "history_years": 8.9,
+      "active_payers_count": 73,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ246010005016525808"
+      ]
+    },
+    "180947320524": {
+      "first_seen_at": "2019-09-15",
+      "history_years": 6.6,
+      "active_payers_count": 72,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ599980004227133320"
+      ]
+    },
+    "151144817419": {
+      "first_seen_at": "2016-11-15",
+      "history_years": 9.4,
+      "active_payers_count": 132,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ55856KZT5935868570"
+      ]
+    },
+    "140242389680": {
+      "first_seen_at": "2015-02-15",
+      "history_years": 11.2,
+      "active_payers_count": 84,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ579650007988348136"
+      ]
+    },
+    "190747359118": {
+      "first_seen_at": "2020-07-15",
+      "history_years": 5.8,
+      "active_payers_count": 85,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ32856KZT9661713965"
+      ]
+    },
+    "170446108884": {
+      "first_seen_at": "2018-04-15",
+      "history_years": 8.0,
+      "active_payers_count": 157,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ789140006612370252"
+      ]
+    },
+    "150846341552": {
+      "first_seen_at": "2016-08-15",
+      "history_years": 9.7,
+      "active_payers_count": 59,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ215510005020339488"
+      ]
+    },
+    "161041911755": {
+      "first_seen_at": "2017-10-15",
+      "history_years": 8.5,
+      "active_payers_count": 111,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ639480000622167992"
+      ]
+    },
+    "120346499468": {
+      "first_seen_at": "2013-03-15",
+      "history_years": 13.1,
+      "active_payers_count": 62,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ75856KZT9103291175"
+      ]
+    },
+    "200245861246": {
+      "first_seen_at": "2021-02-15",
+      "history_years": 5.2,
+      "active_payers_count": 133,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ428490008688798980"
+      ]
+    },
+    "210544935865": {
+      "first_seen_at": "2022-05-15",
+      "history_years": 3.9,
+      "active_payers_count": 109,
+      "category": "established_b2b_supplier",
+      "known_iiks": [
+        "KZ169490005971616488"
+      ]
+    }
+  }
+}

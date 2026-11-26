@@ -12,8 +12,11 @@ from typing import Literal
 from rapidfuzz import fuzz
 
 from app.risk.config import (
+    BUSINESS_PHRASE_TRANSLATIONS,
+    BUSINESS_TERM_TRANSLATIONS,
     CONFUSABLE_DIGITS,
     CYRILLIC_TO_LATIN_MAP,
+    GENERIC_COMPANY_TOKENS,
     IGNORABLE_UNICODE_CATEGORIES,
     INVISIBLE_CODEPOINTS,
     LATIN_TO_CYRILLIC_DIGRAPHS,
@@ -58,6 +61,50 @@ KAZAKH_FOLD: dict[int, str] = str.maketrans(
     }
 )
 
+_KAZAKH_LOWER_FOLD: dict[int, str] = str.maketrans(
+    {
+        "ә": "а",
+        "ғ": "г",
+        "қ": "к",
+        "ң": "н",
+        "ө": "о",
+        "ұ": "у",
+        "ү": "у",
+        "һ": "х",
+        "і": "и",
+    }
+)
+
+# Single-letter Latin initial mapping (preferring Russian/Kazakh phonetic/visual initial equivalents).
+_LATIN_INITIAL_TO_CYR: dict[str, str] = {
+    "a": "а",
+    "b": "б",
+    "c": "с",
+    "d": "д",
+    "e": "е",
+    "f": "ф",
+    "g": "г",
+    "h": "х",
+    "i": "и",
+    "j": "ж",
+    "k": "к",
+    "l": "л",
+    "m": "м",
+    "n": "н",
+    "o": "о",
+    "p": "п",
+    "q": "к",
+    "r": "р",
+    "s": "с",
+    "t": "т",
+    "u": "у",
+    "v": "в",
+    "w": "в",
+    "x": "х",
+    "y": "ы",
+    "z": "з",
+}
+
 # Allowed Kazakh Cyrillic letters (in addition to Russian А-Я, а-я, Ё, ё).
 _KAZAKH_CYRILLIC: frozenset[str] = frozenset("ӘҒҚҢӨҰҮҺІәғқңөұүһі")
 
@@ -96,16 +143,19 @@ _FULL_IE_PHRASES: tuple[tuple[str, ...], ...] = (
 
 _ALL_FULL_PHRASES: tuple[tuple[str, ...], ...] = _FULL_LEGAL_ENTITY_PHRASES + _FULL_IE_PHRASES
 
-# Dotted abbreviations like Т.О.О., T.O.O., А.О., И.П., Ж.Ш.С., L.L.P., J.S.C.
+# Dotted abbreviations: 3-letter forms anywhere; 2-letter А.О./А.Қ. only at string start so
+# trailing IE person initials like 'ИП Байжанова А.К.' or 'ИП Сериков А.О.' are never misread.
 _DOTTED_LEGAL_ENTITY_RE = re.compile(
-    r"(?<!\w)(?:"
+    r"(?:(?<!\w)(?:"
     r"[ТT\u03a4]\s*\.\s*[ОO0\u039f]\s*\.\s*[ОO0\u039f]"
-    r"|[АA\u0391]\s*\.\s*[ОO0\u039f]"
-    r"|[АA\u0391]\s*\.\s*[ҚКK\u039a]"
     r"|Ж\s*\.\s*Ш\s*\.\s*[СC]"
     r"|L\s*\.\s*L\s*\.\s*[PР\u03a1]"
     r"|J\s*\.\s*S\s*\.\s*[CС]"
-    r")\.?(?!\w)",
+    r")\.?(?!\w))"
+    r"|(?:^\s*(?:"
+    r"[АA\u0391]\s*\.\s*[ОO0\u039f]"
+    r"|[АA\u0391]\s*\.\s*[ҚКK\u039a]"
+    r")\.?(?!\w))",
     flags=re.UNICODE,
 )
 
@@ -295,6 +345,131 @@ def transliterate_cyr_to_lat(text: str) -> str:
     """Phonetic Cyrillic-to-Latin transliteration on lowercase text."""
     lower = text.lower()
     return "".join(CYRILLIC_TO_LATIN_MAP.get(ch, ch) for ch in lower)
+
+
+def canonical_cyrillic_token(token: str) -> str:
+    """Normalize a single token to lower-case base Cyrillic for generic-token classification.
+
+    Maps known English business terms (e.g. 'service' -> 'сервис', 'supply' -> 'снаб') and
+    phonetically transliterates remaining ASCII Latin tokens (e.g. 'servis' -> 'сервис',
+    'stroy' -> 'строй') so generic-vs-distinctive decisions stay identical across scripts/cases.
+    """
+    if not isinstance(token, str) or not token:
+        return ""
+    cleaned = sanitize_unicode(token).strip().lower().replace("ё", "е")
+    cleaned = cleaned.translate(_KAZAKH_LOWER_FOLD)
+    if cleaned.isascii() and any("a" <= ch <= "z" for ch in cleaned):
+        translated = BUSINESS_TERM_TRANSLATIONS.get(cleaned)
+        if translated is not None:
+            return translated
+        return transliterate_lat_to_cyr(cleaned)
+    return cleaned
+
+
+_GENERIC_COMPANY_TOKENS_CYR: frozenset[str] = frozenset(
+    canonical_cyrillic_token(tok) for tok in GENERIC_COMPANY_TOKENS if tok
+)
+
+
+def is_generic_company_token(token: str) -> bool:
+    """Return True if token is generic, always evaluated on its lower-case Cyrillic form."""
+    cyr = canonical_cyrillic_token(token)
+    return bool(cyr) and cyr in _GENERIC_COMPANY_TOKENS_CYR
+
+
+def _replace_phrase_sequences(
+    tokens: list[str],
+    replacements: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...],
+) -> list[str]:
+    out: list[str] = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        matched_src_len = 0
+        matched_dst: tuple[str, ...] = ()
+        for src, dst in replacements:
+            slen = len(src)
+            if slen <= n - i and tuple(tokens[i : i + slen]) == src and slen > matched_src_len:
+                matched_src_len = slen
+                matched_dst = dst
+        if matched_src_len > 0:
+            out.extend(matched_dst)
+            i += matched_src_len
+        else:
+            out.append(tokens[i])
+            i += 1
+    return out
+
+
+def normalize_company_name_translated(name: str) -> str:
+    """Normalize a company name by translating English business terms into lower-case Cyrillic."""
+    if not isinstance(name, str) or not name.strip():
+        return ""
+
+    upper = _preprocess_upper(name)
+    upper = _DOTTED_LEGAL_ENTITY_RE.sub(" ", upper)
+    upper = _DOTTED_IE_RE.sub(" ", upper)
+
+    raw_tokens = [tok for tok in _NON_WORD_RE.sub(" ", upper).split() if tok]
+    raw_tokens = _strip_phrase_sequences(raw_tokens, _ALL_FULL_PHRASES)
+
+    lower_tokens: list[str] = []
+    for token in raw_tokens:
+        if token in LEGAL_FORM_TOKENS:
+            continue
+        if token.translate(KAZAKH_FOLD) in LEGAL_FORM_TOKENS:
+            continue
+        lower_tokens.append(token.translate(KAZAKH_FOLD).lower())
+
+    lower_tokens = _replace_phrase_sequences(lower_tokens, BUSINESS_PHRASE_TRANSLATIONS)
+    translated = [canonical_cyrillic_token(tok) for tok in lower_tokens]
+    return " ".join(tok for tok in translated if tok)
+
+
+def extract_ie_initials(name: str) -> tuple[str, ...]:
+    """Extract normalized lower-case Cyrillic initials from an IE (ИП/ЖК/IP) name, if present.
+
+    Handles dotted initials ('ИП Байжанов К.Т.' -> ('к', 'т'), 'ИП К.Т. Байжанов' -> ('к', 'т')),
+    Latin transliterated initials ('IP Baizhanov K.T.' -> ('к', 'т')), and full given/patronymic
+    names ('ИП Байжанов Кайрат Талгатович' -> ('к', 'т')). Returns () if no initials are present.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return ()
+
+    upper = _preprocess_upper(name)
+    upper = _DOTTED_IE_RE.sub(" ", upper)
+
+    raw_tokens = [tok for tok in _NON_WORD_RE.sub(" ", upper).split() if tok]
+    raw_tokens = _strip_phrase_sequences(raw_tokens, _ALL_FULL_PHRASES)
+
+    kept: list[str] = []
+    for token in raw_tokens:
+        if token in LEGAL_FORM_TOKENS or token.translate(KAZAKH_FOLD) in LEGAL_FORM_TOKENS:
+            continue
+        kept.append(token.translate(KAZAKH_FOLD).lower())
+
+    single_letters: list[str] = []
+    word_tokens: list[str] = []
+    for tok in kept:
+        if len(tok) == 1 and tok.isalpha():
+            single_letters.append(_LATIN_INITIAL_TO_CYR.get(tok, tok))
+        elif len(tok) > 1 and tok.isalpha():
+            word_tokens.append(tok)
+
+    if single_letters:
+        return tuple(single_letters[:2])
+
+    if len(word_tokens) >= 2:
+        extra_words = [tok for tok in word_tokens[1:] if not is_generic_company_token(tok)]
+        initials: list[str] = []
+        for word in extra_words[:2]:
+            cyr = canonical_cyrillic_token(word)
+            if cyr:
+                initials.append(cyr[0])
+        if initials:
+            return tuple(initials)
+
+    return ()
 
 
 def normalize_company_name(name: str) -> str:

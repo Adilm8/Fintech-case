@@ -6,6 +6,7 @@ Generates all JSON datasets in backend/data/ using SEED = 42 and DEMO_TODAY:
 - bcc_accounts.json
 - history.json
 - queue.json
+- bank_signals.json
 """
 
 from __future__ import annotations
@@ -1004,10 +1005,248 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         },
     ]
 
+    # --- Bank-wide anonymized antifraud signals (data/bank_signals.json, deterministic) ---
+    # Use a dedicated RNG stream so existing client, supplier, history, and queue requisites
+    # remain byte-for-byte identical.
+    bankwide_rng = random.Random(SEED + 200)
+    used_bins: set[str] = set(all_ids)
+    used_iiks: set[str] = {
+        client_iik,
+        yellow_new_iik,
+        red_bcc_iik,
+        grey_iik,
+        kz_clone_iik,
+        dropper_iik,
+        *(s["iik"] for s in suppliers.values()),
+        *(s["old_iik"] for s in suppliers.values() if "old_iik" in s),
+        *(c["iik"] for c in extra_bcc_companies),
+    }
+
+    def _next_unique_iik(bank_code: str) -> str:
+        prefix = "KZT" if bank_code == BCC_BANK_CODE else "000"
+        while True:
+            cand = generate_iik(bankwide_rng, bank_code, prefix=prefix, banks_path=banks_path)
+            if cand not in used_iiks:
+                used_iiks.add(cand)
+                return cand
+
+    def _next_unique_bin(reg_year: int, reg_month: int) -> str:
+        while True:
+            cand = generate_bin(bankwide_rng, year=reg_year, month=reg_month)
+            if cand not in used_bins:
+                used_bins.add(cand)
+                return cand
+
+    complaints: dict[str, dict[str, Any]] = {
+        # Cover red demo case Q-003 (BCC account owned by another company)
+        red_bcc_iik: {
+            "count": 2,
+            "last_reported_at": (DEMO_TODAY - timedelta(days=2)).isoformat(),
+        },
+        # Cover red external-bank lookalike clone Q-009 (Eurasian Bank)
+        kz_clone_iik: {
+            "count": 1,
+            "last_reported_at": (DEMO_TODAY - timedelta(days=1)).isoformat(),
+        },
+    }
+    fresh_inflows: dict[str, dict[str, Any]] = {
+        red_bcc_iik: {
+            "distinct_payers_7d": 4,
+            "total_amount_kzt_7d": 14_800_000,
+            "window_days": 7,
+        },
+        kz_clone_iik: {
+            "distinct_payers_7d": 3,
+            "total_amount_kzt_7d": 6_750_000,
+            "window_days": 7,
+        },
+    }
+    mule_watchlist: dict[str, dict[str, str]] = {}
+    bank_known_bin: dict[str, dict[str, Any]] = {}
+
+    # 1. External-bank dropper IIKs with client fraud complaints (no reporter PII)
+    for bank_code, count, days_ago in (
+        ("722", 1, 3),  # Kaspi Bank -> primary 60 (yellow)
+        ("601", 1, 2),  # Halyk Bank -> primary 60 (yellow)
+        ("965", 2, 2),  # ForteBank -> primary 60 (yellow)
+        ("551", 2, 1),  # Freedom Bank -> primary 60 (yellow)
+        ("722", 3, 1),  # Kaspi Bank -> block (red)
+        ("948", 4, 1),  # Eurasian Bank -> block (red)
+        ("886", 6, 1),  # Home Credit Bank -> block (red)
+    ):
+        ext_iik = _next_unique_iik(bank_code)
+        complaints[ext_iik] = {
+            "count": count,
+            "last_reported_at": (DEMO_TODAY - timedelta(days=days_ago)).isoformat(),
+        }
+
+    # 2. Synthetic NBRK antifraud-center style mule watchlist (external banks)
+    watchlist_source = "Антифрод-центр НБ РК (синтетический реестр)"
+    for bank_code, days_ago, category, extra_signal in (
+        ("722", 5, "dropper_account", "none"),
+        ("965", 3, "dropper_account", "none"),
+        ("601", 2, "transit_mule", "none"),
+        ("821", 4, "dropper_account", "complaints"),
+        ("914", 1, "transit_mule", "fresh_inflows"),
+    ):
+        ext_iik = _next_unique_iik(bank_code)
+        mule_watchlist[ext_iik] = {
+            "source": watchlist_source,
+            "added_at": (DEMO_TODAY - timedelta(days=days_ago)).isoformat(),
+            "category": category,
+        }
+        if extra_signal == "complaints":
+            complaints[ext_iik] = {
+                "count": 2,
+                "last_reported_at": (DEMO_TODAY - timedelta(days=2)).isoformat(),
+            }
+        elif extra_signal == "fresh_inflows":
+            fresh_inflows[ext_iik] = {
+                "distinct_payers_7d": 5,
+                "total_amount_kzt_7d": 11_200_000,
+                "window_days": 7,
+            }
+
+    # 3. External-bank fresh accounts receiving first-time payments from unrelated BCC clients
+    for bank_code, payers_7d, total_kzt in (
+        ("998", 2, 1_450_000),  # Below threshold (2 < 3) -> clean boundary
+        ("849", 2, 1_820_000),  # Below threshold (2 < 3) -> clean boundary
+        ("722", 3, 4_200_000),  # Kaspi Bank -> primary 50 (yellow)
+        ("551", 3, 5_100_000),  # Freedom Bank -> primary 50 (yellow)
+        ("948", 4, 7_650_000),  # Eurasian Bank -> primary 50 (yellow)
+        ("601", 5, 9_850_000),  # Halyk Bank -> primary 70 (red)
+        ("965", 7, 15_400_000),  # ForteBank -> primary 70 (red)
+        ("886", 9, 21_300_000),  # Home Credit Bank -> primary 70 (red)
+    ):
+        ext_iik = _next_unique_iik(bank_code)
+        fresh_inflows[ext_iik] = {
+            "distinct_payers_7d": payers_7d,
+            "total_amount_kzt_7d": total_kzt,
+            "window_days": 7,
+        }
+
+    # 4. External-bank droppers combining complaints + fresh multi-client inflows
+    for bank_code, comp_count, comp_days_ago, payers_7d, total_kzt in (
+        ("722", 1, 2, 3, 4_900_000),
+        ("821", 2, 1, 4, 8_200_000),
+        ("948", 2, 1, 6, 13_900_000),
+    ):
+        ext_iik = _next_unique_iik(bank_code)
+        complaints[ext_iik] = {
+            "count": comp_count,
+            "last_reported_at": (DEMO_TODAY - timedelta(days=comp_days_ago)).isoformat(),
+        }
+        fresh_inflows[ext_iik] = {
+            "distinct_payers_7d": payers_7d,
+            "total_amount_kzt_7d": total_kzt,
+            "window_days": 7,
+        }
+
+    # 5. Established popular providers (bank_known_bin exemption for high first-payment inflows)
+    popular_providers_spec: tuple[dict[str, Any], ...] = (
+        {
+            "name": "ТОО «Астана-Энергосбыт»",
+            "reg_year": 12,
+            "reg_month": 4,
+            "first_seen_at": "2016-05-10",
+            "history_years": 9.9,
+            "active_payers_count": 680,
+            "category": "utility",
+            "branches": [("601", 11, 4_850_000), ("722", 6, 2_900_000)],
+        },
+        {
+            "name": "ТОО «АлматыЭнергоСбыт»",
+            "reg_year": 11,
+            "reg_month": 8,
+            "first_seen_at": "2017-02-14",
+            "history_years": 9.2,
+            "active_payers_count": 520,
+            "category": "utility",
+            "branches": [("965", 8, 3_620_000), ("601", 5, 2_400_000)],
+        },
+        {
+            "name": "АО «КазТелеком Сервис»",
+            "reg_year": 8,
+            "reg_month": 3,
+            "first_seen_at": "2015-01-20",
+            "history_years": 11.2,
+            "active_payers_count": 940,
+            "category": "telecom",
+            "branches": [("722", 14, 7_200_000), ("998", 7, 3_850_000)],
+        },
+        {
+            "name": "ТОО «Астана Водоканал Сервис»",
+            "reg_year": 13,
+            "reg_month": 6,
+            "first_seen_at": "2018-06-01",
+            "history_years": 7.9,
+            "active_payers_count": 410,
+            "category": "utility",
+            "branches": [("914", 6, 2_150_000), ("551", 4, 1_650_000)],
+        },
+        {
+            "name": "АО «КазГазАймак»",
+            "reg_year": 10,
+            "reg_month": 10,
+            "first_seen_at": "2017-09-18",
+            "history_years": 8.6,
+            "active_payers_count": 390,
+            "category": "utility",
+            "branches": [("551", 7, 5_400_000), ("948", 9, 6_100_000)],
+        },
+    )
+    for prov in popular_providers_spec:
+        prov_bin = _next_unique_bin(prov["reg_year"], prov["reg_month"])
+        registry[prov_bin] = prov["name"]
+        branch_iiks: list[str] = []
+        for branch_bank_code, payers_7d, total_kzt in prov["branches"]:
+            branch_iik = _next_unique_iik(branch_bank_code)
+            branch_iiks.append(branch_iik)
+            fresh_inflows[branch_iik] = {
+                "distinct_payers_7d": payers_7d,
+                "total_amount_kzt_7d": total_kzt,
+                "window_days": 7,
+            }
+        bank_known_bin[prov_bin] = {
+            "first_seen_at": prov["first_seen_at"],
+            "history_years": prov["history_years"],
+            "active_payers_count": prov["active_payers_count"],
+            "category": prov["category"],
+            "known_iiks": branch_iiks,
+        }
+
+    # Established corporate suppliers from client history are also long-known to BCC
+    for sup in suppliers.values():
+        if sup["id_kind"] == "bin" and sup["reg_year"] <= 21:
+            first_seen_year = min(2000 + sup["reg_year"] + 1, 2022)
+            first_seen_str = f"{first_seen_year:04d}-{sup['reg_month']:02d}-15"
+            years = round((DEMO_TODAY.year - first_seen_year) + (DEMO_TODAY.month - sup["reg_month"]) / 12.0, 1)
+            bank_known_bin[sup["bin"]] = {
+                "first_seen_at": first_seen_str,
+                "history_years": max(years, 2.5),
+                "active_payers_count": bankwide_rng.randint(35, 190),
+                "category": "established_b2b_supplier",
+                "known_iiks": [sup["iik"]],
+            }
+
+    bank_signals = {
+        "seed": SEED,
+        "generated_for_date": DEMO_TODAY.isoformat(),
+        "note": (
+            "Synthetic anonymized bank-wide antifraud signals (seed=42). Contains only aggregated "
+            "counters and account flags without third-party client names or payer BINs."
+        ),
+        "complaints": complaints,
+        "fresh_inflows": fresh_inflows,
+        "mule_watchlist": mule_watchlist,
+        "bank_known_bin": bank_known_bin,
+    }
+
     registry_path = _write_json(output_dir / "registry.json", registry)
     bcc_accounts_path = _write_json(output_dir / "bcc_accounts.json", bcc_accounts)
     history_path = _write_json(output_dir / "history.json", history)
     queue_path = _write_json(output_dir / "queue.json", queue)
+    bank_signals_path = _write_json(output_dir / "bank_signals.json", bank_signals)
 
     return {
         "banks": banks_path,
@@ -1015,6 +1254,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         "bcc_accounts": bcc_accounts_path,
         "history": history_path,
         "queue": queue_path,
+        "bank_signals": bank_signals_path,
     }
 
 
