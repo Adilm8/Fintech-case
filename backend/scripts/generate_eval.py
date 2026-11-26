@@ -65,6 +65,58 @@ _NEW_LEGIT_CORP_NAMES: tuple[str, ...] = (
     "ТОО «Оскемен ПриборКонтроль»",
 )
 
+_NEW_LEGIT_BRAND_NUMERIC_NAMES: tuple[str, ...] = (
+    "ТОО «ЭкоSTAR»",
+    "ТОО «QazaqСтрой»",
+    "ТОО «Алматы-2»",
+    "ТОО «Строй 2020»",
+    "ТОО «Бетон М350»",
+)
+
+_BUDGET_RECIPIENT_NAMES: tuple[str, ...] = (
+    "ГУ «Управление государственных доходов по г. Астана»",
+    "ГУ «Комитет казначейства Министерства финансов РК»",
+    "НАО «ГК «Правительство для граждан»»",
+    "ГУ «Департамент государственных доходов по г. Алматы»",
+)
+
+_UNICODE_EVASION_CASES: tuple[tuple[str, str], ...] = (
+    ("ТОО «Алатау Снаб»", "ТОО «\u0251латау Снаб»"),
+    ("ТОО «Алатау Снаб»", "ТОО «Алатау \u13dfнаб»"),
+    ("ТОО «Алатау Снаб»", "ТОО «Алат\u3164ау\u2800 Сн\u0301аб\ufe0f»"),
+    ("ТОО «КазЛогистик Групп»", "ТОО «Ка3Л0гистик Групп»"),
+    ("ТОО «Алатау Снаб»", "ТОО «Алатау Сн0б»"),
+    ("ТОО «КазЛогистик Групп»", "ТОО «К\u0251зЛогистик Групп»"),
+    ("ТОО «СтепьЭнергоСервис»", "ТОО «\u13dfтепьЭнергоСервис»"),
+    ("ТОО «НурМеталлПоставка»", "ТОО «НурМеталлП0ставка»"),
+    ("ТОО «АлматыОфисТрейд»", "ТОО «Алматы0фисТрейд»"),
+    ("ТОО «АстанаБетонСервис»", "ТОО «Аст\u0251наБетонСервис»"),
+    ("ТОО «ТазаСу Сервис»", "ТОО «Таз\u0301а\u200bСу \u13dfервис»"),
+    ("ТОО «КазТеплоИзоляция»", "ТОО «Ка3Тепл0Изоляция»"),
+    ("ТОО «ЦементПром Караганда»", "ТОО «ЦементПр0м Караганда»"),
+    # 2 honest blind-spot cases: brand-new unrelated shell with subtle normal digit/suffix
+    ("ТОО «Алатау Снаб»", "ТОО «Вектор Логистик-7»"),
+    ("ТОО «КазЛогистик Групп»", "ТОО «СтарТранс 2026»"),
+)
+
+_VARIANT_TRANSLIT_MAP: tuple[tuple[str, str], ...] = (
+    ("ТОО «Алатау Снаб»", "ТОО «Алатау Снабжение»"),
+    ("ТОО «Алатау Снаб»", "ТОО «АлатауСнабСервис»"),
+    ("ТОО «Алатау Снаб»", "ТОО «Алатау Снабкомплект»"),
+    ("ТОО «Алатау Снаб»", 'ТОО "Alatau Snab"'),
+    ("ТОО «Алатау Снаб»", 'LLP "Alatau Snabzhenie"'),
+    ("ТОО «КазЛогистик Групп»", 'LLP "KazLogistik Grupp"'),
+)
+
+_DROPPER_KBE_ONLY_NAMES: tuple[str, ...] = (
+    "Арматура Поставка",
+    "СнабЦентр Астана",
+    "МеталлСервис Казахстан",
+    "КабельПром Трейд",
+    "СтройБаза Алматы",
+    "СпецТех Комплект",
+)
+
 _NEW_LEGIT_IE_NAMES: tuple[str, ...] = (
     "ИП Сулейменов Д.А.",
     "ИП Нурпеисова Г.М.",
@@ -317,7 +369,11 @@ def generate_eval_set(
     banks_path = base_dir / "banks.json"
     banks = load_banks(banks_path)
     bik_by_code = {b["code"]: b["bik"] for b in banks}
-    non_bcc_codes = [b["code"] for b in banks if b["code"] not in (BCC_BANK_CODE, "125")]
+    non_bcc_codes = [
+        b["code"]
+        for b in banks
+        if b["code"] not in (BCC_BANK_CODE, "125") and not b.get("budget", False)
+    ]
 
     history_raw = json.loads((base_dir / "history.json").read_text(encoding="utf-8"))
     registry: dict[str, str] = json.loads((base_dir / "registry.json").read_text(encoding="utf-8"))
@@ -353,6 +409,7 @@ def generate_eval_set(
                 "max_amount": max(amounts),
                 "min_amount": min(amounts),
                 "purpose_sample": last["purpose"],
+                "oldest_purpose": hist_sorted[0]["purpose"],
             }
         )
 
@@ -418,24 +475,34 @@ def generate_eval_set(
         amount_kzt: int,
         purpose: str,
         trusted: bool = False,
+        kbe: str = "",
+        knp: str = "",
+        prior_checks: list[dict[str, Any]] | None = None,
     ) -> None:
         nonlocal inv_no
         case_id = f"EVAL-{len(cases) + 1:03d}"
-        record = {
+        req_payload: dict[str, Any] = {
+            "payer_id": payer_id,
+            "recipient_name": recipient_name,
+            "recipient_bin": recipient_bin,
+            "recipient_iik": recipient_iik,
+            "recipient_bik": recipient_bik,
+            "amount_kzt": amount_kzt,
+            "purpose": purpose,
+        }
+        if kbe:
+            req_payload["kbe"] = kbe
+        if knp:
+            req_payload["knp"] = knp
+        record: dict[str, Any] = {
             "id": case_id,
             "label": label,
             "kind": kind,
             "trusted": trusted,
-            "request": {
-                "payer_id": payer_id,
-                "recipient_name": recipient_name,
-                "recipient_bin": recipient_bin,
-                "recipient_iik": recipient_iik,
-                "recipient_bik": recipient_bik,
-                "amount_kzt": amount_kzt,
-                "purpose": purpose,
-            },
+            "request": req_payload,
         }
+        if prior_checks:
+            record["prior_checks"] = prior_checks
         _validate_case(record, banks_path)
         cases.append(record)
         inv_no += 1
@@ -477,8 +544,8 @@ def generate_eval_set(
     # LEGIT CASES (200 total)
     # =========================================================================
 
-    # 1. legit_same (45): normal repeat payments to all 12 known suppliers
-    for i in range(45):
+    # 1. legit_same (35): normal repeat payments to all 12 known suppliers
+    for i in range(35):
         sup = suppliers[i % len(suppliers)]
         factor = rng.uniform(0.85, 1.18)
         amt = _round_kzt(sup["median"] * factor)
@@ -509,10 +576,9 @@ def generate_eval_set(
             purpose=f"Оплата по акту выполненных работ № {inv_no}",
         )
 
-    # 3. legit_seasonal_amount (30): 22 normal seasonal surges + 8 sharp bulk spikes
-    for i in range(22):
+    # 3. legit_seasonal_amount (25): 18 normal seasonal surges + 7 sharp bulk spikes
+    for i in range(18):
         sup = seasonal_sups[i % len(seasonal_sups)]
-        # Realistic seasonal surge within historical variance or amplifier-only band
         factor = rng.uniform(1.45, 2.25)
         amt = _round_kzt(sup["median"] * factor)
         add_case(
@@ -525,9 +591,8 @@ def generate_eval_set(
             amount_kzt=amt,
             purpose=f"Оплата сезонной партии материалов по счёту № {inv_no}",
         )
-    for i in range(8):
+    for i in range(7):
         sup = steady_sups[i % len(steady_sups)]
-        # Sharp legitimate bulk/annual procurement (2.9x..3.7x median on steady supplier)
         factor = rng.uniform(2.90, 3.70)
         amt = _round_kzt(sup["median"] * factor)
         add_case(
@@ -595,8 +660,8 @@ def generate_eval_set(
             purpose=f"Оплата по доп. соглашению к договору, счёт № {inv_no}",
         )
 
-    # 6. legit_new_supplier (35): brand-new valid suppliers (corporations, IEs, large 1st, young)
-    for i in range(20):
+    # 6. legit_new_supplier (35): standard + brand/numeric names + large 1st + IEs + startups
+    for i in range(15):
         name = _NEW_LEGIT_CORP_NAMES[i]
         assert _is_distinct_from_history(name, hist_names), f"Name too close: {name}"
         code = rng.choice(non_bcc_codes)
@@ -610,7 +675,21 @@ def generate_eval_set(
             amount_kzt=_round_kzt(rng.uniform(120_000, 1_800_000)),
             purpose=f"Оплата по договору поставки № {inv_no}",
         )
-    # 5 large first-time payments above client p90 (amplifier-only -> stays grey)
+    # 5 legitimate brand compounds & numeric names (must NOT trigger mixed_script)
+    for name in _NEW_LEGIT_BRAND_NUMERIC_NAMES:
+        assert _is_distinct_from_history(name, hist_names), f"Name too close: {name}"
+        code = rng.choice(non_bcc_codes)
+        add_case(
+            label="legit",
+            kind="legit_new_supplier",
+            recipient_name=name,
+            recipient_bin=fresh_bin(),
+            recipient_iik=fresh_iik(code),
+            recipient_bik=bik_by_code[code],
+            amount_kzt=_round_kzt(rng.uniform(150_000, 1_500_000)),
+            purpose=f"Оплата по договору поставки № {inv_no}",
+        )
+    # 5 large first-time payments above client p90 (below 3x -> stays grey)
     for i in range(5):
         name = _NEW_LEGIT_CORP_NAMES[20 + i]
         assert _is_distinct_from_history(name, hist_names), f"Name too close: {name}"
@@ -641,7 +720,7 @@ def generate_eval_set(
             amount_kzt=_round_kzt(rng.uniform(90_000, 450_000)),
             purpose=f"Оплата подрядных работ по акту № {inv_no}",
         )
-    # 3 newly registered legitimate startups (young BIN + benign/non-urgent wording -> stays grey)
+    # 3 newly registered legitimate startups (young BIN + non-urgent/urgent wording)
     for i in range(3):
         name = _NEW_LEGIT_CORP_NAMES[25 + i]
         assert _is_distinct_from_history(name, hist_names), f"Name too close: {name}"
@@ -698,14 +777,30 @@ def generate_eval_set(
             purpose=f"Оплата по счёту № {inv_no} ({urgent}, поставка на объект)",
         )
 
+    # 9. legit_budget_payment (15): treasury KKMFKZ2A (070) & Gov4Citizens GCVPKZ2A (009)
+    budget_codes = ["070", "009"]
+    for i in range(15):
+        b_code = budget_codes[i % len(budget_codes)]
+        add_case(
+            label="legit",
+            kind="legit_budget_payment",
+            recipient_name=_BUDGET_RECIPIENT_NAMES[i % len(_BUDGET_RECIPIENT_NAMES)],
+            recipient_bin=fresh_bin(year_range=(10, 22)),
+            recipient_iik=fresh_iik(b_code),
+            recipient_bik=bik_by_code[b_code],
+            amount_kzt=_round_kzt(rng.uniform(250_000, 6_500_000)),
+            purpose=f"Налоговый платёж / соцотчисления за период, документ № {inv_no}",
+            knp="911" if b_code == "070" else "010",
+        )
+
     # =========================================================================
     # ATTACK CASES (200 total)
     # =========================================================================
 
-    # 1. attack_iik_swap_same_bin (30): known supplier BIN + swapped attacker IIK
-    for i in range(30):
+    # 1. attack_iik_swap_same_bin (25): known supplier BIN + swapped attacker IIK
+    for i in range(25):
         sup = suppliers[i % len(suppliers)]
-        same_bank = i >= 18
+        same_bank = i >= 15
         if same_bank and sup["bank_code"] != BCC_BANK_CODE:
             atk_code = sup["bank_code"]
         else:
@@ -728,13 +823,14 @@ def generate_eval_set(
             purpose=purpose,
         )
 
-    # 2. attack_lookalike_name (30): impersonated supplier name with a different BIN
+    # 2. attack_lookalike_name (25): homoglyphs, token_set, variants, transliteration, hard evasion
     lookalike_styles = (
-        ["latin"] * 8
-        + ["kazakh"] * 6
-        + ["greek"] * 5
-        + ["token_set"] * 5
-        + ["typo"] * 4
+        ["latin"] * 4
+        + ["kazakh"] * 4
+        + ["greek"] * 3
+        + ["token_set"] * 3
+        + ["typo"] * 3
+        + ["variant_translit"] * 6
         + ["hard_evasion"] * 2
     )
     registry_other_bins = [
@@ -742,12 +838,18 @@ def generate_eval_set(
         for b in sorted(registry)
         if b not in hist_bins and b != client_bin and bin_kind(b) == "bin"
     ]
+    sup_by_name = {s["name"]: s for s in suppliers}
+    vt_idx = 0
     for i, style in enumerate(lookalike_styles):
-        sup = corp_suppliers[i % len(corp_suppliers)]
-        if style == "hard_evasion":
-            sup = corp_suppliers[i % 2]  # Алатау Снаб / КазЛогистик Групп
-        spoofed_name = _make_lookalike_name(rng, sup["name"], style)
-        # Mix of mismatched registry BIN, young unregistered BIN, and older unregistered BIN
+        if style == "variant_translit":
+            orig_name, spoofed_name = _VARIANT_TRANSLIT_MAP[vt_idx % len(_VARIANT_TRANSLIT_MAP)]
+            vt_idx += 1
+            sup = sup_by_name[orig_name]
+        else:
+            sup = corp_suppliers[i % len(corp_suppliers)]
+            if style == "hard_evasion":
+                sup = corp_suppliers[i % 2]
+            spoofed_name = _make_lookalike_name(rng, sup["name"], style)
         if i % 3 == 0:
             atk_bin = registry_other_bins[i % len(registry_other_bins)]
         elif i % 3 == 1:
@@ -767,11 +869,27 @@ def generate_eval_set(
             purpose=f"Оплата за поставку по договору, счёт № {inv_no}",
         )
 
-    # 3. attack_bcc_other_owner (25): BCC IIK owned by another company in bcc_accounts.json
-    for i in range(25):
+    # 3. attack_unicode_and_digit_evasion (15): IPA, Cherokee, invisibles, digits-for-letters + 2 hard
+    for i, (orig_name, evaded_name) in enumerate(_UNICODE_EVASION_CASES):
+        sup = sup_by_name[orig_name]
+        atk_code = rng.choice(non_bcc_codes)
+        atk_bin = fresh_young_bin() if i % 2 == 0 else fresh_bin()
+        add_case(
+            label="attack",
+            kind="attack_unicode_and_digit_evasion",
+            recipient_name=evaded_name,
+            recipient_bin=atk_bin,
+            recipient_iik=fresh_iik(atk_code),
+            recipient_bik=bik_by_code[atk_code],
+            amount_kzt=_round_kzt(sup["median"] * rng.uniform(0.90, 1.15)),
+            purpose=f"Оплата за материалы по счёту № {inv_no}",
+        )
+
+    # 4. attack_bcc_other_owner (20): BCC IIK owned by another company in bcc_accounts.json
+    for i in range(20):
         bcc_iik, bcc_info = other_bcc_entries[i % len(other_bcc_entries)]
         owner_bin = bcc_info["owner_bin"]
-        if i < 15:
+        if i < 12:
             sup = next(
                 s for s in suppliers[i % len(suppliers) :] + suppliers if s["bin"] != owner_bin
             )
@@ -793,15 +911,15 @@ def generate_eval_set(
             purpose=f"Оплата по счёту № {inv_no}",
         )
 
-    # 4. attack_iin_dropper (25): 21 legal entity names with individual IIN + 4 without legal form
-    for i in range(21):
+    # 5. attack_iin_dropper (25): 15 with OPF + 6 with KBe=17 without OPF + 4 blind-spot droppers
+    for i in range(15):
         code = rng.choice(non_bcc_codes)
-        if i < 10:
+        if i < 7:
             sup = corp_suppliers[i % len(corp_suppliers)]
             name = sup["name"]
             amt = _round_kzt(sup["median"] * rng.uniform(0.90, 1.25))
         else:
-            name = _DROPPER_CORP_NAMES[(i - 10) % len(_DROPPER_CORP_NAMES)]
+            name = _DROPPER_CORP_NAMES[(i - 7) % len(_DROPPER_CORP_NAMES)]
             amt = _round_kzt(rng.uniform(350_000, 1_900_000))
         add_case(
             label="attack",
@@ -813,7 +931,21 @@ def generate_eval_set(
             amount_kzt=amt,
             purpose=f"Оплата по счёту № {inv_no}",
         )
-    # 4 blind-spot droppers: omit legal form prefix (ТОО/АО/ИП) while using an individual IIN
+    # 6 droppers omitting OPF prefix but submitting corporate KBe=17
+    for name in _DROPPER_KBE_ONLY_NAMES:
+        code = rng.choice(non_bcc_codes)
+        add_case(
+            label="attack",
+            kind="attack_iin_dropper",
+            recipient_name=name,
+            recipient_bin=fresh_iin(),
+            recipient_iik=fresh_iik(code),
+            recipient_bik=bik_by_code[code],
+            amount_kzt=_round_kzt(rng.uniform(450_000, 1_800_000)),
+            purpose=f"Оплата по счёту № {inv_no}",
+            kbe="17",
+        )
+    # 4 blind-spot droppers: omit both OPF and KBe while using an individual IIN
     for i in range(4):
         code = rng.choice(non_bcc_codes)
         name = _DROPPER_NO_LEGAL_FORM_NAMES[i]
@@ -829,10 +961,9 @@ def generate_eval_set(
             purpose=f"Оплата строительных материалов по счёту № {inv_no}",
         )
 
-    # 5. attack_amount_inflation (25): 17 heavy (>3x) + 8 stealth moderate (1.7x..2.3x) on same IIK
-    for i in range(17):
+    # 6. attack_amount_inflation (20): 14 heavy (>3x) + 6 stealth moderate (1.75x..2.25x)
+    for i in range(14):
         sup = suppliers[i % len(suppliers)]
-        # Guarantee ratio >= 3.2 and well above MAD so heavy inflation is unmistakable
         factor = rng.uniform(3.25, 5.20)
         amt = _round_kzt(max(sup["median"] * factor, sup["median"] + 6.0 * max(sup["mad"], 1.0)))
         add_case(
@@ -845,9 +976,8 @@ def generate_eval_set(
             amount_kzt=amt,
             purpose=f"Оплата по счёту № {inv_no} за расширенный объём поставки",
         )
-    # 8 stealth moderate-inflation cases (1.75x..2.35x median on steady/seasonal suppliers -> green)
-    for i in range(8):
-        sup = seasonal_sups[i % len(seasonal_sups)] if i < 5 else steady_sups[i % len(steady_sups)]
+    for i in range(6):
+        sup = seasonal_sups[i % len(seasonal_sups)] if i < 4 else steady_sups[i % len(steady_sups)]
         factor = rng.uniform(1.75, 2.25)
         amt = _round_kzt(sup["median"] * factor)
         add_case(
@@ -861,7 +991,7 @@ def generate_eval_set(
             purpose=f"Оплата по скорректированному счёту № {inv_no}",
         )
 
-    # 6. attack_iik_reused_other_supplier (15): different BIN reusing another supplier's history IIK
+    # 7. attack_iik_reused_other_supplier (15): different BIN reusing another supplier's history IIK
     for i in range(15):
         victim = non_bcc_hist_suppliers[i % len(non_bcc_hist_suppliers)]
         fake_name = _DROP_SHELL_NAMES[i % len(_DROP_SHELL_NAMES)]
@@ -877,12 +1007,66 @@ def generate_eval_set(
             purpose=f"Оплата по договору субподряда № {inv_no}",
         )
 
-    # 7. attack_typo_free_valid_drop (25): 20 external clean shells (blind spot) + 5 new BCC shells
-    for i in range(20):
+    # 8. attack_duplicate_invoice (10): 8 within 90d from history + 2 blind spots (> 90d ago)
+    for i in range(10):
+        sup = suppliers[i % len(suppliers)]
+        dup_purpose = sup["purpose_sample"] if i < 8 else sup["oldest_purpose"]
+        add_case(
+            label="attack",
+            kind="attack_duplicate_invoice",
+            recipient_name=sup["name"],
+            recipient_bin=sup["bin"],
+            recipient_iik=sup["iik"],
+            recipient_bik=sup["bik"],
+            amount_kzt=_round_kzt(sup["median"] * rng.uniform(0.95, 1.05)),
+            purpose=dup_purpose,
+        )
+
+    # 9. attack_structuring_72h (10): 5 large splits (>=3x med -> yellow), 3x40% (amp), 2x40% (stealth)
+    for i in range(10):
+        sup = steady_sups[i % len(steady_sups)]
+        if i < 5:
+            chunk_amt = _round_kzt(sup["median"] * 1.1)
+            n_prior = 2
+        elif i < 8:
+            chunk_amt = _round_kzt(sup["median"] * 0.4)
+            n_prior = 2
+        else:
+            chunk_amt = _round_kzt(sup["median"] * 0.4)
+            n_prior = 1
+        priors = [
+            {
+                "hours_ago": 10 + 12 * k,
+                "request": {
+                    "payer_id": payer_id,
+                    "recipient_name": sup["name"],
+                    "recipient_bin": sup["bin"],
+                    "recipient_iik": sup["iik"],
+                    "recipient_bik": sup["bik"],
+                    "amount_kzt": chunk_amt,
+                    "purpose": f"Частичная оплата по счёту № {inv_no + 1000 + k}",
+                },
+            }
+            for k in range(n_prior)
+        ]
+        add_case(
+            label="attack",
+            kind="attack_structuring_72h",
+            recipient_name=sup["name"],
+            recipient_bin=sup["bin"],
+            recipient_iik=sup["iik"],
+            recipient_bik=sup["bik"],
+            amount_kzt=chunk_amt,
+            purpose=f"Частичная оплата по счёту № {inv_no}",
+            prior_checks=priors,
+        )
+
+    # 10. attack_typo_free_valid_drop (20): 15 external clean shells (blind spot) + 5 new BCC shells
+    for i in range(15):
         name = _DROP_SHELL_NAMES[i]
         assert _is_distinct_from_history(name, hist_names), f"Drop name too close: {name}"
         code = rng.choice(non_bcc_codes)
-        use_young = i < 12
+        use_young = i < 9
         use_urgent = i % 3 == 0
         use_high_amt = i % 4 == 0
         amt = (
@@ -905,7 +1089,6 @@ def generate_eval_set(
             amount_kzt=amt,
             purpose=purpose,
         )
-    # 5 typo-free drops using freshly opened BCC accounts with their own young BINs (new_bcc + bin_young -> yellow)
     for i in range(5):
         bcc_iik, bcc_info = new_bcc_non_hist_entries[i % len(new_bcc_non_hist_entries)]
         add_case(
@@ -919,13 +1102,12 @@ def generate_eval_set(
             purpose=f"Оплата по договору поставки № {inv_no}",
         )
 
-    # 8. attack_combined_bec (25): realistic multi-signal BEC attacks
-    for i in range(25):
+    # 11. attack_combined_bec (15): realistic multi-signal BEC attacks
+    for i in range(15):
         sup = corp_suppliers[i % len(corp_suppliers)]
         style = ("latin", "kazakh", "token_set", "greek", "typo")[i % 5]
         spoofed_name = _make_lookalike_name(rng, sup["name"], style)
         if i % 3 == 0:
-            # Includes BCC account owned by another company + lookalike + inflated amount + urgent
             bcc_iik, bcc_info = other_bcc_entries[i % len(other_bcc_entries)]
             atk_bin = registry_other_bins[i % len(registry_other_bins)]
             if atk_bin == bcc_info["owner_bin"]:
@@ -933,7 +1115,6 @@ def generate_eval_set(
             atk_iik = bcc_iik
             atk_bik = BCC_BIK
         else:
-            # External bank + lookalike + young/mismatched BIN + inflated amount + urgent
             atk_code = rng.choice(non_bcc_codes)
             atk_bin = (
                 fresh_young_bin()

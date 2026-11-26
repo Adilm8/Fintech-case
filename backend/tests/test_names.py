@@ -5,13 +5,19 @@ from __future__ import annotations
 import pytest
 
 from app.risk.names import (
+    confusable_skeleton,
     detect_legal_form_kind,
     find_mixed_script_positions,
+    load_confusables,
     map_homoglyphs,
     map_latin_lookalikes,
     name_similarity,
     normalize_company_name,
+    normalize_company_name_translit,
+    sanitize_unicode,
     token_set_similarity,
+    transliterate_cyr_to_lat,
+    transliterate_lat_to_cyr,
 )
 
 
@@ -102,6 +108,89 @@ class TestMixedScriptDetection:
         assert find_mixed_script_positions('LLP "Алатау Снаб"') == []
         assert find_mixed_script_positions("ТОО «Kaspi Pay»") == []
         assert find_mixed_script_positions("") == []
+
+    def test_tr39_confusables_file_and_unicode_sanitization(self) -> None:
+        table = load_confusables()
+        assert table["\u0251"] == "а"  # IPA alpha
+        assert table["\u13df"] == "С"  # Cherokee TLI
+        assert len(table) >= 80
+
+        # Mn (combining acute), Me (enclosing circle), Cf (ZWSP/WJ/BOM),
+        # CGJ U+034F, variation selectors U+FE00..FE0F, Hangul/Braille fillers U+115F/1160/3164/2800
+        obfuscated = (
+            "ТОО «А\u0301\u20ddл\u034fа\ufe0fт\u115fа\u1160у\u3164 "
+            "С\u2800н\u200bа\u200c\u200d\u2060б\ufeff»"
+        )
+        assert sanitize_unicode(obfuscated) == "ТОО «Алатау Снаб»"
+        assert normalize_company_name(obfuscated) == "алатау снаб"
+
+        # IPA alpha + Cherokee TLI skeleton
+        spoofed = "ТОО «\u0251латау \u13dfнаб»"
+        assert confusable_skeleton("ɑᏟ") == "АС"
+        assert normalize_company_name(spoofed) == "алатау снаб"
+        assert name_similarity("ТОО «Алатау Снаб»", spoofed) == 100.0
+
+    def test_exotic_scripts_always_flagged_while_brand_tokens_spared(self) -> None:
+        # Exotic scripts (IPA, Cherokee, Greek, fullwidth, Armenian, palochka) flagged even alone
+        assert find_mixed_script_positions("ТОО «\u0251латау Снаб»") == [5]
+        assert find_mixed_script_positions("ТОО «Алатау \u13dfнаб»") == [12]
+        assert find_mixed_script_positions("ТОО «\u13df\u13aa»") == [5, 6]
+        assert find_mixed_script_positions("ТОО «\uff21латау Снаб»") == [5]
+        assert find_mixed_script_positions("ТОО «Ал\u0585тау»") == [7]
+        assert find_mixed_script_positions("ТОО «Б\u04cfрлік»") == [6]
+
+        # Invisible characters cannot split a word to bypass mixed-script detection
+        assert find_mixed_script_positions("ТОО «Алатау \u0043\u3164наб»") == [12]
+        assert find_mixed_script_positions("ТОО «Алатау \u0043\u0301наб»") == [12]
+        assert find_mixed_script_positions("ТОО «Алатау \u0043\u2800наб»") == [12]
+
+        # Whole Latin brand tokens attached to or alongside Cyrillic must NOT be flagged
+        for legit_brand in (
+            "ТОО «ЭкоSTAR»",
+            "ТОО «QazaqСтрой»",
+            "ТОО «АгроMAX»",
+            "ТОО «ITСервис»",
+            "ТОО «ProСтрой»",
+            "ТОО «Эко STAR»",
+            "ТОО «Qazaq Строй»",
+            "ТОО «Alatau Snab»",
+            "ТОО «НұрМеталлПоставка»",
+            "ЖШС «Береке Құрылыс»",
+        ):
+            assert find_mixed_script_positions(legit_brand) == [], legit_brand
+
+    def test_confusable_digits_inside_cyrillic_words_vs_legit_numbers(self) -> None:
+        # Embedded confusable digits inside Cyrillic words -> flagged with exact 0-based positions
+        assert find_mixed_script_positions("ТОО «Ка3Л0гистик»") == [7, 9]
+        assert find_mixed_script_positions("ТОО «Сн0б»") == [7]
+        assert find_mixed_script_positions("ТОО «КазПо4та»") == [10]
+        assert find_mixed_script_positions("ТОО «Каз6етон»") == [8]
+        assert find_mixed_script_positions("ТОО «Б1рл1к»") == [6, 9]
+        assert find_mixed_script_positions("ТОО «0фис»") == [5]
+        assert find_mixed_script_positions("ТОО «3авод»") == [5]
+        assert find_mixed_script_positions("ТОО «Ка3Л0гIстик Групп»") == [7, 9, 11]
+
+        # Legitimate numbers and standalone numeric tokens must NOT be flagged
+        for legit_num in (
+            "ТОО «Алматы-2»",
+            "ТОО «Строй 2020»",
+            "ТОО «1С-Рейтинг»",
+            "ТОО «Бетон М350»",
+            "ТОО «Арматура А500С»",
+            "ТОО «Астана24»",
+            "ТОО «Склад1»",
+            "ТОО «B2B Трейд»",
+        ):
+            assert find_mixed_script_positions(legit_num) == [], legit_num
+
+    def test_transliteration_ru_lat_roundtrip_and_similarity(self) -> None:
+        assert transliterate_lat_to_cyr("alatau snab") == "алатау снаб"
+        assert transliterate_cyr_to_lat("алатау снаб") == "alatau snab"
+        cyr, lat = normalize_company_name_translit('LLP "Alatau Snab"')
+        assert cyr == "алатау снаб"
+        assert lat == "alatau snab"
+        assert name_similarity("ТОО «Алатау Снаб»", 'ТОО "Alatau Snab"') == 100.0
+        assert name_similarity("ТОО «Kaspi Pay»", "ТОО «Каспи Пей»") >= 85.0
 
 
 class TestDetectLegalFormKind:

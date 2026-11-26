@@ -72,6 +72,18 @@ BANKS_CATALOG: list[BankRecord] = [
     {"code": "435", "bik": "SHBKKZKA", "name": "АО «Шинхан Банк Казахстан»"},
     {"code": "432", "bik": "VTBAKZKZ", "name": "ДО АО Банк ВТБ (Казахстан)"},
     {"code": "896", "bik": "ZAJSKZ22", "name": "АО «Исламский банк Заман-Банк»"},
+    {
+        "code": "070",
+        "bik": "KKMFKZ2A",
+        "name": "ГУ «Комитет казначейства Министерства финансов РК»",
+        "budget": True,
+    },
+    {
+        "code": "009",
+        "bik": "GCVPKZ2A",
+        "name": "НАО «Государственная корпорация «Правительство для граждан»»",
+        "budget": True,
+    },
 ]
 
 BIK_BY_CODE: dict[str, str] = {bank["code"]: bank["bik"] for bank in BANKS_CATALOG}
@@ -209,6 +221,7 @@ def _build_supplier_payments(
                     "recipient_bik": bik,
                     "amount_kzt": amount,
                     "purpose": purpose_tpl.format(inv=inv),
+                    "knp": sup["knp"],
                 }
             )
             inv += 1
@@ -235,6 +248,7 @@ def _build_supplier_payments(
                 "recipient_bik": sup["bik"],
                 "amount_kzt": amount,
                 "purpose": sup["purpose_tpl"].format(inv=inv),
+                "knp": sup["knp"],
             }
         )
         inv += 1
@@ -280,6 +294,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "pin_last_amount": 1_350_000,
             "days_ago": [356, 326, 297, 267, 236, 206, 176, 147, 118, 92, 66, 38, 11],
             "purpose_tpl": "Оплата по счёту № {inv} за строительные материалы по договору № 14-А",
+            "knp": "710",
             "bcc_opened_days_ago": None,
         },
         {
@@ -308,6 +323,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "pin_last_amount": 825_000,
             "days_ago": [351, 320, 290, 259, 229, 198, 168, 138, 109, 79, 49, 18],
             "purpose_tpl": "Оплата транспортно-экспедиционных услуг по счёту № {inv}",
+            "knp": "859",
             "bcc_opened_days_ago": None,
         },
         {
@@ -336,6 +352,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "pin_last_amount": 545_000,
             "days_ago": [347, 317, 286, 256, 225, 195, 164, 134, 104, 74, 44, 14],
             "purpose_tpl": "Оплата электромонтажных материалов по счёту № {inv}",
+            "knp": "710",
             "bcc_opened_days_ago": 920,
         },
         {
@@ -364,6 +381,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "pin_last_amount": 2_170_000,
             "days_ago": [344, 314, 283, 252, 222, 191, 160, 130, 100, 70, 41, 10],
             "purpose_tpl": "Оплата за металлопрокат по договору № 47-М, счёт № {inv}",
+            "knp": "710",
             "bcc_opened_days_ago": None,
         },
         {
@@ -391,6 +409,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "pin_last_amount": 310_000,
             "days_ago": [340, 308, 275, 242, 210, 178, 148, 118, 86, 54, 22],
             "purpose_tpl": "Оплата канцелярских и хозяйственных товаров по счёту № {inv}",
+            "knp": "710",
             "bcc_opened_days_ago": 540,
         },
     ]
@@ -456,6 +475,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "astanabeton",
             "name": "ТОО «АстанаБетонСервис»",
+            "knp": "710",
             "id_kind": "bin",
             "reg_year": 17,
             "reg_month": 4,
@@ -484,6 +504,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "evraziyakran",
             "name": "ТОО «ЕвразияКранМонтаж»",
+            "knp": "859",
             "id_kind": "bin",
             "reg_year": 15,
             "reg_month": 8,
@@ -510,6 +531,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "ip_baizhanov",
             "name": "ИП Байжанов К.Т.",
+            "knp": "859",
             "id_kind": "iin",
             "iin_year": 84,
             "iin_month": 7,
@@ -539,6 +561,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "kazteplo",
             "name": "ТОО «КазТеплоИзоляция»",
+            "knp": "710",
             "id_kind": "bin",
             "reg_year": 16,
             "reg_month": 10,
@@ -568,6 +591,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "qazaqcem",
             "name": "ТОО «ЦементПром Караганда»",
+            "knp": "710",
             "id_kind": "bin",
             "reg_year": 12,
             "reg_month": 3,
@@ -595,6 +619,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "tazasu",
             "name": "ТОО «ТазаСу Сервис»",
+            "knp": "710",
             "id_kind": "bin",
             "reg_year": 20,
             "reg_month": 2,
@@ -620,6 +645,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
         {
             "key": "digitalit",
             "name": "ТОО «НомадКлауд Софт»",
+            "knp": "859",
             "id_kind": "bin",
             "reg_year": 21,
             "reg_month": 5,
@@ -876,7 +902,7 @@ def generate_all(output_dir: Path = DATA_DIR) -> dict[str, Path]:
             "recipient_bin": kazlogistic["bin"],
             "recipient_iik": yellow_new_iik,
             "recipient_bik": yellow_new_bik,
-            "amount_kzt": 820_000,
+            "amount_kzt": 700_000,
             "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 318",
         },
         {

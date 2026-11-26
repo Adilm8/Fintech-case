@@ -5,10 +5,11 @@ from __future__ import annotations
 import random
 from datetime import timedelta
 
-from app.risk.config import BCC_BANK_CODE, BCC_BIK, DEMO_TODAY
-from app.risk.engine import aggregate_signals, check_payment
+from app.risk.config import BCC_BANK_CODE, BCC_BIK, DEMO_TODAY, RULESET_VERSION
+from app.risk.engine import aggregate_signals, check_payment, localize_check_result
+from app.risk.evaluation import run_history_replay
 from app.risk.rules import compute_client_p90
-from app.schemas import CheckRequest, Evidence, Signal
+from app.schemas import CheckRequest, Evidence, Signal, compute_request_sha256
 from app.store import Store
 from app.validators.kz import iban_mod97, make_bin_iin, make_iik
 from scripts.generate_data import generate_bin, generate_iik, generate_iin
@@ -44,7 +45,15 @@ class TestDemoScenarios:
 
     def test_yellow_scenario_and_trust_turns_green(self) -> None:
         store = Store()
-        req = _request_from_queue(store, "yellow")
+        q2_req = _request_from_queue(store, "yellow")
+        # At/above the supplier median (820_000) the same change escalates to red
+        q2_result = check_payment(q2_req.model_copy(update={"amount_kzt": 820_000}), store)
+        assert q2_result.verdict == "red"
+        assert q2_result.score == 65  # iik_changed (35) + bank_changed (30)
+        assert [s.rule_id for s in q2_result.signals] == ["iik_changed", "bank_changed"]
+
+        # Below supplier median (700_000 < 820_000) -> yellow (50), eligible for trust
+        req = q2_req.model_copy(update={"amount_kzt": 700_000})
         result = check_payment(req, store)
 
         assert result.verdict == "yellow"
@@ -83,6 +92,20 @@ class TestDemoScenarios:
             diff_row = next(d for d in rechecked.comparison if d.field == field_name)
             assert diff_row.differs is False
             assert diff_row.diff_positions == []
+
+        # Item 17: trusted account must NOT suppress differs=True on amount or name rows
+        changed_amt_name = req.model_copy(
+            update={"amount_kzt": 1_500_000, "recipient_name": "ТОО «КазЛогистик Новый»"}
+        )
+        rechecked_diff = check_payment(changed_amt_name, store)
+        assert rechecked_diff.trusted is True
+        for field_name in ("iik", "bik", "bank"):
+            diff_row = next(d for d in rechecked_diff.comparison if d.field == field_name)
+            assert diff_row.differs is False
+        amt_row = next(d for d in rechecked_diff.comparison if d.field == "amount")
+        name_row = next(d for d in rechecked_diff.comparison if d.field == "name")
+        assert amt_row.differs is True
+        assert name_row.differs is True
 
     def test_red_scenario_returns_all_signals_sorted_and_lookalike_history(self) -> None:
         store = Store()
@@ -170,7 +193,7 @@ class TestDemoScenarios:
         # Q-009 Kazakh-letter lookalike compares against ТОО «НурМеталлПоставка»
         q9 = by_id["Q-009"]
         res_q9 = check_payment(
-            CheckRequest(**{k: q9[k] for k in CheckRequest.model_fields}),
+            CheckRequest(**{k: q9[k] for k in CheckRequest.model_fields if k in q9}),
             store,
         )
         assert res_q9.verdict == "red"
@@ -180,7 +203,7 @@ class TestDemoScenarios:
         # Q-010 legal entity with IIN triggers entity_type_mismatch -> yellow
         q10 = by_id["Q-010"]
         res_q10 = check_payment(
-            CheckRequest(**{k: q10[k] for k in CheckRequest.model_fields}),
+            CheckRequest(**{k: q10[k] for k in CheckRequest.model_fields if k in q10}),
             store,
         )
         assert res_q10.verdict == "yellow"
@@ -305,7 +328,7 @@ class TestInvalidPrechecks:
         assert result.score == 0
         assert result.headline_ru == "Ошибка в реквизитах"
         assert result.signals[0].rule_id == "invalid_iik"
-        assert result.next_action.text_ru == "Исправьте реквизиты: такого счёта не существует."
+        assert "ИИК" in result.next_action.text_ru
         assert result.next_action.primary == "postpone"
 
     def test_invalid_iik_cyrillic_lookalike(self) -> None:
@@ -525,7 +548,7 @@ class TestScoringGuards:
         assert verdict_red == "red"
         assert score_red == 70
 
-    def test_unused_bcc_iik_for_new_supplier_no_false_block(self) -> None:
+    def test_unknown_bcc_856_iik_returns_invalid(self) -> None:
         store = Store()
         rng = random.Random(606)
         req = _request_from_queue(store, "grey").model_copy(
@@ -535,4 +558,216 @@ class TestScoringGuards:
             }
         )
         result = check_payment(req, store)
-        assert result.verdict == "grey"
+        assert result.verdict == "invalid"
+        assert result.signals[0].rule_id == "bcc_account_not_found"
+        assert result.signals[0].reason_ru == "Счёт в BCC не найден."
+
+    def test_step2_severity_escalations_budget_and_kbe_knp(self) -> None:
+        store = Store()
+        p90 = compute_client_p90(store)
+        assert p90 is not None
+        grey_req = _request_from_queue(store, "grey")
+        green_req = _request_from_queue(store, "green")
+
+        # Item 4a: known supplier >= 10x supplier p90 -> red
+        res_sup_10x = check_payment(green_req.model_copy(update={"amount_kzt": 20_000_000}), store)
+        assert res_sup_10x.verdict == "red" and res_sup_10x.score >= 65
+
+        # Item 4b: new recipient > 3x client p90 -> yellow + send_to_director; > 10x -> red
+        res_new_3x = check_payment(grey_req.model_copy(update={"amount_kzt": p90 * 3.5}), store)
+        assert res_new_3x.verdict == "yellow"
+        assert res_new_3x.next_action.primary == "send_to_director"
+
+        res_new_10x = check_payment(grey_req.model_copy(update={"amount_kzt": p90 * 10.5}), store)
+        assert res_new_10x.verdict == "red" and res_new_10x.score >= 65
+
+        # Item 4c: first payment + urgent wording -> yellow (no 29 cap)
+        res_first_urgent = check_payment(
+            grey_req.model_copy(update={"purpose": "Оплата по счёту, срочно!"}), store
+        )
+        assert res_first_urgent.verdict == "yellow" and res_first_urgent.score >= 30
+
+        # Item 6: budget treasury payments (KKMFKZ2A / 070 and GCVPKZ2A / 009) -> green
+        rng = random.Random(607)
+        for code, bik in (("070", "KKMFKZ2A"), ("009", "GCVPKZ2A")):
+            budget_req = grey_req.model_copy(
+                update={
+                    "recipient_name": "ГУ «Управление государственных доходов»",
+                    "recipient_iik": generate_iik(rng, code, prefix="000"),
+                    "recipient_bik": bik,
+                    "amount_kzt": 5_000_000,
+                    "purpose": "Налог КПН, срочно сегодня",
+                }
+            )
+            res_ru = check_payment(budget_req, store, lang="ru")
+            res_kk = check_payment(budget_req, store, lang="kk")
+            res_en = check_payment(budget_req, store, lang="en")
+            assert res_ru.verdict == "green" and res_ru.score == 0
+            assert res_ru.headline_ru == "Бюджетный платёж: реквизиты казначейства верны"
+            assert res_kk.headline != res_ru.headline_ru
+            assert res_en.headline != res_ru.headline_ru
+            assert res_ru.next_action.primary == "sign"
+
+            # Mismatched BIK on treasury IIK still returns invalid
+            bad_budget = check_payment(
+                budget_req.model_copy(update={"recipient_bik": "HSBKKZKX"}), store
+            )
+            assert bad_budget.verdict == "invalid"
+
+        # Item 13: KBe=17 + IIN without "ТОО" in name -> yellow (40); unusual KNP -> amplifier
+        kbe_req = grey_req.model_copy(
+            update={
+                "recipient_name": "СнабСтрой Центр",
+                "recipient_bin": generate_iin(rng),
+                "kbe": "17",
+            }
+        )
+        res_kbe = check_payment(kbe_req, store)
+        assert res_kbe.verdict == "yellow" and res_kbe.score == 40
+        assert any(s.rule_id == "kbe_mismatch" for s in res_kbe.signals)
+
+        res_knp = check_payment(green_req.model_copy(update={"knp": "859"}), store)
+        assert res_knp.verdict == "green" and res_knp.score == 15
+        assert any(s.rule_id == "knp_unusual" for s in res_knp.signals)
+
+    def test_step3_next_action_bank_verified_duplicate_and_structuring(self) -> None:
+        store = Store()
+        green_req = _request_from_queue(store, "green")
+
+        # Item 9: amount-only yellow and red get amount-specific next_action (ru/kk/en)
+        amt_yellow = check_payment(green_req.model_copy(update={"amount_kzt": 5_000_000}), store, lang="ru")
+        assert amt_yellow.verdict == "yellow"
+        assert (
+            amt_yellow.next_action.text_ru
+            == "Сумма необычно большая для этого поставщика: проверьте счёт и договор."
+        )
+        amt_yellow_en = check_payment(green_req.model_copy(update={"amount_kzt": 5_000_000}), store, lang="en")
+        assert "unusually large" in amt_yellow_en.next_action.text.lower()
+
+        # Item 9: invalid names the specific bad field (BIN / IIK / BIK)
+        bad_bin = check_payment(green_req.model_copy(update={"recipient_bin": "000000000000"}), store, lang="ru")
+        assert bad_bin.verdict == "invalid" and "БИН/ИИН" in bad_bin.next_action.text_ru
+        bad_bik = check_payment(green_req.model_copy(update={"recipient_bik": "XXXXKZKX"}), store, lang="en")
+        assert bad_bik.verdict == "invalid" and "BIK" in bad_bik.next_action.text
+
+        # Item 10: same BIN + new BCC IIK owned by this BIN -> green + bank-verified headline, no secret leak
+        new_bcc_iik = generate_iik(random.Random(1011), BCC_BANK_CODE, prefix="KZT")
+        store.bcc_accounts[new_bcc_iik] = {
+            "owner_bin": green_req.recipient_bin,
+            "owner_name": green_req.recipient_name,
+            "opened_at": (DEMO_TODAY - timedelta(days=120)).isoformat(),
+        }
+        bcc_req = green_req.model_copy(update={"recipient_iik": new_bcc_iik, "recipient_bik": BCC_BIK})
+        verified_res = check_payment(bcc_req, store, lang="ru")
+        assert verified_res.verdict == "green" and verified_res.score == 0
+        assert verified_res.headline_ru == "Счёт подтверждён банком: принадлежит этому поставщику"
+        assert [s.rule_id for s in verified_res.signals] == ["bcc_owner_verified"]
+        assert "analyst_details" not in verified_res.model_dump()
+
+        # Item 10: amount signals STILL apply on bank-verified BCC account
+        verified_big = check_payment(bcc_req.model_copy(update={"amount_kzt": 5_000_000}), store)
+        assert verified_big.verdict == "yellow"
+        assert any(s.rule_id == "amount_anomaly" for s in verified_big.signals)
+        assert "Сумма необычно большая" in verified_big.next_action.text_ru
+
+        # Item 8: duplicate invoice from history within 90 days -> yellow
+        dup_res = check_payment(
+            green_req.model_copy(update={"purpose": "Оплата по счёту № 113"}), store
+        )
+        assert dup_res.verdict == "yellow"
+        assert any(s.rule_id == "duplicate_invoice" for s in dup_res.signals)
+        assert "повторная оплата счёта" in dup_res.next_action.text_ru.lower()
+
+        # Item 15: 3 sequential payments of ~40% median (540_000) -> 3rd triggers structuring_72h
+        store_s = Store()
+        chunk = green_req.model_copy(update={"amount_kzt": 540_000})
+        r1 = check_payment(chunk.model_copy(update={"purpose": "Оплата сч. 911"}), store_s, record_in_memory=True)
+        r2 = check_payment(chunk.model_copy(update={"purpose": "Оплата сч. 912"}), store_s, record_in_memory=True)
+        r3 = check_payment(chunk.model_copy(update={"purpose": "Оплата сч. 913"}), store_s, record_in_memory=True)
+        assert r1.signals == [] and r2.signals == []
+        assert any(s.rule_id == "structuring_72h" for s in r3.signals)
+        assert r3.score == 20 and r3.verdict == "green"
+
+        # 3 sequential payments summing >= 3x median -> primary (yellow) with amount-only advice
+        store_s2 = Store()
+        big_chunk = green_req.model_copy(update={"amount_kzt": 1_500_000})
+        check_payment(big_chunk.model_copy(update={"purpose": "Оплата сч. 921"}), store_s2, record_in_memory=True)
+        check_payment(big_chunk.model_copy(update={"purpose": "Оплата сч. 922"}), store_s2, record_in_memory=True)
+        r3_big = check_payment(big_chunk.model_copy(update={"purpose": "Оплата сч. 923"}), store_s2, record_in_memory=True)
+        assert r3_big.verdict == "yellow"
+        assert any(s.rule_id == "structuring_72h" and s.severity == "primary" for s in r3_big.signals)
+        assert "Сумма необычно большая" in r3_big.next_action.text_ru
+
+    def test_client_check_omits_analyst_details_and_analyst_flag_exposes_them(self) -> None:
+        store = Store()
+        red_req = _request_from_queue(store, "red")
+        bcc_entry = store.bcc_accounts[red_req.recipient_iik]
+
+        client_res = check_payment(red_req, store, lang="ru")
+        assert client_res.analyst_details is None
+        dumped_client = client_res.model_dump()
+        assert "analyst_details" not in dumped_client
+        assert "internal_analyst_details" not in dumped_client
+        dumped_str = str(dumped_client)
+        for secret in (
+            bcc_entry["owner_name"],
+            "Вектор Трейд",
+            bcc_entry["owner_bin"],
+            bcc_entry["opened_at"],
+        ):
+            assert secret not in dumped_str
+
+        analyst_res = check_payment(red_req, store, lang="en", include_analyst_details=True)
+        assert analyst_res.analyst_details is not None
+        assert analyst_res.analyst_details.bcc_account is not None
+        assert analyst_res.analyst_details.bcc_account.owner_name == bcc_entry["owner_name"]
+        assert analyst_res.analyst_details.bcc_account.owner_bin == bcc_entry["owner_bin"]
+        assert analyst_res.analyst_details.bcc_account.opened_at == bcc_entry["opened_at"]
+        dumped_analyst = analyst_res.model_dump()
+        assert "analyst_details" in dumped_analyst
+        assert "internal_analyst_details" not in dumped_analyst
+
+    def test_step4_dedup_evidence_relocalization_and_history_replay(self) -> None:
+        store = Store()
+        green_req = _request_from_queue(store, "green")
+
+        # 1. Canonical sha256 is stable for identical request and changes on modified fields
+        h1 = compute_request_sha256(green_req)
+        h2 = compute_request_sha256(green_req.model_copy())
+        h3 = compute_request_sha256(green_req.model_copy(update={"amount_kzt": green_req.amount_kzt + 1}))
+        assert len(h1) == 64
+        assert h1 == h2 and h1 != h3
+
+        # Identical re-check with record_in_memory=True stays deduplicated
+        res1 = check_payment(green_req, store, lang="ru", record_in_memory=True)
+        res2 = check_payment(green_req, store, lang="kk", record_in_memory=True)
+        res3 = check_payment(green_req, store, lang="en", record_in_memory=True)
+        assert res1.ruleset_version == RULESET_VERSION
+        assert res1.verdict == res2.verdict == res3.verdict == "green"
+        assert len(store.recent_checks) == 1
+
+        # 2. localize_check_result re-localizes evidence field_label, expected, actual
+        q3_req = _request_from_queue(store, "red")
+        red_ru = check_payment(q3_req, store, lang="ru")
+        red_en = check_payment(q3_req, store, lang="en")
+        reloc_en = localize_check_result(red_ru, "en")
+        for s_reloc, s_direct in zip(reloc_en.signals, red_en.signals, strict=True):
+            assert s_reloc.evidence.field_label == s_direct.evidence.field_label
+            assert s_reloc.evidence.expected == s_direct.evidence.expected
+            assert s_reloc.evidence.actual == s_direct.evidence.actual
+
+        # 3. Chronological history_replay runs in isolation and leaves store untouched
+        before_recent = list(store.recent_checks)
+        replay = run_history_replay()
+        assert replay.total_payments == 150
+        assert (
+            replay.verdicts.green
+            + replay.verdicts.yellow
+            + replay.verdicts.red
+            + replay.verdicts.grey
+            + replay.verdicts.invalid
+            == 150
+        )
+        assert replay.verdicts.red == 0
+        assert replay.alert_count == replay.verdicts.yellow + replay.verdicts.red
+        assert store.recent_checks == before_recent

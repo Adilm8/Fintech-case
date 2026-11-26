@@ -11,42 +11,56 @@ from app.i18n import DEFAULT_LANG, Lang, t
 from app.risk.config import (
     AMPLIFIER_ONLY_CAP,
     DEMO_TODAY,
+    RULESET_VERSION,
     SINGLE_SIGNAL_NO_RAISE_MAX,
     THRESHOLD_RED,
     THRESHOLD_YELLOW,
 )
 from app.risk.names import find_mixed_script_positions
 from app.risk.rules import (
+    build_analyst_details,
     compute_client_p90,
+    extract_invoice_number,
     find_lookalike_supplier,
+    is_bcc_bank_verified_new_account,
     rule_amount_anomaly,
     rule_bank_changed,
+    rule_bcc_account_not_found,
     rule_bcc_account_other_owner,
+    rule_bcc_owner_verified,
     rule_bik_format,
     rule_bin_format,
     rule_bin_name_mismatch,
     rule_bin_young,
+    rule_duplicate_invoice,
     rule_entity_type_mismatch,
     rule_first_payment,
     rule_iik_bank_code_vs_bik,
     rule_iik_belongs_to_other_counterparty,
     rule_iik_changed,
     rule_iik_format,
+    rule_kbe_mismatch,
+    rule_knp_unusual,
     rule_lookalike_supplier,
     rule_mixed_script_name,
     rule_new_bcc_account,
+    rule_new_recipient_accumulated,
+    rule_structuring_72h,
     rule_trusted_account,
     rule_urgent_wording,
 )
 from app.schemas import (
     ActionType,
+    AnalystDetails,
     CheckRequest,
     CheckResult,
+    Evidence,
     FieldDiff,
     HistorySummary,
     NextAction,
     Signal,
     Verdict,
+    compute_request_sha256,
 )
 from app.store import Store
 
@@ -191,14 +205,48 @@ def _build_comparison(
     ]
 
 
+AMOUNT_SIGNAL_IDS: frozenset[str] = frozenset(
+    {"amount_anomaly", "structuring_72h", "new_recipient_accumulated"}
+)
+
+
+def _extract_invalid_field_keys(precheck_signals: list[Signal]) -> list[str]:
+    keys: list[str] = []
+    for sig in precheck_signals:
+        if sig.rule_id == "invalid_bin":
+            mapped = ["bin"]
+        elif sig.rule_id in ("invalid_iik", "bcc_account_not_found"):
+            mapped = ["iik"]
+        elif sig.rule_id == "invalid_bik":
+            mapped = ["bik"]
+        elif sig.rule_id == "iik_bank_code_vs_bik":
+            mapped = ["iik", "bik"]
+        else:
+            mapped = []
+        for k in mapped:
+            if k not in keys:
+                keys.append(k)
+    return keys
+
+
+def _render_invalid_fields_text(field_keys: list[str], lang: Lang) -> str:
+    if not field_keys:
+        return t("next_action.invalid", lang)
+    labels = ", ".join(t(f"invalid_field.{k}", lang) for k in field_keys)
+    return t("next_action.invalid_fields", lang, fields=labels)
+
+
 def _select_headline_key(
     verdict: Verdict,
     *,
     is_trusted: bool = False,
+    is_bank_verified: bool = False,
     has_amplifiers: bool = False,
 ) -> str:
     if is_trusted and verdict == "green":
         return "headline.green_trusted"
+    if is_bank_verified and verdict == "green":
+        return "headline.green_bank_verified"
     if verdict == "green" and has_amplifiers:
         return "headline.green_with_amplifiers"
     return f"headline.{verdict}"
@@ -207,16 +255,35 @@ def _select_headline_key(
 def _select_next_action_spec(
     verdict: Verdict,
     *,
+    signals: list[Signal] | None = None,
+    is_bank_verified: bool = False,
     has_amplifiers: bool = False,
     grey_above_client_p90: bool = False,
 ) -> tuple[str, ActionType, list[ActionType]]:
+    ordered = signals or []
+    scored = [s for s in ordered if s.severity in ("block", "primary", "amplifier")]
+    scored_ids = {s.rule_id for s in scored}
+
     if verdict == "green":
+        if is_bank_verified and not has_amplifiers:
+            return "next_action.green_bank_verified", "sign", []
         if has_amplifiers:
             return "next_action.green_with_amplifiers", "sign", []
         return "next_action.green", "sign", []
     if verdict == "yellow":
+        if scored_ids and scored_ids <= AMOUNT_SIGNAL_IDS:
+            return "next_action.amount_only", "send_to_director", ["sign"]
+        if (
+            ordered
+            and ordered[0].rule_id == "duplicate_invoice"
+            and "iik_changed" not in scored_ids
+            and "bank_changed" not in scored_ids
+        ):
+            return "next_action.duplicate_invoice", "send_to_director", ["sign"]
         return "next_action.yellow", "send_to_director", ["sign"]
     if verdict == "red":
+        if scored_ids and scored_ids <= AMOUNT_SIGNAL_IDS:
+            return "next_action.amount_only", "postpone", ["send_to_director"]
         return "next_action.red", "postpone", ["send_to_director"]
     if verdict == "grey":
         if grey_above_client_p90:
@@ -228,12 +295,27 @@ def _select_next_action_spec(
 def _build_next_action(
     verdict: Verdict,
     *,
+    signals: list[Signal] | None = None,
+    is_bank_verified: bool = False,
     has_amplifiers: bool = False,
     grey_above_client_p90: bool = False,
     lang: Lang = DEFAULT_LANG,
 ) -> NextAction:
+    if verdict == "invalid":
+        field_keys = _extract_invalid_field_keys(signals or [])
+        if field_keys:
+            return NextAction(
+                text_ru=_render_invalid_fields_text(field_keys, "ru"),
+                text=_render_invalid_fields_text(field_keys, lang),
+                message_key="next_action.invalid_fields",
+                invalid_field_keys=field_keys,
+                primary="postpone",
+                secondary=[],
+            )
     msg_key, primary, secondary = _select_next_action_spec(
         verdict,
+        signals=signals,
+        is_bank_verified=is_bank_verified,
         has_amplifiers=has_amplifiers,
         grey_above_client_p90=grey_above_client_p90,
     )
@@ -246,8 +328,52 @@ def _build_next_action(
     )
 
 
-def localize_check_result(result: CheckResult, lang: Lang = DEFAULT_LANG) -> CheckResult:
-    """Return a copy of CheckResult with localized headline, signals, and next_action text."""
+def _localize_evidence(ev: Evidence, lang: Lang) -> Evidence:
+    field_lbl = (
+        t(f"ev.field.{ev.field}", lang)
+        if ev.field in ("bin", "iik", "bik", "bank", "name", "amount", "purpose")
+        else ev.field_label
+    )
+    expected = t(ev.expected_key, lang, **ev.expected_params) if ev.expected_key else ev.expected
+    actual = t(ev.actual_key, lang, **ev.actual_params) if ev.actual_key else ev.actual
+    return ev.model_copy(
+        update={
+            "field_label": field_lbl,
+            "expected": expected,
+            "actual": actual,
+        }
+    )
+
+
+def _localize_analyst_details(
+    details: AnalystDetails | None,
+    lang: Lang,
+) -> AnalystDetails | None:
+    if details is None:
+        return None
+    localized_signal_details = [
+        item.model_copy(
+            update={
+                "reason": (
+                    t(item.message_key, lang, **item.message_params)
+                    if item.message_key
+                    else item.reason_ru
+                ),
+                "evidence": _localize_evidence(item.evidence, lang),
+            }
+        )
+        for item in details.signal_details
+    ]
+    return details.model_copy(update={"signal_details": localized_signal_details})
+
+
+def localize_check_result(
+    result: CheckResult,
+    lang: Lang = DEFAULT_LANG,
+    *,
+    include_analyst_details: bool | None = None,
+) -> CheckResult:
+    """Return a copy of CheckResult with localized texts and role-appropriate analyst_details."""
     localized_headline = (
         t(result.headline_key, lang) if result.headline_key else result.headline_ru
     )
@@ -258,25 +384,37 @@ def localize_check_result(result: CheckResult, lang: Lang = DEFAULT_LANG) -> Che
                     t(sig.message_key, lang, **sig.message_params)
                     if sig.message_key
                     else sig.reason_ru
-                )
+                ),
+                "evidence": _localize_evidence(sig.evidence, lang),
             }
         )
         for sig in result.signals
     ]
-    localized_next_action = result.next_action.model_copy(
-        update={
-            "text": (
-                t(result.next_action.message_key, lang)
-                if result.next_action.message_key
-                else result.next_action.text_ru
-            )
-        }
+    if result.next_action.invalid_field_keys:
+        next_text = _render_invalid_fields_text(result.next_action.invalid_field_keys, lang)
+    elif result.next_action.message_key:
+        next_text = t(
+            result.next_action.message_key,
+            lang,
+            **result.next_action.message_params,
+        )
+    else:
+        next_text = result.next_action.text_ru
+    localized_next_action = result.next_action.model_copy(update={"text": next_text})
+    source_analyst = result.internal_analyst_details or result.analyst_details
+    localized_internal_analyst = _localize_analyst_details(source_analyst, lang)
+    show_analyst = (
+        result.analyst_details is not None
+        if include_analyst_details is None
+        else include_analyst_details
     )
     return result.model_copy(
         update={
             "headline": localized_headline,
             "signals": localized_signals,
             "next_action": localized_next_action,
+            "analyst_details": localized_internal_analyst if show_analyst else None,
+            "internal_analyst_details": localized_internal_analyst,
         }
     )
 
@@ -290,14 +428,23 @@ def aggregate_signals(signals: list[Signal]) -> tuple[Verdict, int]:
     amplifier_signals = [s for s in signals if s.severity == "amplifier"]
     scored_signals = primary_signals + amplifier_signals
     is_first_payment = any(s.rule_id == "first_payment" for s in signals)
+    has_urgent_first = is_first_payment and any(s.rule_id == "urgent_wording" for s in signals)
 
     if not primary_signals:
-        score = min(sum(s.points for s in amplifier_signals), AMPLIFIER_ONLY_CAP)
+        raw_amp = sum(s.points for s in amplifier_signals)
+        if has_urgent_first:
+            score = min(100, max(raw_amp, THRESHOLD_YELLOW))
+        else:
+            score = min(raw_amp, AMPLIFIER_ONLY_CAP)
     else:
         score = min(100, sum(s.points for s in scored_signals))
 
-    # A single signal <= 25 points alone must never raise colour.
-    if len(scored_signals) == 1 and scored_signals[0].points <= SINGLE_SIGNAL_NO_RAISE_MAX:
+    # A single signal <= 25 points alone must never raise colour (except first_payment + urgent).
+    if (
+        not has_urgent_first
+        and len(scored_signals) == 1
+        and scored_signals[0].points <= SINGLE_SIGNAL_NO_RAISE_MAX
+    ):
         score = min(score, THRESHOLD_YELLOW - 1)
 
     if score >= THRESHOLD_RED:
@@ -322,6 +469,9 @@ def check_payment(
     *,
     today: date = DEMO_TODAY,
     lang: Lang = DEFAULT_LANG,
+    include_analyst_details: bool = False,
+    include_recent_memory: bool = True,
+    record_in_memory: bool = False,
 ) -> CheckResult:
     """Run prechecks, risk rules, aggregation, and comparison for a payment request."""
     check_id = f"chk-{uuid.uuid4().hex[:12]}"
@@ -348,8 +498,14 @@ def check_payment(
         if bank_match_sig is not None:
             precheck_signals.append(bank_match_sig)
 
+    if not precheck_signals:
+        bcc_missing_sig = rule_bcc_account_not_found(effective_req, store, lang=lang)
+        if bcc_missing_sig is not None:
+            precheck_signals.append(bcc_missing_sig)
+
     if precheck_signals:
         headline_key = _select_headline_key("invalid")
+        empty_analyst = AnalystDetails()
         return CheckResult(
             check_id=check_id,
             verdict="invalid",
@@ -365,10 +521,46 @@ def check_payment(
                 has_amount_anomaly=False,
                 is_trusted=False,
             ),
-            next_action=_build_next_action("invalid", lang=lang),
+            next_action=_build_next_action("invalid", signals=precheck_signals, lang=lang),
             history=_build_history_summary(supplier_history),
             trusted=False,
             trusted_info=None,
+            analyst_details=empty_analyst if include_analyst_details else None,
+            internal_analyst_details=empty_analyst,
+        )
+
+    # 1b. Verified state/budget treasury payment (KKMFKZ2A / GCVPKZ2A) -> green fast-path
+    if store.is_budget_bank(effective_req.recipient_bik):
+        headline_key = "headline.green_budget"
+        next_key = "next_action.green_budget"
+        empty_analyst = AnalystDetails()
+        return CheckResult(
+            check_id=check_id,
+            verdict="green",
+            score=0,
+            headline_ru=t(headline_key, "ru"),
+            headline=t(headline_key, lang),
+            headline_key=headline_key,
+            signals=[],
+            comparison=_build_comparison(
+                effective_req,
+                store,
+                supplier_history,
+                has_amount_anomaly=False,
+                is_trusted=False,
+            ),
+            next_action=NextAction(
+                text_ru=t(next_key, "ru"),
+                text=t(next_key, lang),
+                message_key=next_key,
+                primary="sign",
+                secondary=[],
+            ),
+            history=_build_history_summary(supplier_history),
+            trusted=False,
+            trusted_info=None,
+            analyst_details=empty_analyst if include_analyst_details else None,
+            internal_analyst_details=empty_analyst,
         )
 
     # 2. Identify comparison / anomaly / summary reference history (direct BIN or lookalike)
@@ -389,13 +581,14 @@ def check_payment(
         comparison_history = []
         history_summary = _build_history_summary([])
 
-    # 3. Check director trust and evaluate all risk rules
+    # 3. Check director trust, BCC bank verification, and evaluate all risk rules
     trusted_info = store.get_trusted_info(
         effective_payer_id,
         effective_req.recipient_bin,
         effective_req.recipient_iik,
     )
     is_trusted = trusted_info is not None
+    is_bank_verified = is_bcc_bank_verified_new_account(effective_req, store)
 
     candidates: list[Signal | None] = [
         rule_bcc_account_other_owner(effective_req, store, lang=lang),
@@ -405,13 +598,37 @@ def check_payment(
         rule_iik_changed(effective_req, store, lang=lang),
         rule_bank_changed(effective_req, store, lang=lang),
         rule_entity_type_mismatch(effective_req, lang=lang),
+        rule_kbe_mismatch(effective_req, lang=lang),
+        rule_knp_unusual(effective_req, store, lang=lang),
         rule_mixed_script_name(effective_req, lang=lang),
         rule_new_bcc_account(effective_req, store, today=today, lang=lang),
         rule_bin_young(effective_req, today=today, lang=lang),
         rule_amount_anomaly(effective_req, store, reference_bin=reference_bin, lang=lang),
+        rule_duplicate_invoice(
+            effective_req,
+            store,
+            today=today,
+            lang=lang,
+            include_recent_memory=include_recent_memory,
+        ),
+        rule_new_recipient_accumulated(
+            effective_req,
+            store,
+            today=today,
+            lang=lang,
+            include_recent_memory=include_recent_memory,
+        ),
+        rule_structuring_72h(
+            effective_req,
+            store,
+            today=today,
+            lang=lang,
+            include_recent_memory=include_recent_memory,
+        ),
         rule_first_payment(effective_req, store, lang=lang),
         rule_urgent_wording(effective_req, lang=lang),
         rule_trusted_account(effective_req, store, lang=lang),
+        rule_bcc_owner_verified(effective_req, store, lang=lang),
     ]
     all_signals = [s for s in candidates if s is not None]
 
@@ -419,7 +636,7 @@ def check_payment(
     verdict, score = aggregate_signals(all_signals)
     ordered_signals = _sort_signals(all_signals)
 
-    has_amount_anomaly = any(s.rule_id == "amount_anomaly" for s in all_signals)
+    has_amount_anomaly = any(s.rule_id in AMOUNT_SIGNAL_IDS for s in all_signals)
     has_amplifiers = any(s.severity == "amplifier" for s in all_signals)
 
     client_p90 = compute_client_p90(store, effective_payer_id) if verdict == "grey" else None
@@ -430,11 +647,30 @@ def check_payment(
     headline_key = _select_headline_key(
         verdict,
         is_trusted=is_trusted,
+        is_bank_verified=is_bank_verified,
         has_amplifiers=has_amplifiers,
     )
+    analyst_snapshot = build_analyst_details(
+        effective_req,
+        store,
+        ordered_signals,
+        today=today,
+        lang=lang,
+    )
+
+    if record_in_memory:
+        store.record_check(
+            effective_req,
+            invoice_no=extract_invoice_number(effective_req.purpose),
+            today=today,
+            request_sha256=compute_request_sha256(
+                effective_req, resolved_payer_id=effective_payer_id
+            ),
+        )
 
     return CheckResult(
         check_id=check_id,
+        ruleset_version=RULESET_VERSION,
         verdict=verdict,
         score=score,
         headline_ru=t(headline_key, "ru"),
@@ -450,6 +686,8 @@ def check_payment(
         ),
         next_action=_build_next_action(
             verdict,
+            signals=ordered_signals,
+            is_bank_verified=is_bank_verified,
             has_amplifiers=has_amplifiers,
             grey_above_client_p90=grey_above_client_p90,
             lang=lang,
@@ -457,4 +695,6 @@ def check_payment(
         history=history_summary,
         trusted=is_trusted,
         trusted_info=trusted_info,
+        analyst_details=analyst_snapshot if include_analyst_details else None,
+        internal_analyst_details=analyst_snapshot,
     )

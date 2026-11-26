@@ -81,18 +81,28 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "Шот нөміріндегі банк коды көрсетілген БСК (БИК) кодымен сәйкес келмейді.",
         "en": "The bank code in the account number does not match the specified BIK.",
     },
+    "rule.bcc_account_not_found": {
+        "ru": "Счёт в BCC не найден.",
+        "kk": "BCC-де мұндай шот табылмады.",
+        "en": "This BCC account was not found.",
+    },
     # --- Risk scoring rule messages ---
     "rule.bcc_account_other_owner": {
+        "ru": "Счёт в BCC оформлен не на указанного получателя.",
+        "kk": "BCC-дегі шот көрсетілген алушыға рәсімделмеген.",
+        "en": "This BCC account is not registered to the specified recipient.",
+    },
+    "analyst.bcc_account_other_owner": {
         "ru": (
-            "Этот счёт в БЦК оформлен на другую компанию ({owner_name}), "
+            "Этот счёт в BCC оформлен на другую компанию ({owner_name}, БИН {owner_bin}), "
             "а не на указанного получателя."
         ),
         "kk": (
-            "БЦК-дағы бұл шот көрсетілген алушыға емес, "
-            "басқа компанияға ({owner_name}) рәсімделген."
+            "BCC-дегі бұл шот көрсетілген алушыға емес, "
+            "басқа компанияға ({owner_name}, БСН {owner_bin}) рәсімделген."
         ),
         "en": (
-            "This BCC account is registered to another company ({owner_name}), "
+            "This BCC account is registered to another company ({owner_name}, BIN {owner_bin}), "
             "not the stated recipient."
         ),
     },
@@ -111,9 +121,14 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         ),
     },
     "rule.mixed_script_name": {
-        "ru": "В названии получателя внутри кириллического слова подставлены буквы другого алфавита.",
-        "kk": "Алушының атауындағы кириллица сөзінің ішінде басқа әліпби әріптері қолданылған.",  # review-kk
-        "en": "The recipient name mixes letters from another alphabet inside a Cyrillic word.",
+        "ru": "В названии получателя есть символы другого алфавита или цифры вместо букв.",
+        "kk": "Алушының атауында басқа әліпби таңбалары немесе әріп орнына цифрлар бар.",
+        "en": "The recipient name contains characters from another alphabet or digits used in place of letters.",
+    },
+    "analyst.mixed_script_name": {
+        "ru": "Обнаружены подозрительные символы в названии на позициях: {positions}.",
+        "kk": "Атаудағы күдікті таңбалар келесі орындарда табылды: {positions}.",
+        "en": "Suspicious characters detected in recipient name at positions: {positions}.",
     },
     "rule.bin_name_mismatch_history": {
         "ru": (
@@ -162,10 +177,30 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "Атауда ЖК көрсетілген, бірақ ЖСН орнына заңды тұлғаның БСН-і енгізілген.",
         "en": "The name indicates an individual entrepreneur, but a corporate BIN was entered instead of an IIN.",
     },
+    "rule.kbe_mismatch_legal_iin": {
+        "ru": "Указан КБе 17 (юрлицо), но вместо БИН введён ИИН физлица.",
+        "kk": "17 КБе (заңды тұлға) көрсетілген, бірақ БСН орнына жеке тұлғаның ЖСН-і енгізілген.",
+        "en": "KBe 17 (legal entity) was specified, but an individual's IIN was entered instead of a BIN.",
+    },
+    "rule.kbe_mismatch_individual_bin": {
+        "ru": "Указан КБе 19 (физлицо/ИП), но вместо ИИН введён БИН юрлица.",
+        "kk": "19 КБе (жеке тұлға/ЖК) көрсетілген, бірақ ЖСН орнына заңды тұлғаның БСН-і енгізілген.",
+        "en": "KBe 19 (individual/IE) was specified, but a corporate BIN was entered instead of an IIN.",
+    },
+    "rule.knp_unusual": {
+        "ru": "Указан непривычный КНП ({actual_knp}) для этого поставщика — обычно используется {expected_knp}.",
+        "kk": "Бұл жеткізуші үшін әдеттен тыс КНП ({actual_knp}) көрсетілген — әдетте {expected_knp} қолданылады.",
+        "en": "Unusual KNP ({actual_knp}) for this supplier — typically {expected_knp}.",
+    },
     "rule.new_bcc_account": {
-        "ru": "Счёт в БЦК открыт совсем недавно — {age_days} дн. назад.",
-        "kk": "БЦК-дағы шот жақында ғана ашылған — {age_days} күн бұрын.",
-        "en": "This BCC account was opened very recently — {age_days} days ago.",
+        "ru": "Счёт получателя открыт недавно.",
+        "kk": "Алушының шоты жақында ашылған.",
+        "en": "The recipient's account was opened recently.",
+    },
+    "analyst.new_bcc_account": {
+        "ru": "Счёт в BCC открыт недавно — {age_days} дн. назад ({opened_at}).",
+        "kk": "BCC-дегі шот жақында ашылған — {age_days} күн бұрын ({opened_at}).",
+        "en": "This BCC account was opened recently — {age_days} days ago ({opened_at}).",
     },
     "rule.amount_anomaly_first_p90": {
         "ru": (
@@ -224,6 +259,44 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "Жаңа шотты директор {date_label} күні растады.",
         "en": "The new account was confirmed by the director on {date_label}.",
     },
+    "rule.bcc_owner_verified": {
+        "ru": "Счёт подтверждён банком: принадлежит этому поставщику.",
+        "kk": "Шот банкпен расталған: осы жеткізушіге тиесілі.",
+        "en": "Account verified by the bank: belongs to this supplier.",
+    },
+    "rule.duplicate_invoice": {
+        "ru": "Возможна повторная оплата счёта № {invoice_no} (уже встречался {prev_date}).",
+        "kk": "№ {invoice_no} шотты қайта төлеу қаупі бар ({prev_date} күні бұрын кездескен).",
+        "en": "Possible duplicate payment for invoice #{invoice_no} (previously seen on {prev_date}).",
+    },
+    "rule.new_recipient_accumulated": {
+        "ru": (
+            "Накопленная сумма новому получателю за 7 дней составила {total_kzt} "
+            "(операций: {count})."
+        ),
+        "kk": (
+            "Жаңа алушыға 7 күн ішіндегі жинақталған сома {total_kzt} болды "
+            "(операция саны: {count})."
+        ),
+        "en": (
+            "Accumulated amount to this new recipient over 7 days reached {total_kzt} "
+            "({count} checks/payments)."
+        ),
+    },
+    "rule.structuring_72h": {
+        "ru": (
+            "За 72 часа накопилось {count} платежа этому получателю на сумму {total_kzt} "
+            "({ratio}× от обычной суммы) — возможно дробление платежа."
+        ),
+        "kk": (
+            "72 сағат ішінде осы алушыға {total_kzt} сомасына {count} төлем жиналды "
+            "(әдеттегіден {ratio} есе) — төлемді бөлшектеу белгісі болуы мүмкін."
+        ),
+        "en": (
+            "{count} payments to this recipient within 72 hours total {total_kzt} "
+            "({ratio}x typical amount) — possible payment splitting."
+        ),
+    },
     # --- Verdict headlines ---
     "headline.green": {
         "ru": "Всё как раньше",
@@ -239,6 +312,16 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Счёт подтверждён директором",
         "kk": "Шот директормен расталған",
         "en": "Account confirmed by director",
+    },
+    "headline.green_budget": {
+        "ru": "Бюджетный платёж: реквизиты казначейства верны",
+        "kk": "Бюджеттік төлем: қазынашылық деректемелері дұрыс",
+        "en": "Budget payment: treasury requisites are valid",
+    },
+    "headline.green_bank_verified": {
+        "ru": "Счёт подтверждён банком: принадлежит этому поставщику",
+        "kk": "Шот банкпен расталған: осы жеткізушіге тиесілі",
+        "en": "Account verified by the bank: belongs to this supplier",
     },
     "headline.yellow": {
         "ru": "Есть изменения",
@@ -270,6 +353,26 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Реквизиты поставщика знакомые, но проверьте замечания ниже перед подписанием.",
         "kk": "Жеткізушінің деректемелері таныс, бірақ қол қоймас бұрын төмендегі ескертулерді тексеріңіз.",
         "en": "Supplier requisites are familiar, but review the notes below before signing.",
+    },
+    "next_action.green_budget": {
+        "ru": "Реквизиты казначейства проверены — бюджетный платёж можно подписывать.",
+        "kk": "Қазынашылық деректемелері тексерілді — бюджеттік төлемге қол қоюға болады.",
+        "en": "Treasury requisites are verified — this budget payment is safe to sign.",
+    },
+    "next_action.green_bank_verified": {
+        "ru": "Новый счёт в BCC подтверждён банком как принадлежащий этому поставщику — можно подписывать.",
+        "kk": "BCC-дегі жаңа шот осы жеткізушіге тиесілі екені банкпен расталды — қол қоюға болады.",
+        "en": "This new BCC account is verified by the bank as belonging to this supplier — safe to sign.",
+    },
+    "next_action.amount_only": {
+        "ru": "Сумма необычно большая для этого поставщика: проверьте счёт и договор.",
+        "kk": "Бұл жеткізуші үшін сома әдеттен тыс үлкен: шот пен шартты тексеріңіз.",
+        "en": "The amount is unusually large for this supplier: check the invoice and contract.",
+    },
+    "next_action.duplicate_invoice": {
+        "ru": "Возможна повторная оплата счёта: сверьте номер счёта с уже проведёнными платежами.",
+        "kk": "Шотты қайта төлеу қаупі бар: шот нөмірін бұрынғы төлемдермен салыстырыңыз.",
+        "en": "Possible duplicate invoice payment: check the invoice number against prior payments.",
     },
     "next_action.yellow": {
         "ru": (
@@ -323,6 +426,14 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "Деректемелерді түзетіңіз: мұндай шот жоқ.",
         "en": "Fix the requisites: this account does not exist.",
     },
+    "next_action.invalid_fields": {
+        "ru": "Исправьте неверное поле ({fields}) и повторите проверку.",
+        "kk": "Қате толтырылған өрісті түзетіңіз ({fields}) және тексеруді қайталаңыз.",
+        "en": "Fix the invalid field ({fields}) and run the check again.",
+    },
+    "invalid_field.bin": {"ru": "БИН/ИИН", "kk": "БСН/ЖСН", "en": "BIN/IIN"},
+    "invalid_field.iik": {"ru": "ИИК", "kk": "ЖСК (ИИК)", "en": "IIK"},
+    "invalid_field.bik": {"ru": "БИК", "kk": "БСК (БИК)", "en": "BIK"},
     # --- HTTP & business error messages ---
     "error.internal": {
         "ru": "Внутренняя ошибка сервиса. Попробуйте повторить запрос позже.",
@@ -462,6 +573,341 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "қате мән.",
         "en": "invalid value.",
     },
+    # --- Localized Evidence labels & templates ---
+    "ev.field.bin": {"ru": "БИН/ИИН", "kk": "БСН/ЖСН", "en": "BIN/IIN"},
+    "ev.field.iik": {"ru": "ИИК", "kk": "ЖСК (ИИК)", "en": "IIK"},
+    "ev.field.bik": {"ru": "БИК", "kk": "БСК (БИК)", "en": "BIK"},
+    "ev.field.bank": {"ru": "Банк", "kk": "Банк", "en": "Bank"},
+    "ev.field.name": {"ru": "Название", "kk": "Атауы", "en": "Name"},
+    "ev.field.amount": {"ru": "Сумма", "kk": "Сома", "en": "Amount"},
+    "ev.field.purpose": {"ru": "Назначение", "kk": "Төлем мақсаты", "en": "Purpose"},
+    "ev.bin_expected": {
+        "ru": "12 цифр с верной контрольной суммой",
+        "kk": "бақылау сомасы дұрыс 12 цифр",
+        "en": "12 digits with valid checksum",
+    },
+    "ev.iik_expected": {
+        "ru": "20 символов формата KZ...",
+        "kk": "KZ... пішіміндегі 20 таңба",
+        "en": "20 characters in KZ... format",
+    },
+    "ev.bik_expected": {
+        "ru": "8-символьный БИК банка РК",
+        "kk": "ҚР банкінің 8 таңбалы БСК коды",
+        "en": "8-character Kazakhstan bank BIK",
+    },
+    "ev.bank_code_bik": {
+        "ru": "код {code} ({bik})",
+        "kk": "код {code} ({bik})",
+        "en": "code {code} ({bik})",
+    },
+    "ev.bank_code_only": {
+        "ru": "код {code}",
+        "kk": "код {code}",
+        "en": "code {code}",
+    },
+    "ev.bcc_active_expected": {
+        "ru": "действующий счёт в BCC",
+        "kk": "BCC-дегі қолданыстағы шот",
+        "en": "active BCC account",
+    },
+    "ev.bcc_owner_expected": {
+        "ru": "совпадение владельца счёта с указанным получателем",
+        "kk": "шот иесінің көрсетілген алушымен сәйкестігі",
+        "en": "account owner matches specified recipient",
+    },
+    "ev.bcc_owner_mismatch": {
+        "ru": "владелец счёта не совпадает с указанным получателем",
+        "kk": "шот иесі көрсетілген алушымен сәйкес келмейді",
+        "en": "account owner does not match specified recipient",
+    },
+    "ev.bcc_owner_verified": {
+        "ru": "владелец счёта подтверждён банком",
+        "kk": "шот иесі банкпен расталған",
+        "en": "account owner verified by bank",
+    },
+    "ev.name_bin": {
+        "ru": "{name} (БИН {bin})",
+        "kk": "{name} (БСН {bin})",
+        "en": "{name} (BIN {bin})",
+    },
+    "ev.single_script_expected": {
+        "ru": "один алфавит в пределах слова",
+        "kk": "бір сөз ішінде бір әліпби",
+        "en": "single alphabet within a word",
+    },
+    "ev.mixed_script_actual": {
+        "ru": "в названии есть символы другого алфавита или цифры вместо букв",
+        "kk": "атауда басқа әліпби таңбалары немесе әріп орнына цифрлар бар",
+        "en": "characters from another alphabet or digits used in place of letters",
+    },
+    "ev.account_for_bin": {
+        "ru": "счёт для БИН {bin}",
+        "kk": "{bin} БСН-ге арналған шот",
+        "en": "account for BIN {bin}",
+    },
+    "ev.used_for_other": {
+        "ru": "использовался для {name} (БИН {bin})",
+        "kk": "{name} (БСН {bin}) үшін қолданылған",
+        "en": "used for {name} (BIN {bin})",
+    },
+    "ev.trusted_for_other": {
+        "ru": "доверен для {name} (БИН {bin})",
+        "kk": "{name} (БСН {bin}) үшін сенім білдірілген",
+        "en": "trusted for {name} (BIN {bin})",
+    },
+    "ev.legal_bin": {
+        "ru": "БИН юрлица",
+        "kk": "заңды тұлғаның БСН-і",
+        "en": "legal entity BIN",
+    },
+    "ev.individual_iin": {
+        "ru": "ИИН физлица",
+        "kk": "жеке тұлғаның ЖСН-і",
+        "en": "individual IIN",
+    },
+    "ev.kbe_17_expected": {
+        "ru": "БИН юрлица (КБе 17)",
+        "kk": "заңды тұлғаның БСН-і (КБе 17)",
+        "en": "legal entity BIN (KBe 17)",
+    },
+    "ev.kbe_19_expected": {
+        "ru": "ИИН физлица (КБе 19)",
+        "kk": "жеке тұлғаның ЖСН-і (КБе 19)",
+        "en": "individual IIN (KBe 19)",
+    },
+    "ev.knp_label": {
+        "ru": "КНП {knp}",
+        "kk": "КНП {knp}",
+        "en": "KNP {knp}",
+    },
+    "ev.new_bcc_expected": {
+        "ru": "действующий счёт получателя",
+        "kk": "алушының қолданыстағы шоты",
+        "en": "established recipient account",
+    },
+    "ev.new_bcc_actual": {
+        "ru": "счёт открыт недавно",
+        "kk": "шот жақында ашылған",
+        "en": "account opened recently",
+    },
+    "ev.amount_p90_expected": {
+        "ru": "не выше {amount} (p90 клиента)",
+        "kk": "{amount} аспауы (клиенттің p90 мәні)",
+        "en": "at most {amount} (client p90)",
+    },
+    "ev.amount_around": {
+        "ru": "около {amount}",
+        "kk": "шамамен {amount}",
+        "en": "around {amount}",
+    },
+    "ev.first_payment_expected": {
+        "ru": "предыдущие платежи в истории",
+        "kk": "тарихтағы алдыңғы төлемдер",
+        "en": "prior payments in history",
+    },
+    "ev.first_payment_actual": {
+        "ru": "0 платежей",
+        "kk": "0 төлем",
+        "en": "0 payments",
+    },
+    "ev.bin_young_expected": {
+        "ru": "регистрация компании от {months} месяцев",
+        "kk": "компанияның тіркелгеніне кемінде {months} ай",
+        "en": "company registered at least {months} months ago",
+    },
+    "ev.bin_young_actual": {
+        "ru": "зарегистрирована {reg_date} ({months} мес. назад)",
+        "kk": "{reg_date} тіркелген ({months} ай бұрын)",
+        "en": "registered {reg_date} ({months} mo. ago)",
+    },
+    "ev.urgent_expected": {
+        "ru": "обычное назначение платежа",
+        "kk": "қалыпты төлем мақсаты",
+        "en": "standard payment purpose",
+    },
+    "ev.trusted_default": {
+        "ru": "Подтверждено директором",
+        "kk": "Директормен расталған",
+        "en": "Confirmed by director",
+    },
+    "ev.duplicate_invoice_expected": {
+        "ru": "уникальный номер счёта",
+        "kk": "бірегей шот нөмірі",
+        "en": "unique invoice number",
+    },
+    "ev.duplicate_invoice_actual": {
+        "ru": "счёт № {invoice_no}",
+        "kk": "№ {invoice_no} шот",
+        "en": "invoice #{invoice_no}",
+    },
+    "ev.accum_expected_fallback": {
+        "ru": "разовый платёж новому получателю",
+        "kk": "жаңа алушыға бір реттік төлем",
+        "en": "single payment to new recipient",
+    },
+    "ev.accum_actual": {
+        "ru": "{total} за {days} дн. ({count} оп.)",
+        "kk": "{days} күнде {total} ({count} оп.)",
+        "en": "{total} over {days}d ({count} ops)",
+    },
+    "ev.structuring_actual": {
+        "ru": "{total} за {hours} ч ({count} оп.)",
+        "kk": "{hours} сағатта {total} ({count} оп.)",
+        "en": "{total} over {hours}h ({count} ops)",
+    },
+    "ev.analyst_bcc_expected": {
+        "ru": "счёт на БИН {bin}",
+        "kk": "{bin} БСН-ге рәсімделген шот",
+        "en": "account for BIN {bin}",
+    },
+    "ev.analyst_bcc_actual": {
+        "ru": "владелец {owner_name} (БИН {owner_bin})",
+        "kk": "иесі {owner_name} (БСН {owner_bin})",
+        "en": "owner {owner_name} (BIN {owner_bin})",
+    },
+    "ev.analyst_new_bcc_expected": {
+        "ru": "счёт старше {days} дней",
+        "kk": "шот {days} күннен бұрын ашылған",
+        "en": "account older than {days} days",
+    },
+    "ev.analyst_new_bcc_actual": {
+        "ru": "открыт {age_days} дн. назад ({opened_at})",
+        "kk": "{age_days} күн бұрын ашылған ({opened_at})",
+        "en": "opened {age_days}d ago ({opened_at})",
+    },
+    # --- Evaluation disclaimers ---
+    "metrics.disclaimer": {
+        "ru": (
+            "Честное предупреждение: оценочный набор синтетический и сгенерирован той же командой, "
+            "которая разрабатывала правила проверки, на основе синтетической истории одного клиента. "
+            "Метрики показывают поведение движка на заданных сценариях, не отражают реальную "
+            "банковскую статистику мошенничества и не заменяют проверку на исторических боевых данных. "
+            "Известные слепые зоны (чистый дроп в стороннем банке без истории, умеренное завышение "
+            "суммы без смены реквизитов, ИИН-дроп без ОПФ/КБе и первая неподтверждённая смена счёта) "
+            "намеренно сохранены в наборе без подгонки детектора."
+        ),
+        "kk": (
+            "Ашық ескерту: бағалау жинағы синтетикалық және тексеру ережелерін жазған сол топпен "
+            "бір клиенттің синтетикалық төлем тарихы негізінде жасалған. Көрсеткіштер қозғалтқыштың "
+            "үлгіленген сценарийлердегі жұмысын бейнелейді, нақты банктік алаяқтық статистикасын "
+            "көрсетпейді және нақты тарихи деректердегі тексеруді алмастырмайды. Белгілі соқыр аймақтар "
+            "(тарихсыз сыртқы банктегі таза дроп, деректемесіз соманы орташа арттыру, ОПФ/КБе жоқ ЖСН-дроп "
+            "және алғашқы расталмаған шот ауыстыру) жинақта әдейі сақталған."
+        ),
+        "en": (
+            "Synthetic evaluation notice: this dataset is synthetic and generated by the same team "
+            "that wrote the verification rules, based on one client's synthetic payment history. "
+            "Metrics illustrate engine behavior on modeled scenarios, do not represent real banking "
+            "fraud incidence, and do not replace validation on production payment logs. Known blind "
+            "spots (typo-free external drops without history, moderate amount inflation without "
+            "requisite changes, IIN droppers without legal form/KBe, and first unconfirmed account "
+            "switches) are intentionally preserved without tuning the detector to the set."
+        ),
+    },
+}
+
+KIND_LABELS: dict[str, dict[Lang, str]] = {
+    "legit_same": {
+        "ru": "Повторный платёж постоянному поставщику",
+        "kk": "Тұрақты жеткізушіге қайталама төлем",
+        "en": "Repeat payment to known supplier",
+    },
+    "legit_name_formatting_variant": {
+        "ru": "Вариант написания ОПФ/кавычек",
+        "kk": "ОПФ және тырнақша нұсқасы",
+        "en": "Legal-form / formatting name variant",
+    },
+    "legit_seasonal_amount": {
+        "ru": "Сезонный или крупный легитимный платёж",
+        "kk": "Маусымдық немесе ірі заңды төлем",
+        "en": "Seasonal or bulk legitimate payment",
+    },
+    "legit_account_change_confirmed": {
+        "ru": "Подтверждённая смена счёта",
+        "kk": "Расталған шот ауыстыру",
+        "en": "Confirmed supplier account switch",
+    },
+    "legit_account_change_unconfirmed": {
+        "ru": "Первая неподтверждённая смена счёта",
+        "kk": "Алғашқы расталмаған шот ауыстыру",
+        "en": "First unconfirmed account switch",
+    },
+    "legit_new_supplier": {
+        "ru": "Новый легитимный поставщик",
+        "kk": "Жаңа заңды жеткізуші",
+        "en": "New legitimate supplier",
+    },
+    "legit_rebrand_same_account": {
+        "ru": "Смена названия при том же счёте",
+        "kk": "Бұрынғы шотпен атауды ауыстыру",
+        "en": "Supplier rebrand on same account",
+    },
+    "legit_urgent_known_supplier": {
+        "ru": "Срочный платёж постоянному поставщику",
+        "kk": "Тұрақты жеткізушіге шұғыл төлем",
+        "en": "Urgent payment to known supplier",
+    },
+    "legit_budget_payment": {
+        "ru": "Бюджетный платёж (казначейство / ГК)",
+        "kk": "Бюджеттік төлем (қазынашылық / МК)",
+        "en": "Budget payment (treasury / gov)",
+    },
+    "attack_iik_swap_same_bin": {
+        "ru": "Подмена ИИК при том же БИН",
+        "kk": "Бірдей БСН кезінде ЖСК-ны ауыстыру",
+        "en": "IIK swap under same supplier BIN",
+    },
+    "attack_lookalike_name": {
+        "ru": "Двойник названия поставщика (другой БИН)",
+        "kk": "Жеткізуші атауының көшірмесі (басқа БСН)",
+        "en": "Lookalike supplier name (different BIN)",
+    },
+    "attack_unicode_and_digit_evasion": {
+        "ru": "Обход через Unicode, confusables и цифры",
+        "kk": "Unicode, confusables және цифрлармен айналып өту",
+        "en": "Unicode, confusables, and digit-for-letter evasion",
+    },
+    "attack_bcc_other_owner": {
+        "ru": "Счёт BCC оформлен на другую компанию",
+        "kk": "BCC шоты басқа компанияға рәсімделген",
+        "en": "BCC account owned by another company",
+    },
+    "attack_iin_dropper": {
+        "ru": "Перевод на ИИН физлица (дроппер / КБе 17)",
+        "kk": "Жеке тұлғаның ЖСН-іне аударым (дроппер / КБе 17)",
+        "en": "Individual IIN dropper (OPF / KBe 17 mismatch)",
+    },
+    "attack_amount_inflation": {
+        "ru": "Завышение суммы платежа",
+        "kk": "Төлем сомасын арттыру",
+        "en": "Payment amount inflation",
+    },
+    "attack_iik_reused_other_supplier": {
+        "ru": "Чужой ИИК из истории другого поставщика",
+        "kk": "Басқа жеткізушінің тарихындағы ЖСК",
+        "en": "IIK reused from another supplier",
+    },
+    "attack_duplicate_invoice": {
+        "ru": "Повторная оплата по дубликату счёта",
+        "kk": "Қайталанатын шот нөмірімен төлем",
+        "en": "Duplicate invoice payment",
+    },
+    "attack_structuring_72h": {
+        "ru": "Дробление платежа (структурирование за 72 ч)",
+        "kk": "Төлемді бөлшектеу (72 сағат ішінде)",
+        "en": "Payment structuring / splitting within 72h",
+    },
+    "attack_typo_free_valid_drop": {
+        "ru": "Чистая подставная компания без истории",
+        "kk": "Тарихы жоқ таза жалған компания",
+        "en": "Typo-free valid drop company without history",
+    },
+    "attack_combined_bec": {
+        "ru": "Комбинированная BEC-атака",
+        "kk": "Кешенді BEC-шабуыл",
+        "en": "Combined multi-signal BEC attack",
+    },
 }
 
 FIELD_LABELS: dict[str, dict[Lang, str]] = {
@@ -472,6 +918,8 @@ FIELD_LABELS: dict[str, dict[Lang, str]] = {
     "recipient_bik": {"ru": "БИК банка", "kk": "Банктің БСК", "en": "Bank BIK"},
     "amount_kzt": {"ru": "Сумма платежа", "kk": "Төлем сомасы", "en": "Payment amount"},
     "purpose": {"ru": "Назначение платежа", "kk": "Төлем мақсаты", "en": "Payment purpose"},
+    "kbe": {"ru": "КБе", "kk": "КБе", "en": "KBe"},
+    "knp": {"ru": "КНП", "kk": "КНП", "en": "KNP"},
     "accountant_note": {
         "ru": "Комментарий бухгалтера",
         "kk": "Бухгалтердің түсініктемесі",
@@ -486,7 +934,16 @@ FIELD_LABELS: dict[str, dict[Lang, str]] = {
     "trust_account": {"ru": "Доверие счёту", "kk": "Шотқа сенім", "en": "Trust account"},
     "check_request": {"ru": "Данные платежа", "kk": "Төлем деректері", "en": "Payment details"},
     "lang": {"ru": "Язык ответа", "kk": "Жауап тілі", "en": "Response language"},
+    "limit": {"ru": "Лимит записей", "kk": "Жазбалар шегі", "en": "Record limit"},
 }
+
+
+def kind_label(kind: str, lang: Lang = DEFAULT_LANG) -> str:
+    """Return a human-readable localized label for an evaluation scenario kind."""
+    entry = KIND_LABELS.get(kind)
+    if entry is None:
+        return kind
+    return entry[lang]
 
 
 def resolve_lang(raw: str | None) -> Lang:

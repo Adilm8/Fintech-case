@@ -7,6 +7,9 @@ from datetime import date
 # Fixed reference date for synthetic data generation and recency checks.
 DEMO_TODAY: date = date(2026, 4, 20)
 
+# Active risk ruleset identifier returned in CheckResult and audit log records.
+RULESET_VERSION: str = "2026.11.26-r1"
+
 # Bank CenterCredit identifiers (matching data/banks.json: BCC code 856, BIK KCJBKZKX).
 BCC_BANK_CODE: str = "856"
 BCC_BIK: str = "KCJBKZKX"
@@ -22,25 +25,56 @@ AMPLIFIER_ONLY_CAP: int = 29
 SINGLE_SIGNAL_NO_RAISE_MAX: int = 25
 
 # Primary and standalone signal weights.
+WEIGHT_AMOUNT_ANOMALY_EXTREME: int = 65
 WEIGHT_LOOKALIKE_SUPPLIER: int = 60
 WEIGHT_BIN_NAME_MISMATCH: int = 50
 WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY: int = 50
 WEIGHT_ENTITY_TYPE_MISMATCH_LEGAL_IIN: int = 40
+WEIGHT_KBE_MISMATCH_LEGAL_IIN: int = 40
 WEIGHT_IIK_CHANGED: int = 35
+WEIGHT_DUPLICATE_INVOICE: int = 35
 WEIGHT_AMOUNT_ANOMALY_PRIMARY: int = 35
+WEIGHT_STRUCTURING_PRIMARY: int = 35
 WEIGHT_MIXED_SCRIPT_NAME: int = 30
+WEIGHT_BANK_CHANGED_HIGH_AMOUNT: int = 30
 WEIGHT_ENTITY_TYPE_MISMATCH: int = 25
+WEIGHT_KBE_MISMATCH_INDIVIDUAL_BIN: int = 25
 WEIGHT_NEW_BCC_ACCOUNT: int = 25
 
 # Amplifier weights.
+WEIGHT_STRUCTURING_AMPLIFIER: int = 20
+WEIGHT_NEW_RECIPIENT_ACCUM_MIN: int = 15
+WEIGHT_NEW_RECIPIENT_ACCUM_MAX: int = 25
 WEIGHT_BANK_CHANGED_AMPLIFIER: int = 15
 WEIGHT_BIN_YOUNG: int = 15
+WEIGHT_KNP_UNUSUAL: int = 15
 WEIGHT_URGENT_WORDING: int = 10
 WEIGHT_AMOUNT_ANOMALY_MIN: int = 10
 WEIGHT_AMOUNT_ANOMALY_MAX: int = 25
 
+# Memory & structuring windows and thresholds.
+DUPLICATE_INVOICE_WINDOW_DAYS: int = 90
+NEW_RECIPIENT_ACCUM_WINDOW_DAYS: int = 7
+STRUCTURING_WINDOW_HOURS: int = 72
+STRUCTURING_SPLIT_MIN_COUNT: int = 3
+STRUCTURING_SPLIT_MIN_RATIO: float = 1.15
+STRUCTURING_PAIR_MIN_RATIO: float = 1.5
+STRUCTURING_PRIMARY_RATIO: float = 3.0
+
+# Amount anomaly multipliers (p90-based escalations).
+AMOUNT_SUPPLIER_EXTREME_P90_MULT: float = 10.0
+AMOUNT_FIRST_PAYMENT_YELLOW_P90_MULT: float = 3.0
+AMOUNT_FIRST_PAYMENT_RED_P90_MULT: float = 10.0
+
+# KBe beneficiary codes (17 = corporate legal entity, 19 = individual / IE).
+KBE_LEGAL_ENTITY_CODES: frozenset[str] = frozenset({"17"})
+KBE_INDIVIDUAL_CODES: frozenset[str] = frozenset({"19"})
+
 # Rule parameters.
 LOOKALIKE_SIMILARITY_THRESHOLD: float = 85.0
+LOOKALIKE_DISTINCTIVE_THRESHOLD: float = 70.0
+LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN: int = 4
+LOOKALIKE_PREFIX_MIN_LEN: int = 4
 LOOKALIKE_TOKEN_SET_THRESHOLD: float = 95.0
 LOOKALIKE_TOKEN_SET_MIN_LEN: int = 8
 NEW_BCC_ACCOUNT_MAX_DAYS: int = 30
@@ -48,13 +82,210 @@ BIN_YOUNG_MAX_MONTHS: int = 12
 AMOUNT_ANOMALY_MIN_HISTORY: int = 5
 CLIENT_P90_MIN_HISTORY: int = 5
 
+# Antifraud analyst role header value (X-Role: analyst).
+ANALYST_ROLE_VALUE: str = "analyst"
+
+# Digits that visually spoof Cyrillic letters when embedded inside Cyrillic words.
+CONFUSABLE_DIGITS: frozenset[str] = frozenset({"0", "3", "4", "6", "1"})
+
+# Unicode categories and invisible filler codepoints stripped before name comparison.
+IGNORABLE_UNICODE_CATEGORIES: frozenset[str] = frozenset({"Mn", "Me", "Cf"})
+INVISIBLE_CODEPOINTS: frozenset[str] = frozenset(
+    {
+        "\u00ad",  # SOFT HYPHEN
+        "\u034f",  # COMBINING GRAPHEME JOINER
+        "\u115f",  # HANGUL CHOSEONG FILLER
+        "\u1160",  # HANGUL JUNGSEONG FILLER
+        "\u200b",  # ZERO WIDTH SPACE
+        "\u200c",  # ZERO WIDTH NON-JOINER
+        "\u200d",  # ZERO WIDTH JOINER
+        "\u2060",  # WORD JOINER
+        "\u2800",  # BRAILLE PATTERN BLANK
+        "\u3164",  # HANGUL FILLER
+        "\ufeff",  # ZERO WIDTH NO-BREAK SPACE / BOM
+        "\uffa0",  # HALFWIDTH HANGUL FILLER
+        *(chr(cp) for cp in range(0xFE00, 0xFE10)),  # VARIATION SELECTORS FE00..FE0F
+    }
+)
+
+# Common generic business tokens that do not qualify as distinctive brand tokens on their own.
+GENERIC_COMPANY_TOKENS: frozenset[str] = frozenset(
+    {
+        "альянс",
+        "бизнес",
+        "групп",
+        "группа",
+        "девелопмент",
+        "импорт",
+        "инвест",
+        "инжиниринг",
+        "казахстан",
+        "капитал",
+        "кз",
+        "коммерц",
+        "компани",
+        "компания",
+        "комплект",
+        "контракт",
+        "логистик",
+        "логистика",
+        "маркет",
+        "мастер",
+        "материалы",
+        "опт",
+        "партнер",
+        "плюс",
+        "поставка",
+        "принт",
+        "пром",
+        "ресурс",
+        "сервис",
+        "сервисы",
+        "системы",
+        "снаб",
+        "софт",
+        "строй",
+        "торг",
+        "трейд",
+        "трейдинг",
+        "услуги",
+        "холдинг",
+        "центр",
+        "экспорт",
+        "group",
+        "kz",
+        "plus",
+        "service",
+        "snab",
+        "soft",
+        "trade",
+        "trading",
+    }
+)
+
+# Phonetic transliteration tables (Latin <-> Cyrillic) for cross-script lookalike detection.
+LATIN_TO_CYRILLIC_DIGRAPHS: tuple[tuple[str, str], ...] = (
+    ("shch", "щ"),
+    ("zh", "ж"),
+    ("kh", "х"),
+    ("ts", "ц"),
+    ("ch", "ч"),
+    ("sh", "ш"),
+    ("yu", "ю"),
+    ("ya", "я"),
+    ("yo", "е"),
+    ("ye", "е"),
+    ("ph", "ф"),
+    ("gh", "г"),
+    ("ck", "к"),
+    ("ou", "у"),
+)
+
+LATIN_TO_CYRILLIC_SINGLE: dict[str, str] = {
+    "a": "а",
+    "b": "б",
+    "d": "д",
+    "e": "е",
+    "f": "ф",
+    "g": "г",
+    "h": "х",
+    "i": "и",
+    "j": "ж",
+    "k": "к",
+    "l": "л",
+    "m": "м",
+    "n": "н",
+    "o": "о",
+    "p": "п",
+    "q": "к",
+    "r": "р",
+    "s": "с",
+    "t": "т",
+    "u": "у",
+    "v": "в",
+    "w": "в",
+    "x": "кс",
+    "y": "ы",
+    "z": "з",
+}
+
+CYRILLIC_TO_LATIN_MAP: dict[str, str] = {
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "e",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "y",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "kh",
+    "ц": "ts",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "shch",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "yu",
+    "я": "ya",
+    "ә": "a",
+    "ғ": "g",
+    "қ": "k",
+    "ң": "n",
+    "ө": "o",
+    "ұ": "u",
+    "ү": "u",
+    "һ": "h",
+    "і": "i",
+}
+
 URGENT_PHRASES: tuple[str, ...] = (
     "срочно",
+    "сегодня",
     "новые реквизиты",
     "изменились реквизиты",
     "по новым реквизитам",
     "смена реквизитов",
     "новый счёт",
+    "новый расчётный счёт",
+    "смена банка",
+    "смена обслуживающего банка",
     "шұғыл",
     "жедел",
+    "urgent",
+    "new bank details",
+    "changed bank account",
+    "srochno",
+)
+
+# Stem prefixes matched at word start (negations like "несрочно"/"досрочно" do NOT match).
+URGENT_CYRILLIC_STEMS: tuple[str, ...] = (
+    "срочн",
+    "шұғыл",
+    "жедел",
+)
+
+URGENT_LATIN_STEMS: tuple[str, ...] = (
+    "urgent",
+    "srochn",
+)
+
+URGENT_LATIN_PHRASES: tuple[str, ...] = (
+    "new bank details",
+    "changed bank account",
 )

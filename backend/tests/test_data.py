@@ -8,7 +8,8 @@ from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
-from app.risk.config import BCC_BANK_CODE, BCC_BIK, DEMO_TODAY
+from app.i18n import KIND_LABELS
+from app.risk.config import BCC_BANK_CODE, BCC_BIK, DEMO_TODAY, RULESET_VERSION
 from app.risk.evaluation import evaluate_dataset, format_metrics_report
 from app.validators.kz import (
     bik_matches_iik,
@@ -203,7 +204,7 @@ class TestGeneratedDatasets:
         assert yellow["recipient_iik"] != kazlog_iik
         assert yellow["recipient_bik"] != kazlog_bik
         assert yellow["recipient_iik"] not in bcc_accounts
-        assert yellow["amount_kzt"] == 820_000
+        assert yellow["amount_kzt"] == 700_000
         assert yellow["purpose"] == "Оплата транспортно-экспедиционных услуг по счёту № 318"
 
         # Q-003 (Red): Latin C lookalike, different BIN, BCC account owned by Вектор Трейд
@@ -271,13 +272,19 @@ class TestEvaluationDatasetAndMetrics:
             "legit_new_supplier",
             "legit_account_change_confirmed",
             "legit_seasonal_amount",
+            "legit_budget_payment",
             "attack_iik_swap_same_bin",
             "attack_lookalike_name",
+            "attack_unicode_and_digit_evasion",
             "attack_bcc_other_owner",
             "attack_iin_dropper",
             "attack_amount_inflation",
+            "attack_duplicate_invoice",
+            "attack_structuring_72h",
             "attack_typo_free_valid_drop",
         }.issubset(kinds)
+        for kind in kinds:
+            assert kind in KIND_LABELS, f"Missing KIND_LABELS entry for {kind}"
 
         for case in cases:
             assert case["label"] in ("legit", "attack")
@@ -294,11 +301,15 @@ class TestEvaluationDatasetAndMetrics:
     def test_evaluate_dataset_returns_consistent_metrics_and_disclaimer(self) -> None:
         metrics = evaluate_dataset(DATA_DIR)
         assert metrics.seed == 42
+        assert metrics.ruleset_version == RULESET_VERSION
         assert metrics.positive_verdicts == ["yellow", "red"]
         assert metrics.summary.total_cases == 400
         assert metrics.summary.total_legit == 200
         assert metrics.summary.total_attack == 200
         assert 0.0 <= metrics.summary.detection_rate <= 1.0
+        assert 0.0 <= metrics.summary.stopped_rate <= 1.0
+        assert 0.0 <= metrics.summary.escalated_rate <= 1.0
+        assert metrics.summary.stopped_count + metrics.summary.escalated_count == metrics.confusion.tp
         assert 0.0 <= metrics.summary.false_positive_rate <= 1.0
         assert 0.0 <= metrics.summary.precision <= 1.0
         assert 0.0 <= metrics.summary.f1 <= 1.0
@@ -309,14 +320,23 @@ class TestEvaluationDatasetAndMetrics:
         assert metrics.verdict_by_label["attack"].invalid == 0
         assert sum(row.total for row in metrics.by_kind) == 400
         for row in metrics.by_kind:
+            assert row.label_ru.strip() and row.label_kk.strip() and row.label_en.strip()
+            assert row.label_text == row.label_ru
             if row.label == "attack":
                 assert row.detection_rate is not None and row.false_positive_rate is None
             else:
                 assert row.false_positive_rate is not None and row.detection_rate is None
         assert "синтетич" in metrics.disclaimer_ru.lower()
         assert "той же командой" in metrics.disclaimer_ru.lower()
+        assert metrics.disclaimer_kk.strip() and metrics.disclaimer_en.strip()
+        assert metrics.history_replay.total_payments == 150
+        assert metrics.history_replay.verdicts.red == 0
+        assert 0.0 <= metrics.history_replay.alert_rate <= 1.0
 
         report = format_metrics_report(metrics)
         assert "Confusion Table" in report
+        assert "Stopped (red)" in report
+        assert "Escalated (yellow)" in report
+        assert "History Replay" in report
         assert "disclaimer_ru:" in report
         assert "attack_typo_free_valid_drop" in report

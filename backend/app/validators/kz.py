@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from app.i18n import DEFAULT_LANG, Lang, t
 
@@ -24,6 +24,7 @@ class BankRecord(TypedDict):
     code: str
     bik: str
     name: str
+    budget: NotRequired[bool]
 
 
 def _is_ascii_digits(value: str) -> bool:
@@ -231,13 +232,14 @@ def _load_banks_cached(resolved_path: Path) -> tuple[BankRecord, ...]:
     items = raw["banks"] if isinstance(raw, dict) else raw
     records: list[BankRecord] = []
     for item in items:
-        records.append(
-            BankRecord(
-                code=str(item["code"]),
-                bik=str(item["bik"]),
-                name=str(item["name"]),
-            )
+        rec = BankRecord(
+            code=str(item["code"]),
+            bik=str(item["bik"]),
+            name=str(item["name"]),
         )
+        if item.get("budget"):
+            rec["budget"] = True
+        records.append(rec)
     return tuple(records)
 
 

@@ -217,6 +217,10 @@ class TestBanksAndBik:
         assert bcc is not None and bcc["bik"] == "KCJBKZKX"
         nbrk = get_bank_by_code("125")
         assert nbrk is not None and nbrk["bik"] == "NBRKKZKX"
+        treasury = get_bank_by_code("070")
+        assert treasury is not None and treasury["bik"] == "KKMFKZ2A" and treasury.get("budget")
+        gcvp = get_bank_by_code("009")
+        assert gcvp is not None and gcvp["bik"] == "GCVPKZ2A" and gcvp.get("budget")
 
     def test_bik_ok(self) -> None:
         assert bik_ok("KCJBKZKX") is True

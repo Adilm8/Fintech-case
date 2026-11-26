@@ -7,7 +7,17 @@ import string
 import pytest
 from fastapi import HTTPException
 
-from app.i18n import FIELD_LABELS, MESSAGES, SUPPORTED_LANGS, Lang, field_label, resolve_lang, t
+from app.i18n import (
+    FIELD_LABELS,
+    KIND_LABELS,
+    MESSAGES,
+    SUPPORTED_LANGS,
+    Lang,
+    field_label,
+    kind_label,
+    resolve_lang,
+    t,
+)
 from app.main import (
     _format_validation_message,
     get_approvals,
@@ -60,6 +70,17 @@ class TestI18nCatalogIntegrity:
             assert set(variants.keys()) == set(SUPPORTED_LANGS)
             for lang in SUPPORTED_LANGS:
                 assert field_label(field_key, lang).strip()
+
+    def test_every_kind_label_has_all_languages(self) -> None:
+        assert len(KIND_LABELS) >= 20
+        kz_letters = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
+        for kind_key, variants in KIND_LABELS.items():
+            assert set(variants.keys()) == set(SUPPORTED_LANGS), f"Missing lang in {kind_key}"
+            for lang in SUPPORTED_LANGS:
+                assert kind_label(kind_key, lang).strip()
+            assert any(ch in kz_letters for ch in variants["kk"]), (
+                f"Expected Kazakh-specific letter in KIND_LABELS[{kind_key!r}]"
+            )
 
     def test_kazakh_catalog_uses_authentic_kazakh_cyrillic_letters(self) -> None:
         kz_letters = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
@@ -148,6 +169,15 @@ class TestValidatorAndEngineI18n:
             assert reloc.headline == res.headline
             assert reloc.next_action.text == res.next_action.text
             assert [s.reason for s in reloc.signals] == [s.reason for s in res.signals]
+            assert [s.evidence.field_label for s in reloc.signals] == [
+                s.evidence.field_label for s in res.signals
+            ]
+            assert [s.evidence.expected for s in reloc.signals] == [
+                s.evidence.expected for s in res.signals
+            ]
+            assert [s.evidence.actual for s in reloc.signals] == [
+                s.evidence.actual for s in res.signals
+            ]
 
             # Serialized payload includes localized fields and hides internal message_key
             dumped = res.model_dump()
@@ -157,9 +187,13 @@ class TestValidatorAndEngineI18n:
             assert "headline_key" not in dumped
             assert "message_key" not in dumped["next_action"]
             if dumped["signals"]:
-                assert "reason" in dumped["signals"][0]
-                assert "reason_ru" in dumped["signals"][0]
-                assert "message_key" not in dumped["signals"][0]
+                sig0 = dumped["signals"][0]
+                assert "reason" in sig0
+                assert "reason_ru" in sig0
+                assert "message_key" not in sig0
+                assert sig0["evidence"]["field_label"]
+                assert "expected_key" not in sig0["evidence"]
+                assert "actual_key" not in sig0["evidence"]
 
 
 class TestHandlersI18nDirect:
@@ -173,7 +207,7 @@ class TestHandlersI18nDirect:
             assert q_en[0].check.headline == t("headline.green", "en")
             assert q_en[0].check.headline_ru == t("headline.green", "ru")
 
-            yellow_req = _queue_req(store, "Q-002")
+            yellow_req = _queue_req(store, "Q-002").model_copy(update={"amount_kzt": 700_000})
             checked_en = post_check_payment(yellow_req, lang="en")
             assert checked_en.headline == t("headline.yellow", "en")
             assert checked_en.headline_ru == t("headline.yellow", "ru")

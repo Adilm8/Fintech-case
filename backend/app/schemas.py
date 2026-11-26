@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import unicodedata
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
+
+from app.risk.config import INVISIBLE_CODEPOINTS, RULESET_VERSION
 
 Verdict = Literal["green", "yellow", "red", "grey", "invalid"]
 Severity = Literal["block", "primary", "amplifier", "info"]
@@ -26,7 +37,11 @@ def normalize_requisite(value: str) -> str:
     """
     out: list[str] = []
     for ch in value:
-        if ch.isspace() or unicodedata.category(ch) in _INVISIBLE_CATEGORIES:
+        if (
+            ch.isspace()
+            or ch in INVISIBLE_CODEPOINTS
+            or unicodedata.category(ch) in _INVISIBLE_CATEGORIES
+        ):
             continue
         if "a" <= ch <= "z":
             out.append(ch.upper())
@@ -52,7 +67,9 @@ def meaningful_length(value: str | None) -> int:
     return sum(
         1
         for ch in value
-        if not ch.isspace() and unicodedata.category(ch) not in _INVISIBLE_CATEGORIES
+        if not ch.isspace()
+        and ch not in INVISIBLE_CODEPOINTS
+        and unicodedata.category(ch) not in _INVISIBLE_CATEGORIES
     )
 
 
@@ -66,6 +83,8 @@ class CheckRequest(BaseModel):
     recipient_bik: str = Field(max_length=64)
     amount_kzt: float = Field(gt=0, le=1e12, allow_inf_nan=False)
     purpose: str = Field(default="", max_length=500)
+    kbe: str = Field(default="", max_length=10)
+    knp: str = Field(default="", max_length=10)
 
     @field_validator("payer_id")
     @classmethod
@@ -83,7 +102,7 @@ class CheckRequest(BaseModel):
             raise ValueError("Укажите название получателя.")
         return cleaned
 
-    @field_validator("recipient_bin", "recipient_iik", "recipient_bik")
+    @field_validator("recipient_bin", "recipient_iik", "recipient_bik", "kbe", "knp")
     @classmethod
     def _clean_requisites(cls, value: str) -> str:
         return normalize_requisite(value)
@@ -96,13 +115,45 @@ class CheckRequest(BaseModel):
         return value
 
 
+def compute_request_sha256(req: CheckRequest, *, resolved_payer_id: str | None = None) -> str:
+    """Compute canonical, language-independent SHA-256 hex digest of a CheckRequest."""
+    canonical_payload = {
+        "payer_id": resolved_payer_id if resolved_payer_id is not None else (req.payer_id or ""),
+        "recipient_name": req.recipient_name,
+        "recipient_bin": req.recipient_bin,
+        "recipient_iik": req.recipient_iik,
+        "recipient_bik": req.recipient_bik,
+        "amount_kzt": float(req.amount_kzt),
+        "purpose": req.purpose,
+        "kbe": req.kbe,
+        "knp": req.knp,
+    }
+    raw = json.dumps(canonical_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 class Evidence(BaseModel):
     """Structured factual evidence behind a triggered risk signal."""
 
     field: str
+    field_label: str = ""
     expected: str | None = None
     actual: str | None = None
     since: str | None = None
+    positions: list[int] | None = None
+    expected_key: str | None = Field(default=None, exclude=True)
+    expected_params: dict[str, Any] = Field(default_factory=dict, exclude=True)
+    actual_key: str | None = Field(default=None, exclude=True)
+    actual_params: dict[str, Any] = Field(default_factory=dict, exclude=True)
+
+    @model_serializer(mode="wrap")
+    def _serialize_evidence(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("positions") is None:
+            data.pop("positions", None)
+        if not data.get("field_label"):
+            data.pop("field_label", None)
+        return data
 
 
 class Signal(BaseModel):
@@ -141,6 +192,8 @@ class NextAction(BaseModel):
     text_ru: str
     text: str = ""
     message_key: str | None = Field(default=None, exclude=True)
+    message_params: dict[str, Any] = Field(default_factory=dict, exclude=True)
+    invalid_field_keys: list[str] = Field(default_factory=list, exclude=True)
     primary: ActionType
     secondary: list[ActionType] = Field(default_factory=list)
 
@@ -167,10 +220,46 @@ class TrustedInfo(BaseModel):
     director_comment: str
 
 
+class AnalystSignalDetail(BaseModel):
+    """Restricted antifraud detail for a signal redacted from client responses."""
+
+    rule_id: str
+    reason_ru: str
+    reason: str = ""
+    message_key: str | None = Field(default=None, exclude=True)
+    message_params: dict[str, Any] = Field(default_factory=dict, exclude=True)
+    evidence: Evidence
+
+    @model_validator(mode="after")
+    def _default_localized_reason(self) -> AnalystSignalDetail:
+        if not self.reason:
+            self.reason = self.reason_ru
+        return self
+
+
+class BccAccountAnalystInfo(BaseModel):
+    """Internal BCC account metadata visible only to antifraud analysts."""
+
+    iik: str
+    owner_bin: str
+    owner_name: str
+    opened_at: str
+    age_days: int
+    owner_matches_recipient: bool
+
+
+class AnalystDetails(BaseModel):
+    """Antifraud analyst-only details omitted from standard client responses."""
+
+    bcc_account: BccAccountAnalystInfo | None = None
+    signal_details: list[AnalystSignalDetail] = Field(default_factory=list)
+
+
 class CheckResult(BaseModel):
     """Complete payment risk check verdict and explanation."""
 
     check_id: str
+    ruleset_version: str = RULESET_VERSION
     verdict: Verdict
     score: int = Field(ge=0, le=100)
     headline_ru: str
@@ -182,12 +271,21 @@ class CheckResult(BaseModel):
     history: HistorySummary
     trusted: bool = False
     trusted_info: TrustedInfo | None = None
+    analyst_details: AnalystDetails | None = None
+    internal_analyst_details: AnalystDetails | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
     def _default_localized_headline(self) -> CheckResult:
         if not self.headline:
             self.headline = self.headline_ru
         return self
+
+    @model_serializer(mode="wrap")
+    def _serialize_check_result(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("analyst_details") is None:
+            data.pop("analyst_details", None)
+        return data
 
 
 class Approval(BaseModel):
@@ -231,6 +329,8 @@ class QueuePaymentItem(BaseModel):
     recipient_bik: str
     amount_kzt: float
     purpose: str
+    kbe: str = ""
+    knp: str = ""
     check: CheckResult
 
 
@@ -246,6 +346,7 @@ class HistoryPaymentItem(BaseModel):
     recipient_bik: str
     amount_kzt: float
     purpose: str
+    knp: str = ""
 
 
 class ClientInfo(BaseModel):
@@ -300,8 +401,14 @@ class KindMetrics(BaseModel):
 
     kind: str
     label: EvalLabel
+    label_ru: str = ""
+    label_kk: str = ""
+    label_en: str = ""
+    label_text: str = ""
     total: int
     verdicts: VerdictCounts
+    stopped_count: int = 0
+    escalated_count: int = 0
     flagged_count: int
     detection_rate: float | None = None
     false_positive_rate: float | None = None
@@ -318,16 +425,51 @@ class MetricsSummary(BaseModel):
     precision: float
     f1: float
     accuracy: float
+    stopped_count: int = 0
+    escalated_count: int = 0
+    stopped_rate: float = 0.0
+    escalated_rate: float = 0.0
+    legit_stopped_count: int = 0
+    legit_escalated_count: int = 0
+
+
+class HistoryReplayMetrics(BaseModel):
+    """Chronological replay of the client's 12-month legitimate payment stream."""
+
+    total_payments: int
+    verdicts: VerdictCounts
+    stopped_count: int
+    escalated_count: int
+    alert_count: int
+    alert_rate: float
 
 
 class MetricsResponse(BaseModel):
     """Cached evaluation report returned by GET /api/metrics and scripts/evaluate.py."""
 
     seed: int
+    ruleset_version: str = RULESET_VERSION
     dataset_path: str
     positive_verdicts: list[Verdict] = Field(default_factory=lambda: ["yellow", "red"])
     summary: MetricsSummary
     confusion: ConfusionTable
     verdict_by_label: dict[EvalLabel, VerdictCounts]
     by_kind: list[KindMetrics]
+    history_replay: HistoryReplayMetrics
     disclaimer_ru: str
+    disclaimer_kk: str = ""
+    disclaimer_en: str = ""
+    disclaimer: str = ""
+
+
+class AuditEntry(BaseModel):
+    """Privacy-preserving audit trail record (hash and identifiers only; no PII/amounts)."""
+
+    timestamp: str
+    check_id: str
+    request_sha256: str
+    ruleset_version: str
+    verdict: Verdict
+    signal_ids: list[str]
+    action: str
+    approval_id: str | None = None

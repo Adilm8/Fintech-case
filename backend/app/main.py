@@ -8,18 +8,21 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.audit import append_audit_entry, read_audit_entries
 from app.i18n import DEFAULT_LANG, Lang, field_label, resolve_lang, t
+from app.risk.config import ANALYST_ROLE_VALUE
 from app.risk.engine import check_payment, localize_check_result
-from app.risk.evaluation import DEFAULT_EVAL_FILENAME, evaluate_dataset
+from app.risk.evaluation import DEFAULT_EVAL_FILENAME, evaluate_dataset, localize_metrics
 from app.schemas import (
     Approval,
     ApprovalCreateRequest,
     ApprovalDecisionRequest,
+    AuditEntry,
     CheckRequest,
     CheckResult,
     ClientInfo,
@@ -29,6 +32,7 @@ from app.schemas import (
     MetricsResponse,
     QueuePaymentItem,
     clean_text_field,
+    compute_request_sha256,
     meaningful_length,
     normalize_requisite,
 )
@@ -189,26 +193,72 @@ def _can_trust_approval(approval: Approval) -> bool:
     return has_account_change and not has_block
 
 
-def _localize_approval(approval: Approval, lang: Lang) -> Approval:
-    return approval.model_copy(update={"check": localize_check_result(approval.check, lang)})
+def _is_analyst_role(x_role: str | None) -> bool:
+    """Return True only when request explicitly carries X-Role: analyst."""
+    return (x_role or "").strip().lower() == ANALYST_ROLE_VALUE
+
+
+def _localize_approval(
+    approval: Approval,
+    lang: Lang,
+    *,
+    include_analyst_details: bool = False,
+) -> Approval:
+    return approval.model_copy(
+        update={
+            "check": localize_check_result(
+                approval.check,
+                lang,
+                include_analyst_details=include_analyst_details,
+            )
+        }
+    )
 
 
 LangQuery = Annotated[Lang, Query()]
+RoleHeader = Annotated[str | None, Header(alias="X-Role")]
 
 
 @app.post("/api/payments/check", response_model=CheckResult)
 def post_check_payment(
     payload: CheckRequest,
     lang: LangQuery = DEFAULT_LANG,
+    x_role: RoleHeader = None,
 ) -> CheckResult:
     """Verify supplier payment requisites before signing."""
     resolved = _resolve_request_payer(payload, lang=lang)
-    return check_payment(resolved, store, lang=lang)
+    result = check_payment(
+        resolved,
+        store,
+        lang=lang,
+        include_analyst_details=_is_analyst_role(x_role),
+        record_in_memory=True,
+    )
+    append_audit_entry(
+        store.audit_log_path,
+        AuditEntry(
+            timestamp=demo_now_iso(),
+            check_id=result.check_id,
+            request_sha256=compute_request_sha256(
+                resolved,
+                resolved_payer_id=store.resolve_payer_id(resolved.payer_id),
+            ),
+            ruleset_version=result.ruleset_version,
+            verdict=result.verdict,
+            signal_ids=[s.rule_id for s in result.signals],
+            action="check",
+        ),
+    )
+    return result
 
 
 @app.get("/api/payments/queue", response_model=list[QueuePaymentItem])
-def get_payments_queue(lang: LangQuery = DEFAULT_LANG) -> list[QueuePaymentItem]:
+def get_payments_queue(
+    lang: LangQuery = DEFAULT_LANG,
+    x_role: RoleHeader = None,
+) -> list[QueuePaymentItem]:
     """Return payments awaiting signature with their computed risk verdicts."""
+    include_analyst = _is_analyst_role(x_role)
     items: list[QueuePaymentItem] = []
     for raw in store.queue:
         req = CheckRequest(
@@ -219,8 +269,16 @@ def get_payments_queue(lang: LangQuery = DEFAULT_LANG) -> list[QueuePaymentItem]
             recipient_bik=raw["recipient_bik"],
             amount_kzt=raw["amount_kzt"],
             purpose=raw.get("purpose", ""),
+            kbe=raw.get("kbe", ""),
+            knp=raw.get("knp", ""),
         )
-        result = check_payment(req, store, lang=lang)
+        result = check_payment(
+            req,
+            store,
+            lang=lang,
+            include_analyst_details=include_analyst,
+            include_recent_memory=False,
+        )
         items.append(QueuePaymentItem(**raw, check=result))
     return items
 
@@ -238,10 +296,12 @@ def get_history() -> HistoryResponse:
 def post_create_approval(
     payload: ApprovalCreateRequest,
     lang: LangQuery = DEFAULT_LANG,
+    x_role: RoleHeader = None,
 ) -> Approval:
     """Submit a payment for director approval, deduplicating pending requests."""
     resolved_req = _resolve_request_payer(payload.check_request, lang=lang)
     payer_id = resolved_req.payer_id or store.default_payer_id
+    include_analyst = _is_analyst_role(x_role)
 
     existing = store.find_pending_approval(
         payer_id=payer_id,
@@ -250,9 +310,17 @@ def post_create_approval(
         amount_kzt=resolved_req.amount_kzt,
     )
     if existing is not None:
-        return _localize_approval(existing, lang)
+        return _localize_approval(existing, lang, include_analyst_details=include_analyst)
 
-    result = check_payment(resolved_req, store, lang=lang)
+    # Clear any just-checked draft of this exact payment before evaluating for approval
+    store.clear_recent_draft(
+        payer_id=payer_id,
+        recipient_bin=resolved_req.recipient_bin,
+        recipient_iik=resolved_req.recipient_iik,
+        amount_kzt=resolved_req.amount_kzt,
+    )
+    # Always store client-safe CheckResult (analyst_details=None) in shared in-memory state.
+    result = check_payment(resolved_req, store, lang=lang, include_analyst_details=False)
     approval = Approval(
         id=f"apr-{uuid.uuid4().hex[:10]}",
         request=resolved_req,
@@ -261,7 +329,7 @@ def post_create_approval(
         accountant_note=clean_text_field(payload.accountant_note),
     )
     store.approvals.append(approval)
-    return approval
+    return _localize_approval(approval, lang, include_analyst_details=include_analyst)
 
 
 @app.get("/api/approvals", response_model=list[Approval])
@@ -269,10 +337,12 @@ def get_approvals(
     bin: str | None = Query(default=None),
     iik: str | None = Query(default=None),
     lang: LangQuery = DEFAULT_LANG,
+    x_role: RoleHeader = None,
 ) -> list[Approval]:
     """List submitted director approvals with optional BIN and IIK filters."""
     clean_bin = normalize_requisite(bin) if bin is not None else ""
     clean_iik = normalize_requisite(iik) if iik is not None else ""
+    include_analyst = _is_analyst_role(x_role)
 
     results: list[Approval] = []
     for item in store.approvals:
@@ -280,7 +350,7 @@ def get_approvals(
             continue
         if clean_iik and item.request.recipient_iik != clean_iik:
             continue
-        results.append(_localize_approval(item, lang))
+        results.append(_localize_approval(item, lang, include_analyst_details=include_analyst))
     return results
 
 
@@ -289,6 +359,7 @@ def post_approval_decision(
     approval_id: str,
     payload: ApprovalDecisionRequest,
     lang: LangQuery = DEFAULT_LANG,
+    x_role: RoleHeader = None,
 ) -> Approval:
     """Record the director's decision on a pending approval."""
     approval = store.get_approval(approval_id)
@@ -346,13 +417,47 @@ def post_approval_decision(
     else:
         approval.trust_account = False
 
-    return _localize_approval(approval, lang)
+    store.clear_recent_draft(
+        payer_id=approval.request.payer_id,
+        recipient_bin=approval.request.recipient_bin,
+        recipient_iik=approval.request.recipient_iik,
+        amount_kzt=approval.request.amount_kzt,
+    )
+    action_label = f"decision:{payload.decision}" + ("_trusted" if approval.trust_account else "")
+    append_audit_entry(
+        store.audit_log_path,
+        AuditEntry(
+            timestamp=decided_at,
+            check_id=approval.check.check_id,
+            request_sha256=compute_request_sha256(
+                approval.request,
+                resolved_payer_id=store.resolve_payer_id(approval.request.payer_id),
+            ),
+            ruleset_version=approval.check.ruleset_version,
+            verdict=approval.check.verdict,
+            signal_ids=[s.rule_id for s in approval.check.signals],
+            action=action_label,
+            approval_id=approval.id,
+        ),
+    )
+
+    return _localize_approval(
+        approval,
+        lang,
+        include_analyst_details=_is_analyst_role(x_role),
+    )
+
+
+@app.get("/api/audit", response_model=list[AuditEntry])
+def get_audit_log(limit: int = Query(default=100, ge=1, le=1000)) -> list[AuditEntry]:
+    """Return the latest privacy-preserving audit entries (hash & rule IDs only)."""
+    return read_audit_entries(store.audit_log_path, limit=limit)
 
 
 @app.get("/api/metrics", response_model=MetricsResponse)
-def get_metrics() -> MetricsResponse:
-    """Return cached evaluation metrics over the labeled synthetic dataset."""
-    return get_cached_metrics()
+def get_metrics(lang: LangQuery = DEFAULT_LANG) -> MetricsResponse:
+    """Return cached evaluation metrics and chronological history replay."""
+    return localize_metrics(get_cached_metrics(lang=lang), lang)
 
 
 @app.post("/api/demo/reset", response_model=DemoResetResponse)

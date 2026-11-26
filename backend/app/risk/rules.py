@@ -9,45 +9,85 @@ from __future__ import annotations
 import math
 import re
 import statistics
-import unicodedata
 from datetime import date
 from typing import Any
+
+from rapidfuzz import fuzz
 
 from app.i18n import DEFAULT_LANG, Lang, t
 from app.risk.config import (
     AMOUNT_ANOMALY_MIN_HISTORY,
+    AMOUNT_FIRST_PAYMENT_RED_P90_MULT,
+    AMOUNT_FIRST_PAYMENT_YELLOW_P90_MULT,
+    AMOUNT_SUPPLIER_EXTREME_P90_MULT,
     BCC_BANK_CODE,
     BCC_BIK,
     BIN_YOUNG_MAX_MONTHS,
     CLIENT_P90_MIN_HISTORY,
     DEMO_TODAY,
+    DUPLICATE_INVOICE_WINDOW_DAYS,
+    GENERIC_COMPANY_TOKENS,
+    KBE_INDIVIDUAL_CODES,
+    KBE_LEGAL_ENTITY_CODES,
+    LOOKALIKE_DISTINCTIVE_THRESHOLD,
+    LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN,
+    LOOKALIKE_PREFIX_MIN_LEN,
     LOOKALIKE_SIMILARITY_THRESHOLD,
     LOOKALIKE_TOKEN_SET_MIN_LEN,
     LOOKALIKE_TOKEN_SET_THRESHOLD,
     NEW_BCC_ACCOUNT_MAX_DAYS,
+    NEW_RECIPIENT_ACCUM_WINDOW_DAYS,
+    STRUCTURING_PAIR_MIN_RATIO,
+    STRUCTURING_PRIMARY_RATIO,
+    STRUCTURING_SPLIT_MIN_COUNT,
+    STRUCTURING_SPLIT_MIN_RATIO,
+    STRUCTURING_WINDOW_HOURS,
+    URGENT_CYRILLIC_STEMS,
+    URGENT_LATIN_PHRASES,
+    URGENT_LATIN_STEMS,
     URGENT_PHRASES,
+    WEIGHT_AMOUNT_ANOMALY_EXTREME,
     WEIGHT_AMOUNT_ANOMALY_PRIMARY,
     WEIGHT_BANK_CHANGED_AMPLIFIER,
+    WEIGHT_BANK_CHANGED_HIGH_AMOUNT,
     WEIGHT_BIN_NAME_MISMATCH,
     WEIGHT_BIN_YOUNG,
+    WEIGHT_DUPLICATE_INVOICE,
     WEIGHT_ENTITY_TYPE_MISMATCH,
     WEIGHT_ENTITY_TYPE_MISMATCH_LEGAL_IIN,
     WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
     WEIGHT_IIK_CHANGED,
+    WEIGHT_KBE_MISMATCH_INDIVIDUAL_BIN,
+    WEIGHT_KBE_MISMATCH_LEGAL_IIN,
+    WEIGHT_KNP_UNUSUAL,
     WEIGHT_LOOKALIKE_SUPPLIER,
     WEIGHT_MIXED_SCRIPT_NAME,
     WEIGHT_NEW_BCC_ACCOUNT,
+    WEIGHT_NEW_RECIPIENT_ACCUM_MAX,
+    WEIGHT_NEW_RECIPIENT_ACCUM_MIN,
+    WEIGHT_STRUCTURING_AMPLIFIER,
+    WEIGHT_STRUCTURING_PRIMARY,
     WEIGHT_URGENT_WORDING,
 )
 from app.risk.names import (
+    confusable_skeleton,
     detect_legal_form_kind,
     find_mixed_script_positions,
-    map_homoglyphs,
     name_similarity,
     normalize_company_name,
-    token_set_similarity,
+    normalize_company_name_translit,
+    sanitize_unicode,
 )
-from app.schemas import CheckRequest, Evidence, Severity, Signal
+from app.schemas import (
+    AnalystDetails,
+    AnalystSignalDetail,
+    BccAccountAnalystInfo,
+    CheckRequest,
+    Evidence,
+    Severity,
+    Signal,
+    compute_request_sha256,
+)
 from app.store import Store
 from app.validators.kz import (
     bik_matches_iik,
@@ -62,6 +102,40 @@ from app.validators.kz import (
 
 def _format_kzt(amount: float) -> str:
     return f"{round(amount):,} ₸".replace(",", " ")
+
+
+def _make_evidence(
+    field: str,
+    *,
+    lang: Lang = DEFAULT_LANG,
+    expected: str | None = None,
+    expected_key: str | None = None,
+    expected_params: dict[str, Any] | None = None,
+    actual: str | None = None,
+    actual_key: str | None = None,
+    actual_params: dict[str, Any] | None = None,
+    since: str | None = None,
+    positions: list[int] | None = None,
+) -> Evidence:
+    """Build a localized Evidence payload with re-localizable i18n keys."""
+    exp_p = dict(expected_params or {})
+    act_p = dict(actual_params or {})
+    exp_val = t(expected_key, lang, **exp_p) if expected_key else expected
+    act_val = t(actual_key, lang, **act_p) if actual_key else actual
+    field_lbl_key = f"ev.field.{field}"
+    field_lbl = t(field_lbl_key, lang) if field in ("bin", "iik", "bik", "bank", "name", "amount", "purpose") else field
+    return Evidence(
+        field=field,
+        field_label=field_lbl,
+        expected=exp_val,
+        actual=act_val,
+        since=since,
+        positions=positions,
+        expected_key=expected_key,
+        expected_params=exp_p,
+        actual_key=actual_key,
+        actual_params=act_p,
+    )
 
 
 def _make_signal(
@@ -87,6 +161,13 @@ def _make_signal(
     )
 
 
+def _compute_percentile(sorted_amounts: list[float], pct: float) -> float:
+    pos = pct * (len(sorted_amounts) - 1)
+    lo = math.floor(pos)
+    hi = math.ceil(pos)
+    return sorted_amounts[lo] + (sorted_amounts[hi] - sorted_amounts[lo]) * (pos - lo)
+
+
 def compute_client_p90(store: Store, payer_id: str | None = None) -> float | None:
     """Compute the 90th percentile of all historical payment amounts for the client."""
     history = store.get_client_history(payer_id)
@@ -95,10 +176,67 @@ def compute_client_p90(store: Store, payer_id: str | None = None) -> float | Non
     amounts = sorted(float(p["amount_kzt"]) for p in history if float(p["amount_kzt"]) > 0)
     if len(amounts) < CLIENT_P90_MIN_HISTORY:
         return None
-    pos = 0.9 * (len(amounts) - 1)
-    lo = math.floor(pos)
-    hi = math.ceil(pos)
-    return amounts[lo] + (amounts[hi] - amounts[lo]) * (pos - lo)
+    return _compute_percentile(amounts, 0.9)
+
+
+def compute_client_median(store: Store, payer_id: str | None = None) -> float | None:
+    """Compute the median of all historical payment amounts for the client."""
+    history = store.get_client_history(payer_id)
+    amounts = [float(p["amount_kzt"]) for p in history if float(p["amount_kzt"]) > 0]
+    if len(amounts) < CLIENT_P90_MIN_HISTORY:
+        return None
+    return float(statistics.median(amounts))
+
+
+_INVOICE_EXPLICIT_RE = re.compile(
+    r"(?<!\w)(?:счет(?:у|а|ом|е)?|сч\.?|шот(?:қа|ы)?|инвойс(?:у|а)?|invoice|inv\.?)"
+    r"\s*(?:№|#|n[o°]?\.?)?\s*(\d+[a-zа-я0-9/-]*)",
+    flags=re.UNICODE,
+)
+_INVOICE_STANDALONE_RE = re.compile(
+    r"(?:№|#|(?<!\w)no\.?)\s*(\d+[a-zа-я0-9/-]*)",
+    flags=re.UNICODE,
+)
+_NON_INVOICE_PREFIX_RE = re.compile(
+    r"(?:договор\w*|соглашени\w*|контракт\w*|приложени\w*|доп\.?\s*соглаш\w*)\s*$",
+    flags=re.UNICODE,
+)
+
+
+def extract_invoice_number(purpose: str | None) -> str | None:
+    """Extract normalized invoice number ('№ 214', 'счёт № 214', 'сч. 214') from payment purpose.
+
+    Ignores contract/agreement numbers like 'по договору № 14-А' or 'по доп. соглашению № 2'.
+    """
+    if not purpose:
+        return None
+    cleaned = sanitize_unicode(purpose).lower().replace("ё", "е")
+    explicit = _INVOICE_EXPLICIT_RE.search(cleaned)
+    if explicit is not None:
+        return explicit.group(1).strip("-/")
+
+    for match in _INVOICE_STANDALONE_RE.finditer(cleaned):
+        before = cleaned[: match.start()]
+        if _NON_INVOICE_PREFIX_RE.search(before):
+            continue
+        return match.group(1).strip("-/")
+    return None
+
+
+def is_bcc_bank_verified_new_account(req: CheckRequest, store: Store) -> bool:
+    """Return True when a known supplier switches to a new BCC IIK owned by the exact same BIN."""
+    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+    if not supplier_history:
+        return False
+    if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+        return False
+    known_iiks = {p["recipient_iik"] for p in supplier_history}
+    if req.recipient_iik in known_iiks:
+        return False
+    if iik_bank_code(req.recipient_iik) != BCC_BANK_CODE:
+        return False
+    account = store.bcc_accounts.get(req.recipient_iik)
+    return account is not None and account.get("owner_bin") == req.recipient_bin
 
 
 # --- Precheck rules (produce invalid verdict, no score) ---
@@ -113,9 +251,10 @@ def rule_bin_format(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal |
         points=0,
         severity="block",
         message_key="rule.invalid_bin",
-        evidence=Evidence(
-            field="bin",
-            expected="12 цифр с верной контрольной суммой",
+        evidence=_make_evidence(
+            "bin",
+            lang=lang,
+            expected_key="ev.bin_expected",
             actual=req.recipient_bin,
         ),
         lang=lang,
@@ -142,9 +281,10 @@ def rule_iik_format(
         points=0,
         severity="block",
         message_key=msg_key or "rule.invalid_iik_fallback",
-        evidence=Evidence(
-            field="iik",
-            expected="20 символов формата KZ...",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.iik_expected",
             actual=req.recipient_iik,
         ),
         lang=lang,
@@ -166,9 +306,10 @@ def rule_bik_format(
         points=0,
         severity="block",
         message_key="rule.invalid_bik",
-        evidence=Evidence(
-            field="bik",
-            expected="8-символьный БИК банка РК",
+        evidence=_make_evidence(
+            "bik",
+            lang=lang,
+            expected_key="ev.bik_expected",
             actual=req.recipient_bik,
         ),
         lang=lang,
@@ -190,21 +331,57 @@ def rule_iik_bank_code_vs_bik(
 
     expected_bank = store.banks_by_bik.get(req.recipient_bik)
     actual_bank = store.banks_by_code.get(code)
-    expected_str = (
-        f"код {expected_bank['code']} ({expected_bank['bik']})"
+    exp_key = "ev.bank_code_bik" if expected_bank is not None else None
+    exp_params = (
+        {"code": expected_bank["code"], "bik": expected_bank["bik"]}
         if expected_bank is not None
-        else req.recipient_bik
+        else None
     )
-    actual_str = f"код {code} ({actual_bank['bik']})" if actual_bank is not None else f"код {code}"
+    act_key = "ev.bank_code_bik" if actual_bank is not None else "ev.bank_code_only"
+    act_params = (
+        {"code": code, "bik": actual_bank["bik"]}
+        if actual_bank is not None
+        else {"code": code}
+    )
     return _make_signal(
         rule_id="iik_bank_code_vs_bik",
         points=0,
         severity="block",
         message_key="rule.iik_bank_code_vs_bik",
-        evidence=Evidence(
-            field="bik",
-            expected=expected_str,
-            actual=actual_str,
+        evidence=_make_evidence(
+            "bik",
+            lang=lang,
+            expected=None if exp_key else req.recipient_bik,
+            expected_key=exp_key,
+            expected_params=exp_params,
+            actual_key=act_key,
+            actual_params=act_params,
+        ),
+        lang=lang,
+    )
+
+
+def rule_bcc_account_not_found(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
+    """Reject a syntactically valid BCC (856) IIK that does not exist in bcc_accounts."""
+    if iik_bank_code(req.recipient_iik) != BCC_BANK_CODE:
+        return None
+    if req.recipient_iik in store.bcc_accounts:
+        return None
+    return _make_signal(
+        rule_id="bcc_account_not_found",
+        points=0,
+        severity="block",
+        message_key="rule.bcc_account_not_found",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.bcc_active_expected",
+            actual=req.recipient_iik,
         ),
         lang=lang,
     )
@@ -219,7 +396,11 @@ def rule_bcc_account_other_owner(
     *,
     lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
-    """Block payment when a BCC IIK belongs to a different BIN in BCC's account registry."""
+    """Block payment when a BCC IIK belongs to a different BIN in BCC's account registry.
+
+    Client-facing output omits account owner name, owner BIN, and opening date to preserve
+    banking secrecy; full details are exposed only via analyst_details for X-Role: analyst.
+    """
     is_bcc = iik_bank_code(req.recipient_iik) == BCC_BANK_CODE or req.recipient_bik == BCC_BIK
     if not is_bcc:
         return None
@@ -232,32 +413,110 @@ def rule_bcc_account_other_owner(
     if owner_bin == req.recipient_bin:
         return None
 
-    owner_name = account.get("owner_name") or store.registry.get(owner_bin) or owner_bin
     return _make_signal(
         rule_id="bcc_account_other_owner",
         points=100,
         severity="block",
         message_key="rule.bcc_account_other_owner",
-        evidence=Evidence(
-            field="iik",
-            expected=f"счёт на БИН {req.recipient_bin}",
-            actual=f"владелец {owner_name} (БИН {owner_bin})",
-            since=account.get("opened_at"),
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.bcc_owner_expected",
+            actual_key="ev.bcc_owner_mismatch",
+            since=None,
         ),
         lang=lang,
-        owner_name=owner_name,
     )
+
+
+def _distinctive_tokens(tokens: list[str]) -> list[str]:
+    """Return non-generic tokens long enough to identify a supplier brand."""
+    return [
+        tok
+        for tok in tokens
+        if len(tok) >= LOOKALIKE_DISTINCTIVE_TOKEN_MIN_LEN and tok not in GENERIC_COMPANY_TOKENS
+    ]
+
+
+def _all_supplier_tokens_matched(sup_tokens: list[str], cand_tokens: list[str]) -> bool:
+    """Return True if every supplier token matches a candidate token exactly or as a prefix."""
+    if not sup_tokens or not cand_tokens:
+        return False
+    for st in sup_tokens:
+        if len(st) >= LOOKALIKE_PREFIX_MIN_LEN:
+            if not any(ct == st or ct.startswith(st) for ct in cand_tokens):
+                return False
+        elif st not in cand_tokens:
+            return False
+    return True
+
+
+def _has_distinctive_token_match(
+    sup_tokens: list[str],
+    cand_tokens: list[str],
+    cand_compact: str,
+) -> bool:
+    """Return True if a distinctive supplier token matches as token, prefix, or compact stem."""
+    distinctive = _distinctive_tokens(sup_tokens)
+    if not distinctive:
+        return False
+    for dt in distinctive:
+        if any(ct == dt or ct.startswith(dt) for ct in cand_tokens):
+            return True
+        if dt in cand_compact:
+            return True
+    return False
+
+
+def _score_lookalike_pair(cand: str, sup: str) -> float:
+    """Return lookalike match score (> 0 when matched, else 0.0) for two normalized forms."""
+    if not cand or not sup:
+        return 0.0
+
+    cand_tokens = cand.split()
+    sup_tokens = sup.split()
+    cand_compact = "".join(cand_tokens)
+    sup_compact = "".join(sup_tokens)
+
+    # 1. Exact match after folding or transliteration (including spacing differences), any length.
+    if cand == sup or cand_compact == sup_compact:
+        return 100.0
+
+    sim = max(
+        float(fuzz.ratio(cand, sup)),
+        float(fuzz.token_sort_ratio(cand, sup)),
+        float(fuzz.ratio(cand_compact, sup_compact)),
+    )
+
+    # 2. High overall similarity (>= 85).
+    if sim >= LOOKALIKE_SIMILARITY_THRESHOLD:
+        return sim
+
+    # 3. Full supplier prefix/token containment (for supplier names >= 8 compact chars).
+    if len(sup_compact) >= LOOKALIKE_TOKEN_SET_MIN_LEN:
+        if sup_compact in cand_compact:
+            return max(sim, LOOKALIKE_TOKEN_SET_THRESHOLD)
+        if _all_supplier_tokens_matched(sup_tokens, cand_tokens):
+            return max(sim, float(fuzz.token_set_ratio(cand, sup)), LOOKALIKE_SIMILARITY_THRESHOLD)
+
+    # 4. Distinctive token match with lowered similarity threshold (~70).
+    if sim >= LOOKALIKE_DISTINCTIVE_THRESHOLD and _has_distinctive_token_match(
+        sup_tokens, cand_tokens, cand_compact
+    ):
+        return sim
+
+    return 0.0
 
 
 def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] | None:
     """Find the closest known client supplier with lookalike similarity and a different BIN.
 
     Skipped (M1) if recipient_bin already has its own payment history or is trusted.
-    Triggers on:
-    - exact match after normalization/homoglyph folding regardless of length,
-    - similarity >= 85, or
-    - H4: all normalized tokens of a known supplier (len >= 8) contained in the new name
-      with token_set_ratio >= 95.
+    Triggers across visual confusable skeleton and ru<->lat transliterated forms on:
+    - exact match after folding/transliteration regardless of length,
+    - similarity >= 85,
+    - full supplier prefix/token containment (len >= 8), or
+    - similarity >= 70 when a distinctive supplier token matches.
     """
     if store.get_supplier_history(req.recipient_bin, req.payer_id):
         return None
@@ -265,9 +524,9 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] |
         return None
 
     norm_req = normalize_company_name(req.recipient_name)
-    if not norm_req:
+    cyr_req, lat_req = normalize_company_name_translit(req.recipient_name)
+    if not norm_req and not cyr_req:
         return None
-    req_tokens = set(norm_req.split())
 
     history = store.get_client_history(req.payer_id)
     suppliers_by_bin: dict[str, dict[str, str]] = {}
@@ -286,25 +545,15 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, str] |
     best_score = 0.0
     for supplier in suppliers_by_bin.values():
         norm_sup = normalize_company_name(supplier["name"])
-        if not norm_sup:
+        cyr_sup, lat_sup = normalize_company_name_translit(supplier["name"])
+        if not norm_sup and not cyr_sup:
             continue
 
-        matched_score = 0.0
-        if norm_req == norm_sup:
-            # Exact match after folding regardless of length.
-            matched_score = 100.0
-        else:
-            sim = name_similarity(req.recipient_name, supplier["name"])
-            if sim >= LOOKALIKE_SIMILARITY_THRESHOLD:
-                matched_score = sim
-            else:
-                # H4: all tokens of known supplier contained in the new name.
-                sup_tokens = set(norm_sup.split())
-                if len(norm_sup) >= LOOKALIKE_TOKEN_SET_MIN_LEN and sup_tokens.issubset(req_tokens):
-                    ts_score = token_set_similarity(req.recipient_name, supplier["name"])
-                    if ts_score >= LOOKALIKE_TOKEN_SET_THRESHOLD:
-                        matched_score = ts_score
-
+        matched_score = max(
+            _score_lookalike_pair(norm_req, norm_sup),
+            _score_lookalike_pair(cyr_req, cyr_sup),
+            _score_lookalike_pair(lat_req, lat_sup),
+        )
         if matched_score > best_score:
             best_score = matched_score
             best_match = supplier
@@ -327,10 +576,13 @@ def rule_lookalike_supplier(
         points=WEIGHT_LOOKALIKE_SUPPLIER,
         severity="primary",
         message_key="rule.lookalike_supplier",
-        evidence=Evidence(
-            field="name",
-            expected=f"{match['name']} (БИН {match['bin']})",
-            actual=f"{req.recipient_name} (БИН {req.recipient_bin})",
+        evidence=_make_evidence(
+            "name",
+            lang=lang,
+            expected_key="ev.name_bin",
+            expected_params={"name": match["name"], "bin": match["bin"]},
+            actual_key="ev.name_bin",
+            actual_params={"name": req.recipient_name, "bin": req.recipient_bin},
             since=match["first_seen"],
         ),
         lang=lang,
@@ -339,7 +591,7 @@ def rule_lookalike_supplier(
 
 
 def rule_mixed_script_name(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
-    """Flag Latin or Greek letters embedded inside Cyrillic words in recipient_name."""
+    """Flag foreign-script letters or confusable digits embedded inside Cyrillic words."""
     positions = find_mixed_script_positions(req.recipient_name)
     if not positions:
         return None
@@ -348,10 +600,11 @@ def rule_mixed_script_name(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> S
         points=WEIGHT_MIXED_SCRIPT_NAME,
         severity="primary",
         message_key="rule.mixed_script_name",
-        evidence=Evidence(
-            field="name",
-            expected="один алфавит в пределах слова",
-            actual=req.recipient_name,
+        evidence=_make_evidence(
+            "name",
+            lang=lang,
+            expected_key="ev.single_script_expected",
+            actual_key="ev.mixed_script_actual",
         ),
         lang=lang,
     )
@@ -383,8 +636,9 @@ def rule_bin_name_mismatch(
             points=0,
             severity="info",
             message_key="rule.bin_name_mismatch_history",
-            evidence=Evidence(
-                field="bin",
+            evidence=_make_evidence(
+                "bin",
+                lang=lang,
                 expected=registered_name,
                 actual=req.recipient_name,
                 since=supplier_history[-1]["paid_at"],
@@ -398,8 +652,9 @@ def rule_bin_name_mismatch(
         points=WEIGHT_BIN_NAME_MISMATCH,
         severity="primary",
         message_key="rule.bin_name_mismatch",
-        evidence=Evidence(
-            field="bin",
+        evidence=_make_evidence(
+            "bin",
+            lang=lang,
             expected=registered_name,
             actual=req.recipient_name,
         ),
@@ -430,10 +685,13 @@ def rule_iik_belongs_to_other_counterparty(
             points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
             severity="primary",
             message_key="rule.iik_belongs_to_other_counterparty",
-            evidence=Evidence(
-                field="iik",
-                expected=f"счёт для БИН {req.recipient_bin}",
-                actual=f"использовался для {other_name} (БИН {other_bin})",
+            evidence=_make_evidence(
+                "iik",
+                lang=lang,
+                expected_key="ev.account_for_bin",
+                expected_params={"bin": req.recipient_bin},
+                actual_key="ev.used_for_other",
+                actual_params={"name": other_name, "bin": other_bin},
                 since=last_other["paid_at"],
             ),
             lang=lang,
@@ -453,10 +711,13 @@ def rule_iik_belongs_to_other_counterparty(
                 points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
                 severity="primary",
                 message_key="rule.iik_belongs_to_other_counterparty",
-                evidence=Evidence(
-                    field="iik",
-                    expected=f"счёт для БИН {req.recipient_bin}",
-                    actual=f"доверен для {other_name} (БИН {trusted_bin})",
+                evidence=_make_evidence(
+                    "iik",
+                    lang=lang,
+                    expected_key="ev.account_for_bin",
+                    expected_params={"bin": req.recipient_bin},
+                    actual_key="ev.trusted_for_other",
+                    actual_params={"name": other_name, "bin": trusted_bin},
                     since=info.decided_at,
                 ),
                 lang=lang,
@@ -472,11 +733,13 @@ def rule_iik_changed(
     *,
     lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
-    """Flag a new, untrusted IIK for a known supplier BIN."""
+    """Flag a new, untrusted IIK for a known supplier BIN (skipped if BCC-verified same BIN)."""
     supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
     if not supplier_history:
         return None
     if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+        return None
+    if is_bcc_bank_verified_new_account(req, store):
         return None
 
     known_iiks = {p["recipient_iik"] for p in supplier_history}
@@ -489,8 +752,9 @@ def rule_iik_changed(
         points=WEIGHT_IIK_CHANGED,
         severity="primary",
         message_key="rule.iik_changed",
-        evidence=Evidence(
-            field="iik",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
             expected=last_payment["recipient_iik"],
             actual=req.recipient_iik,
             since=last_payment["paid_at"],
@@ -505,11 +769,13 @@ def rule_bank_changed(
     *,
     lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
-    """Amplifier (+15, once) when a known supplier switches to a new untrusted IIK in another bank."""
+    """Flag a known supplier switching to a new untrusted IIK in another bank."""
     supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
     if not supplier_history:
         return None
     if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+        return None
+    if is_bcc_bank_verified_new_account(req, store):
         return None
 
     known_iiks = {p["recipient_iik"] for p in supplier_history}
@@ -521,17 +787,24 @@ def rule_bank_changed(
         return None
 
     last_payment = supplier_history[-1]
+    median_amount = statistics.median(float(p["amount_kzt"]) for p in supplier_history)
+    points = (
+        WEIGHT_BANK_CHANGED_HIGH_AMOUNT
+        if req.amount_kzt >= median_amount
+        else WEIGHT_BANK_CHANGED_AMPLIFIER
+    )
     old_bank = (
         store.get_bank_name_by_bik(last_payment["recipient_bik"]) or last_payment["recipient_bik"]
     )
     new_bank = store.get_bank_name_by_bik(req.recipient_bik) or req.recipient_bik
     return _make_signal(
         rule_id="bank_changed",
-        points=WEIGHT_BANK_CHANGED_AMPLIFIER,
+        points=points,
         severity="amplifier",
         message_key="rule.bank_changed",
-        evidence=Evidence(
-            field="bank",
+        evidence=_make_evidence(
+            "bank",
+            lang=lang,
             expected=old_bank,
             actual=new_bank,
             since=last_payment["paid_at"],
@@ -539,6 +812,84 @@ def rule_bank_changed(
         lang=lang,
         old_bank=old_bank,
         new_bank=new_bank,
+    )
+
+
+def rule_kbe_mismatch(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
+    """Flag mismatch between optional KBe code (17 legal / 19 individual) and BIN/IIN kind."""
+    if not req.kbe:
+        return None
+    actual_kind = bin_kind(req.recipient_bin)
+    if actual_kind is None:
+        return None
+
+    if req.kbe in KBE_LEGAL_ENTITY_CODES and actual_kind == "iin":
+        return _make_signal(
+            rule_id="kbe_mismatch",
+            points=WEIGHT_KBE_MISMATCH_LEGAL_IIN,
+            severity="primary",
+            message_key="rule.kbe_mismatch_legal_iin",
+            evidence=_make_evidence(
+                "bin",
+                lang=lang,
+                expected_key="ev.kbe_17_expected",
+                actual_key="ev.individual_iin",
+            ),
+            lang=lang,
+        )
+
+    if (
+        req.kbe in KBE_INDIVIDUAL_CODES
+        and actual_kind == "bin"
+        and (len(req.recipient_bin) != 12 or req.recipient_bin[4] != "6")
+    ):
+        return _make_signal(
+            rule_id="kbe_mismatch",
+            points=WEIGHT_KBE_MISMATCH_INDIVIDUAL_BIN,
+            severity="primary",
+            message_key="rule.kbe_mismatch_individual_bin",
+            evidence=_make_evidence(
+                "bin",
+                lang=lang,
+                expected_key="ev.kbe_19_expected",
+                actual_key="ev.legal_bin",
+            ),
+            lang=lang,
+        )
+    return None
+
+
+def rule_knp_unusual(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
+    """Amplifier (+15 pts) when optional KNP differs from supplier's historical KNP values."""
+    if not req.knp:
+        return None
+    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+    known_knps = sorted({str(p.get("knp", "")).strip() for p in supplier_history if p.get("knp")})
+    if not known_knps or req.knp in known_knps:
+        return None
+    expected_knp = ", ".join(known_knps)
+    return _make_signal(
+        rule_id="knp_unusual",
+        points=WEIGHT_KNP_UNUSUAL,
+        severity="amplifier",
+        message_key="rule.knp_unusual",
+        evidence=_make_evidence(
+            "purpose",
+            lang=lang,
+            expected_key="ev.knp_label",
+            expected_params={"knp": expected_knp},
+            actual_key="ev.knp_label",
+            actual_params={"knp": req.knp},
+            since=supplier_history[-1]["paid_at"],
+        ),
+        lang=lang,
+        actual_knp=req.knp,
+        expected_knp=expected_knp,
     )
 
 
@@ -560,10 +911,11 @@ def rule_entity_type_mismatch(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -
             points=WEIGHT_ENTITY_TYPE_MISMATCH_LEGAL_IIN,
             severity="primary",
             message_key="rule.entity_type_mismatch_legal_iin",
-            evidence=Evidence(
-                field="bin",
-                expected="БИН юрлица",
-                actual="ИИН физлица",
+            evidence=_make_evidence(
+                "bin",
+                lang=lang,
+                expected_key="ev.legal_bin",
+                actual_key="ev.individual_iin",
             ),
             lang=lang,
         )
@@ -577,10 +929,11 @@ def rule_entity_type_mismatch(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -
         points=WEIGHT_ENTITY_TYPE_MISMATCH,
         severity="primary",
         message_key="rule.entity_type_mismatch_ie_bin",
-        evidence=Evidence(
-            field="bin",
-            expected="ИИН физлица",
-            actual="БИН юрлица",
+        evidence=_make_evidence(
+            "bin",
+            lang=lang,
+            expected_key="ev.individual_iin",
+            actual_key="ev.legal_bin",
         ),
         lang=lang,
     )
@@ -593,14 +946,14 @@ def rule_new_bcc_account(
     today: date = DEMO_TODAY,
     lang: Lang = DEFAULT_LANG,
 ) -> Signal | None:
-    """Flag a BCC account opened less than 30 days before today."""
+    """Flag a BCC account opened less than 30 days before today without disclosing opening date."""
     account = store.bcc_accounts.get(req.recipient_iik)
     if account is None:
         return None
 
     opened_at = date.fromisoformat(account["opened_at"])
-    age_days = (today - opened_at).days
-    if age_days < 0 or age_days >= NEW_BCC_ACCOUNT_MAX_DAYS:
+    age_days = max(0, (today - opened_at).days)
+    if age_days >= NEW_BCC_ACCOUNT_MAX_DAYS:
         return None
 
     return _make_signal(
@@ -608,15 +961,119 @@ def rule_new_bcc_account(
         points=WEIGHT_NEW_BCC_ACCOUNT,
         severity="primary",
         message_key="rule.new_bcc_account",
-        evidence=Evidence(
-            field="iik",
-            expected=f"счёт старше {NEW_BCC_ACCOUNT_MAX_DAYS} дней",
-            actual=f"открыт {age_days} дн. назад ({account['opened_at']})",
-            since=account["opened_at"],
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.new_bcc_expected",
+            actual_key="ev.new_bcc_actual",
+            since=None,
         ),
         lang=lang,
-        age_days=age_days,
     )
+
+
+def build_analyst_details(
+    req: CheckRequest,
+    store: Store,
+    signals: list[Signal],
+    *,
+    today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
+) -> AnalystDetails:
+    """Build restricted antifraud analyst details (banking secrecy and character-level offsets)."""
+    bcc_info: BccAccountAnalystInfo | None = None
+    account = store.bcc_accounts.get(req.recipient_iik)
+    if account is not None:
+        owner_bin = account["owner_bin"]
+        owner_name = account.get("owner_name") or store.registry.get(owner_bin) or owner_bin
+        opened_at_str = account["opened_at"]
+        age_days = max(0, (today - date.fromisoformat(opened_at_str)).days)
+        bcc_info = BccAccountAnalystInfo(
+            iik=req.recipient_iik,
+            owner_bin=owner_bin,
+            owner_name=owner_name,
+            opened_at=opened_at_str,
+            age_days=age_days,
+            owner_matches_recipient=(owner_bin == req.recipient_bin),
+        )
+
+    details: list[AnalystSignalDetail] = []
+    for sig in signals:
+        if sig.rule_id == "bcc_account_other_owner" and bcc_info is not None:
+            params = {
+                "owner_name": bcc_info.owner_name,
+                "owner_bin": bcc_info.owner_bin,
+            }
+            details.append(
+                AnalystSignalDetail(
+                    rule_id="bcc_account_other_owner",
+                    reason_ru=t("analyst.bcc_account_other_owner", "ru", **params),
+                    reason=t("analyst.bcc_account_other_owner", lang, **params),
+                    message_key="analyst.bcc_account_other_owner",
+                    message_params=params,
+                    evidence=_make_evidence(
+                        "iik",
+                        lang=lang,
+                        expected_key="ev.analyst_bcc_expected",
+                        expected_params={"bin": req.recipient_bin},
+                        actual_key="ev.analyst_bcc_actual",
+                        actual_params={
+                            "owner_name": bcc_info.owner_name,
+                            "owner_bin": bcc_info.owner_bin,
+                        },
+                        since=bcc_info.opened_at,
+                    ),
+                )
+            )
+        elif sig.rule_id == "new_bcc_account" and bcc_info is not None:
+            params = {
+                "age_days": bcc_info.age_days,
+                "opened_at": bcc_info.opened_at,
+            }
+            details.append(
+                AnalystSignalDetail(
+                    rule_id="new_bcc_account",
+                    reason_ru=t("analyst.new_bcc_account", "ru", **params),
+                    reason=t("analyst.new_bcc_account", lang, **params),
+                    message_key="analyst.new_bcc_account",
+                    message_params=params,
+                    evidence=_make_evidence(
+                        "iik",
+                        lang=lang,
+                        expected_key="ev.analyst_new_bcc_expected",
+                        expected_params={"days": NEW_BCC_ACCOUNT_MAX_DAYS},
+                        actual_key="ev.analyst_new_bcc_actual",
+                        actual_params={
+                            "age_days": bcc_info.age_days,
+                            "opened_at": bcc_info.opened_at,
+                        },
+                        since=bcc_info.opened_at,
+                    ),
+                )
+            )
+        elif sig.rule_id == "mixed_script_name":
+            positions = find_mixed_script_positions(req.recipient_name)
+            pos_label = ", ".join(str(p) for p in positions)
+            chars_label = ", ".join(f"{p}:{req.recipient_name[p]}" for p in positions)
+            params = {"positions": pos_label}
+            details.append(
+                AnalystSignalDetail(
+                    rule_id="mixed_script_name",
+                    reason_ru=t("analyst.mixed_script_name", "ru", **params),
+                    reason=t("analyst.mixed_script_name", lang, **params),
+                    message_key="analyst.mixed_script_name",
+                    message_params=params,
+                    evidence=_make_evidence(
+                        "name",
+                        lang=lang,
+                        expected_key="ev.single_script_expected",
+                        actual=chars_label,
+                        positions=positions,
+                    ),
+                )
+            )
+
+    return AnalystDetails(bcc_account=bcc_info, signal_details=details)
 
 
 def rule_amount_anomaly(
@@ -642,21 +1099,33 @@ def rule_amount_anomaly(
         if client_p90 is None or client_p90 <= 0 or req.amount_kzt <= client_p90:
             return None
         ratio_p90 = req.amount_kzt / client_p90
-        if ratio_p90 >= 2.0:
+        first_severity: Severity
+        if ratio_p90 > AMOUNT_FIRST_PAYMENT_RED_P90_MULT:
+            first_severity = "primary"
+            points = WEIGHT_AMOUNT_ANOMALY_EXTREME
+        elif ratio_p90 > AMOUNT_FIRST_PAYMENT_YELLOW_P90_MULT:
+            first_severity = "primary"
+            points = WEIGHT_AMOUNT_ANOMALY_PRIMARY
+        elif ratio_p90 >= 2.0:
+            first_severity = "amplifier"
             points = 20
         elif ratio_p90 >= 1.5:
+            first_severity = "amplifier"
             points = 15
         else:
+            first_severity = "amplifier"
             points = 10
         client_p90_kzt = _format_kzt(client_p90)
         return _make_signal(
             rule_id="amount_anomaly",
             points=points,
-            severity="amplifier",
+            severity=first_severity,
             message_key="rule.amount_anomaly_first_p90",
-            evidence=Evidence(
-                field="amount",
-                expected=f"не выше {client_p90_kzt} (p90 клиента)",
+            evidence=_make_evidence(
+                "amount",
+                lang=lang,
+                expected_key="ev.amount_p90_expected",
+                expected_params={"amount": client_p90_kzt},
                 actual=_format_kzt(req.amount_kzt),
             ),
             lang=lang,
@@ -672,6 +1141,27 @@ def rule_amount_anomaly(
         return None
 
     ratio = req.amount_kzt / median_amount
+    supplier_p90 = _compute_percentile(sorted(amounts), 0.9)
+    if supplier_p90 > 0 and req.amount_kzt >= AMOUNT_SUPPLIER_EXTREME_P90_MULT * supplier_p90:
+        median_kzt = _format_kzt(median_amount)
+        return _make_signal(
+            rule_id="amount_anomaly",
+            points=WEIGHT_AMOUNT_ANOMALY_EXTREME,
+            severity="primary",
+            message_key="rule.amount_anomaly_supplier",
+            evidence=_make_evidence(
+                "amount",
+                lang=lang,
+                expected_key="ev.amount_around",
+                expected_params={"amount": median_kzt},
+                actual=_format_kzt(req.amount_kzt),
+                since=supplier_history[0]["paid_at"],
+            ),
+            lang=lang,
+            ratio=f"{ratio:.1f}",
+            median_kzt=median_kzt,
+        )
+
     if ratio < 1.5:
         return None
 
@@ -713,9 +1203,11 @@ def rule_amount_anomaly(
         points=points,
         severity=severity,
         message_key="rule.amount_anomaly_supplier",
-        evidence=Evidence(
-            field="amount",
-            expected=f"около {median_kzt}",
+        evidence=_make_evidence(
+            "amount",
+            lang=lang,
+            expected_key="ev.amount_around",
+            expected_params={"amount": median_kzt},
             actual=_format_kzt(req.amount_kzt),
             since=supplier_history[0]["paid_at"],
         ),
@@ -740,33 +1232,70 @@ def rule_first_payment(
         points=0,
         severity="info",
         message_key="rule.first_payment",
-        evidence=Evidence(
-            field="bin",
-            expected="предыдущие платежи в истории",
-            actual="0 платежей",
+        evidence=_make_evidence(
+            "bin",
+            lang=lang,
+            expected_key="ev.first_payment_expected",
+            actual_key="ev.first_payment_actual",
         ),
         lang=lang,
     )
 
 
+_DOTTED_LETTERS_RE = re.compile(
+    r"(?<!\w)(?:[^\W\d_]\s*[\.\-_]+\s*){2,}[^\W\d_](?!\w)",
+    flags=re.UNICODE,
+)
+_SPACED_LETTERS_RE = re.compile(
+    r"(?<!\w)(?:[^\W\d_]\s+){3,}[^\W\d_](?!\w)",
+    flags=re.UNICODE,
+)
+
+
+def _collapse_obfuscated_letters(text: str) -> str:
+    """Join single letters separated by dots/hyphens ('с.р.о.ч.н.о') or spaces ('с р о ч н о')."""
+    step1 = _DOTTED_LETTERS_RE.sub(lambda m: re.sub(r"[\s.\-_]+", "", m.group(0)), text)
+    return _SPACED_LETTERS_RE.sub(lambda m: re.sub(r"\s+", "", m.group(0)), step1)
+
+
 def _fold_urgent_text(text: str) -> str:
-    """Normalize purpose text for urgent wording checks (NFKC, strip Cf, homoglyph/KZ fold)."""
-    nfkc = unicodedata.normalize("NFKC", text)
-    no_cf = "".join(ch for ch in nfkc if unicodedata.category(ch) != "Cf")
-    return map_homoglyphs(no_cf.upper().replace("Ё", "Е")).lower()
+    """Normalize purpose text for Cyrillic urgent wording checks using TR39 confusable skeleton."""
+    return confusable_skeleton(text).lower()
 
 
-_URGENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
-    (
-        phrase,
-        re.compile(
-            r"(?<!\w)"
-            + r"\s+".join(re.escape(part) for part in _fold_urgent_text(phrase).split())
-            + r"(?!\w)",
-            flags=re.UNICODE,
-        ),
+def _build_phrase_pattern(folded_phrase: str) -> re.Pattern[str]:
+    return re.compile(
+        r"(?<!\w)"
+        + r"\s+".join(re.escape(part) for part in folded_phrase.split())
+        + r"(?!\w)",
+        flags=re.UNICODE,
     )
-    for phrase in URGENT_PHRASES
+
+
+_CYR_URGENT_PHRASES: tuple[str, ...] = tuple(
+    p for p in URGENT_PHRASES if not p.isascii()
+)
+
+_URGENT_CYR_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (
+        stem,
+        re.compile(r"(?<!\w)" + re.escape(_fold_urgent_text(stem)) + r"\w*(?!\w)", flags=re.UNICODE),
+    )
+    for stem in URGENT_CYRILLIC_STEMS
+) + tuple(
+    (phrase, _build_phrase_pattern(_fold_urgent_text(phrase)))
+    for phrase in _CYR_URGENT_PHRASES
+)
+
+_URGENT_LAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (
+        stem,
+        re.compile(r"(?<!\w)" + re.escape(stem.lower()) + r"[a-z]*(?!\w)", flags=re.UNICODE),
+    )
+    for stem in URGENT_LATIN_STEMS
+) + tuple(
+    (phrase, _build_phrase_pattern(phrase.lower()))
+    for phrase in URGENT_LATIN_PHRASES
 )
 
 
@@ -783,9 +1312,9 @@ def rule_bin_young(
 
     yy, mm = yymm
     current_yy = today.year % 100
-    reg_year = 2000 + yy if yy <= current_yy else 1900 + yy
-    months_diff = (today.year - reg_year) * 12 + (today.month - mm)
-    if months_diff < 0 or months_diff >= BIN_YOUNG_MAX_MONTHS:
+    reg_year = 2000 + yy if yy <= current_yy + 5 else 1900 + yy
+    months_diff = max(0, (today.year - reg_year) * 12 + (today.month - mm))
+    if months_diff >= BIN_YOUNG_MAX_MONTHS:
         return None
 
     reg_date = f"{mm:02d}.{reg_year}"
@@ -794,10 +1323,13 @@ def rule_bin_young(
         points=WEIGHT_BIN_YOUNG,
         severity="amplifier",
         message_key="rule.bin_young",
-        evidence=Evidence(
-            field="bin",
-            expected=f"регистрация компании от {BIN_YOUNG_MAX_MONTHS} месяцев",
-            actual=f"зарегистрирована {reg_date} ({months_diff} мес. назад)",
+        evidence=_make_evidence(
+            "bin",
+            lang=lang,
+            expected_key="ev.bin_young_expected",
+            expected_params={"months": BIN_YOUNG_MAX_MONTHS},
+            actual_key="ev.bin_young_actual",
+            actual_params={"reg_date": reg_date, "months": months_diff},
             since=f"{reg_year:04d}-{mm:02d}",
         ),
         lang=lang,
@@ -806,12 +1338,23 @@ def rule_bin_young(
 
 
 def rule_urgent_wording(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Signal | None:
-    """Amplifier (+10 pts) when purpose contains whole-word urgency or requisite-change wording (L2)."""
-    folded = _fold_urgent_text(req.purpose or "")
-    if not folded:
+    """Amplifier (+10 pts) when purpose contains urgency or requisite-change wording (L2)."""
+    raw = sanitize_unicode(req.purpose or "")
+    if not raw:
         return None
 
-    matched = [phrase for phrase, pattern in _URGENT_PATTERNS if pattern.search(folded)]
+    collapsed = _collapse_obfuscated_letters(raw)
+    cyr_views = (_fold_urgent_text(raw), _fold_urgent_text(collapsed))
+    lat_views = (raw.lower(), collapsed.lower())
+
+    matched: list[str] = []
+    for label, pattern in _URGENT_CYR_PATTERNS:
+        if any(pattern.search(v) for v in cyr_views) and label not in matched:
+            matched.append(label)
+    for label, pattern in _URGENT_LAT_PATTERNS:
+        if any(pattern.search(v) for v in lat_views) and label not in matched:
+            matched.append(label)
+
     if not matched:
         return None
 
@@ -820,9 +1363,10 @@ def rule_urgent_wording(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> Sign
         points=WEIGHT_URGENT_WORDING,
         severity="amplifier",
         message_key="rule.urgent_wording",
-        evidence=Evidence(
-            field="purpose",
-            expected="обычное назначение платежа",
+        evidence=_make_evidence(
+            "purpose",
+            lang=lang,
+            expected_key="ev.urgent_expected",
             actual=", ".join(matched),
         ),
         lang=lang,
@@ -851,12 +1395,289 @@ def rule_trusted_account(
         points=0,
         severity="info",
         message_key="rule.trusted_account",
-        evidence=Evidence(
-            field="iik",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
             expected=req.recipient_iik,
-            actual=info.director_comment or "Подтверждено директором",
+            actual=info.director_comment or None,
+            actual_key=None if info.director_comment else "ev.trusted_default",
             since=info.decided_at,
         ),
         lang=lang,
         date_label=date_label,
+    )
+
+
+def rule_bcc_owner_verified(
+    req: CheckRequest,
+    store: Store,
+    *,
+    lang: Lang = DEFAULT_LANG,
+) -> Signal | None:
+    """Info signal when a known supplier's new BCC IIK is confirmed to belong to the same BIN."""
+    if not is_bcc_bank_verified_new_account(req, store):
+        return None
+    return _make_signal(
+        rule_id="bcc_owner_verified",
+        points=0,
+        severity="info",
+        message_key="rule.bcc_owner_verified",
+        evidence=_make_evidence(
+            "iik",
+            lang=lang,
+            expected_key="ev.bcc_owner_expected",
+            actual_key="ev.bcc_owner_verified",
+            since=None,
+        ),
+        lang=lang,
+    )
+
+
+def rule_duplicate_invoice(
+    req: CheckRequest,
+    store: Store,
+    *,
+    today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
+    include_recent_memory: bool = True,
+) -> Signal | None:
+    """Flag duplicate invoice number to the same recipient within 90 days (history + memory)."""
+    invoice_no = extract_invoice_number(req.purpose)
+    if not invoice_no:
+        return None
+
+    matched_dates: list[str] = []
+    for p in store.get_supplier_history(req.recipient_bin, req.payer_id):
+        paid_at_str = str(p.get("paid_at", ""))
+        try:
+            paid_dt = date.fromisoformat(paid_at_str[:10])
+        except ValueError:
+            continue
+        days_ago = max(0, (today - paid_dt).days)
+        if days_ago > DUPLICATE_INVOICE_WINDOW_DAYS:
+            continue
+        if extract_invoice_number(p.get("purpose", "")) == invoice_no:
+            matched_dates.append(paid_at_str[:10])
+
+    if include_recent_memory:
+        req_hash = compute_request_sha256(
+            req, resolved_payer_id=store.resolve_payer_id(req.payer_id)
+        )
+        for entry in store.get_recent_checks(
+            req.recipient_bin,
+            req.payer_id,
+            within_days=DUPLICATE_INVOICE_WINDOW_DAYS,
+            today=today,
+            exclude_request_sha256=req_hash,
+        ):
+            entry_inv = entry.get("invoice_no") or extract_invoice_number(entry.get("purpose", ""))
+            if entry_inv == invoice_no:
+                matched_dates.append(str(entry["checked_at"])[:10])
+
+    if not matched_dates:
+        return None
+
+    prev_date = max(matched_dates)
+    return _make_signal(
+        rule_id="duplicate_invoice",
+        points=WEIGHT_DUPLICATE_INVOICE,
+        severity="primary",
+        message_key="rule.duplicate_invoice",
+        evidence=_make_evidence(
+            "purpose",
+            lang=lang,
+            expected_key="ev.duplicate_invoice_expected",
+            actual_key="ev.duplicate_invoice_actual",
+            actual_params={"invoice_no": invoice_no},
+            since=prev_date,
+        ),
+        lang=lang,
+        invoice_no=invoice_no,
+        prev_date=prev_date,
+    )
+
+
+def rule_new_recipient_accumulated(
+    req: CheckRequest,
+    store: Store,
+    *,
+    today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
+    include_recent_memory: bool = True,
+) -> Signal | None:
+    """Flag cumulative amount to a new recipient across multiple checks within 7 days."""
+    if not include_recent_memory:
+        return None
+    if store.get_supplier_history(req.recipient_bin, req.payer_id):
+        return None
+
+    req_hash = compute_request_sha256(req, resolved_payer_id=store.resolve_payer_id(req.payer_id))
+    recent = store.get_recent_checks(
+        req.recipient_bin,
+        req.payer_id,
+        within_days=NEW_RECIPIENT_ACCUM_WINDOW_DAYS,
+        today=today,
+        exclude_request_sha256=req_hash,
+    )
+    if not recent:
+        return None
+
+    count = len(recent) + 1
+    accum_total = sum(float(c["amount_kzt"]) for c in recent) + req.amount_kzt
+    client_p90 = compute_client_p90(store, req.payer_id)
+    client_median = compute_client_median(store, req.payer_id)
+
+    severity: Severity
+    if client_p90 and accum_total > AMOUNT_FIRST_PAYMENT_RED_P90_MULT * client_p90:
+        severity = "primary"
+        points = WEIGHT_AMOUNT_ANOMALY_EXTREME
+    elif client_p90 and accum_total > AMOUNT_FIRST_PAYMENT_YELLOW_P90_MULT * client_p90:
+        severity = "primary"
+        points = WEIGHT_AMOUNT_ANOMALY_PRIMARY
+    elif client_p90 and accum_total > client_p90:
+        severity = "amplifier"
+        points = WEIGHT_NEW_RECIPIENT_ACCUM_MAX
+    elif (client_median and accum_total >= client_median) or count >= 3:
+        severity = "amplifier"
+        points = WEIGHT_NEW_RECIPIENT_ACCUM_MIN
+    else:
+        return None
+
+    total_kzt = _format_kzt(accum_total)
+    return _make_signal(
+        rule_id="new_recipient_accumulated",
+        points=points,
+        severity=severity,
+        message_key="rule.new_recipient_accumulated",
+        evidence=_make_evidence(
+            "amount",
+            lang=lang,
+            expected=_format_kzt(client_p90) if client_p90 else None,
+            expected_key=None if client_p90 else "ev.accum_expected_fallback",
+            actual_key="ev.accum_actual",
+            actual_params={
+                "total": total_kzt,
+                "days": NEW_RECIPIENT_ACCUM_WINDOW_DAYS,
+                "count": count,
+            },
+            since=str(recent[0]["checked_at"])[:10],
+        ),
+        lang=lang,
+        total_kzt=total_kzt,
+        count=count,
+    )
+
+
+def rule_structuring_72h(
+    req: CheckRequest,
+    store: Store,
+    *,
+    today: date = DEMO_TODAY,
+    lang: Lang = DEFAULT_LANG,
+    include_recent_memory: bool = True,
+) -> Signal | None:
+    """Detect payment splitting over 72 hours (history + in-memory checks) against median."""
+    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+    window_days = max(1, STRUCTURING_WINDOW_HOURS // 24)
+
+    hist_72h = []
+    for p in supplier_history:
+        try:
+            paid_dt = date.fromisoformat(str(p.get("paid_at", ""))[:10])
+        except ValueError:
+            continue
+        days_ago = (today - paid_dt).days
+        if 0 <= days_ago <= window_days:
+            hist_72h.append(p)
+
+    req_hash = compute_request_sha256(req, resolved_payer_id=store.resolve_payer_id(req.payer_id))
+    checks_72h = (
+        store.get_recent_checks(
+            req.recipient_bin,
+            req.payer_id,
+            within_hours=float(STRUCTURING_WINDOW_HOURS),
+            today=today,
+            exclude_request_sha256=req_hash,
+        )
+        if include_recent_memory
+        else []
+    )
+    count = len(hist_72h) + len(checks_72h) + 1
+    if count < 2:
+        return None
+
+    total_72h = (
+        sum(float(p["amount_kzt"]) for p in hist_72h)
+        + sum(float(c["amount_kzt"]) for c in checks_72h)
+        + req.amount_kzt
+    )
+
+    severity: Severity
+    if supplier_history:
+        amounts = [float(p["amount_kzt"]) for p in supplier_history if float(p["amount_kzt"]) > 0]
+        if not amounts:
+            return None
+        median_amount = float(statistics.median(amounts))
+        if median_amount <= 0:
+            return None
+        supplier_p90 = _compute_percentile(sorted(amounts), 0.9)
+        ratio = total_72h / median_amount
+
+        if supplier_p90 > 0 and total_72h >= AMOUNT_SUPPLIER_EXTREME_P90_MULT * supplier_p90:
+            severity = "primary"
+            points = WEIGHT_AMOUNT_ANOMALY_EXTREME
+        elif ratio >= STRUCTURING_PRIMARY_RATIO or (
+            count >= STRUCTURING_SPLIT_MIN_COUNT and ratio >= 2.0
+        ):
+            severity = "primary"
+            points = WEIGHT_STRUCTURING_PRIMARY
+        elif ratio >= STRUCTURING_PAIR_MIN_RATIO or (
+            count >= STRUCTURING_SPLIT_MIN_COUNT and ratio >= STRUCTURING_SPLIT_MIN_RATIO
+        ):
+            severity = "amplifier"
+            points = WEIGHT_STRUCTURING_AMPLIFIER
+        else:
+            return None
+        ref_amount_kzt = _format_kzt(median_amount)
+    else:
+        client_median = compute_client_median(store, req.payer_id)
+        client_p90 = compute_client_p90(store, req.payer_id)
+        if not client_median or client_median <= 0:
+            return None
+        ratio = total_72h / client_median
+        if client_p90 and total_72h > AMOUNT_FIRST_PAYMENT_RED_P90_MULT * client_p90:
+            severity = "primary"
+            points = WEIGHT_AMOUNT_ANOMALY_EXTREME
+        elif client_p90 and total_72h > AMOUNT_FIRST_PAYMENT_YELLOW_P90_MULT * client_p90:
+            severity = "primary"
+            points = WEIGHT_STRUCTURING_PRIMARY
+        elif count >= STRUCTURING_SPLIT_MIN_COUNT and ratio >= STRUCTURING_SPLIT_MIN_RATIO:
+            severity = "amplifier"
+            points = WEIGHT_STRUCTURING_AMPLIFIER
+        else:
+            return None
+        ref_amount_kzt = _format_kzt(client_median)
+
+    total_kzt = _format_kzt(total_72h)
+    return _make_signal(
+        rule_id="structuring_72h",
+        points=points,
+        severity=severity,
+        message_key="rule.structuring_72h",
+        evidence=_make_evidence(
+            "amount",
+            lang=lang,
+            expected_key="ev.amount_around",
+            expected_params={"amount": ref_amount_kzt},
+            actual_key="ev.structuring_actual",
+            actual_params={
+                "total": total_kzt,
+                "hours": STRUCTURING_WINDOW_HOURS,
+                "count": count,
+            },
+        ),
+        lang=lang,
+        count=count,
+        total_kzt=total_kzt,
+        ratio=f"{ratio:.1f}",
     )

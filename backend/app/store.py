@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from app.risk.config import DEMO_TODAY
-from app.schemas import Approval, TrustedInfo
+from app.schemas import Approval, CheckRequest, TrustedInfo, compute_request_sha256
 from app.validators.kz import BankRecord
 
 DEFAULT_DATA_DIR: Path = Path(__file__).resolve().parents[1] / "data"
@@ -26,6 +26,7 @@ class Store:
     def __init__(self, data_dir: Path | None = None) -> None:
         self.data_dir: Path = (data_dir or DEFAULT_DATA_DIR).resolve()
         self.banks_path: Path = self.data_dir / "banks.json"
+        self.audit_log_path: Path = self.data_dir / "audit.jsonl"
 
         self.banks: list[BankRecord] = []
         self.banks_by_bik: dict[str, BankRecord] = {}
@@ -38,6 +39,7 @@ class Store:
 
         self.approvals: list[Approval] = []
         self.trusted_accounts: dict[tuple[str, str, str], TrustedInfo] = {}
+        self.recent_checks: list[dict[str, Any]] = []
 
         self.reload()
 
@@ -48,10 +50,12 @@ class Store:
         """Load static synthetic JSON files into memory."""
         raw_banks = self._read_json("banks.json")
         bank_items = raw_banks["banks"] if isinstance(raw_banks, dict) else raw_banks
-        self.banks = [
-            BankRecord(code=str(b["code"]), bik=str(b["bik"]), name=str(b["name"]))
-            for b in bank_items
-        ]
+        self.banks = []
+        for b in bank_items:
+            rec = BankRecord(code=str(b["code"]), bik=str(b["bik"]), name=str(b["name"]))
+            if b.get("budget"):
+                rec["budget"] = True
+            self.banks.append(rec)
         self.banks_by_bik = {b["bik"]: b for b in self.banks}
         self.banks_by_code = {b["code"]: b for b in self.banks}
 
@@ -69,6 +73,7 @@ class Store:
         """Reset mutable workflow state and reload JSON datasets."""
         self.approvals.clear()
         self.trusted_accounts.clear()
+        self.recent_checks.clear()
         self.reload()
 
     @property
@@ -165,6 +170,11 @@ class Store:
         bank = self.banks_by_code.get(code)
         return bank["name"] if bank is not None else None
 
+    def is_budget_bank(self, bik: str) -> bool:
+        """Return True if the bank for bik is flagged as a state/budget treasury entity."""
+        bank = self.banks_by_bik.get(bik)
+        return bool(bank is not None and bank.get("budget", False))
+
     def get_client_history(self, payer_id: str | None = None) -> list[dict[str, Any]]:
         """Return all historical payments for the given payer_id (or default client)."""
         resolved = self.resolve_payer_id(payer_id)
@@ -181,6 +191,101 @@ class Store:
         return [
             p for p in self.get_client_history(payer_id) if p.get("recipient_bin") == recipient_bin
         ]
+
+    def record_check(
+        self,
+        req: CheckRequest,
+        *,
+        invoice_no: str | None = None,
+        checked_at: datetime | None = None,
+        today: date = DEMO_TODAY,
+        request_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        """Store a payment check in short-term in-memory history, deduplicated by request SHA-256."""
+        resolved_payer = self.resolve_payer_id(req.payer_id)
+        req_hash = request_sha256 or compute_request_sha256(req, resolved_payer_id=resolved_payer)
+        for existing in self.recent_checks:
+            if existing.get("request_sha256") == req_hash:
+                return existing
+
+        ts = checked_at or datetime.combine(
+            today,
+            datetime.now(UTC).time().replace(microsecond=0),
+            tzinfo=UTC,
+        )
+        entry = {
+            "payer_id": resolved_payer,
+            "recipient_bin": req.recipient_bin,
+            "recipient_iik": req.recipient_iik,
+            "recipient_name": req.recipient_name,
+            "amount_kzt": float(req.amount_kzt),
+            "purpose": req.purpose,
+            "invoice_no": invoice_no,
+            "request_sha256": req_hash,
+            "checked_at": ts.isoformat(),
+        }
+        self.recent_checks.append(entry)
+        return entry
+
+    def clear_recent_draft(
+        self,
+        *,
+        payer_id: str | None,
+        recipient_bin: str,
+        recipient_iik: str,
+        amount_kzt: float,
+    ) -> None:
+        """Remove a matching pre-approval draft entry after director decision."""
+        resolved = self.resolve_payer_id(payer_id)
+        for idx in range(len(self.recent_checks) - 1, -1, -1):
+            entry = self.recent_checks[idx]
+            if (
+                entry["payer_id"] == resolved
+                and entry["recipient_bin"] == recipient_bin
+                and entry["recipient_iik"] == recipient_iik
+                and entry["amount_kzt"] == float(amount_kzt)
+            ):
+                self.recent_checks.pop(idx)
+                return
+
+    def get_recent_checks(
+        self,
+        recipient_bin: str,
+        payer_id: str | None = None,
+        *,
+        within_days: int | None = None,
+        within_hours: float | None = None,
+        now: datetime | None = None,
+        today: date = DEMO_TODAY,
+        exclude_request_sha256: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recorded in-memory checks for (payer_id, recipient_bin) within a time window."""
+        resolved = self.resolve_payer_id(payer_id)
+        ref_dt = now or datetime.combine(
+            today,
+            datetime.now(UTC).time().replace(microsecond=0),
+            tzinfo=UTC,
+        )
+        results: list[dict[str, Any]] = []
+        for entry in self.recent_checks:
+            if entry["payer_id"] != resolved or entry["recipient_bin"] != recipient_bin:
+                continue
+            if (
+                exclude_request_sha256 is not None
+                and entry.get("request_sha256") == exclude_request_sha256
+            ):
+                continue
+            try:
+                entry_dt = datetime.fromisoformat(entry["checked_at"])
+            except ValueError:
+                continue
+            delta = max(ref_dt - entry_dt, timedelta(0))
+            if within_hours is not None and delta > timedelta(hours=within_hours):
+                continue
+            if within_days is not None and delta > timedelta(days=within_days):
+                continue
+            results.append(entry)
+        return results
 
     def get_approval(self, approval_id: str) -> Approval | None:
         """Find an approval record by id."""

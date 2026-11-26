@@ -3,29 +3,38 @@
 from __future__ import annotations
 
 import random
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.risk.config import BCC_BANK_CODE, BCC_BIK, DEMO_TODAY, URGENT_PHRASES
 from app.risk.rules import (
+    build_analyst_details,
     compute_client_p90,
+    extract_invoice_number,
     rule_amount_anomaly,
     rule_bank_changed,
+    rule_bcc_account_not_found,
     rule_bcc_account_other_owner,
+    rule_bcc_owner_verified,
     rule_bik_format,
     rule_bin_format,
     rule_bin_name_mismatch,
     rule_bin_young,
+    rule_duplicate_invoice,
     rule_entity_type_mismatch,
     rule_first_payment,
     rule_iik_bank_code_vs_bik,
     rule_iik_belongs_to_other_counterparty,
     rule_iik_changed,
     rule_iik_format,
+    rule_kbe_mismatch,
+    rule_knp_unusual,
     rule_lookalike_supplier,
     rule_mixed_script_name,
     rule_new_bcc_account,
+    rule_new_recipient_accumulated,
+    rule_structuring_72h,
     rule_trusted_account,
     rule_urgent_wording,
 )
@@ -123,6 +132,28 @@ class TestPrecheckRules:
         malformed = req.model_copy(update={"recipient_iik": "BAD"})
         assert rule_iik_bank_code_vs_bik(malformed, store) is None
 
+    def test_bcc_account_not_found_precheck(self) -> None:
+        store = _make_store()
+        # Non-BCC IIK -> None
+        assert rule_bcc_account_not_found(_green_request(store), store) is None
+        # Existing BCC IIK -> None
+        step_payment = next(
+            p for p in store.history if p["recipient_name"] == "ТОО «СтепьЭнергоСервис»"
+        )
+        known_bcc_req = _green_request(store).model_copy(
+            update={"recipient_iik": step_payment["recipient_iik"], "recipient_bik": BCC_BIK}
+        )
+        assert rule_bcc_account_not_found(known_bcc_req, store) is None
+        # Valid synthetic BCC 856 IIK absent from bcc_accounts -> block signal
+        unknown_bcc = generate_iik(random.Random(5051), BCC_BANK_CODE)
+        sig = rule_bcc_account_not_found(
+            known_bcc_req.model_copy(update={"recipient_iik": unknown_bcc}), store
+        )
+        assert sig is not None
+        assert sig.rule_id == "bcc_account_not_found"
+        assert sig.severity == "block"
+        assert sig.reason_ru == "Счёт в BCC не найден."
+
 
 class TestRiskRules:
     def test_bcc_account_other_owner_clean_attack_edge(self) -> None:
@@ -142,12 +173,32 @@ class TestRiskRules:
         assert rule_bcc_account_other_owner(clean_req, store) is None
 
         red_item = next(q for q in store.queue if q["scenario"] == "red")
-        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields})
+        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields if k in red_item})
         sig = rule_bcc_account_other_owner(red_req, store)
         assert sig is not None
         assert sig.rule_id == "bcc_account_other_owner"
         assert sig.severity == "block"
-        assert "Вектор Трейд" in sig.reason_ru
+        assert sig.reason_ru == "Счёт в BCC оформлен не на указанного получателя."
+        # Banking secrecy: client signal & evidence must never disclose owner name, BIN, or date
+        bcc_entry = store.bcc_accounts[red_req.recipient_iik]
+        for leaked in (bcc_entry["owner_name"], "Вектор Трейд", bcc_entry["owner_bin"], bcc_entry["opened_at"]):
+            assert leaked not in sig.reason_ru
+            assert leaked not in sig.reason
+            assert leaked not in (sig.evidence.expected or "")
+            assert leaked not in (sig.evidence.actual or "")
+            assert leaked not in (sig.evidence.since or "")
+        assert sig.evidence.since is None
+
+        # Analyst details expose internal BCC owner & opening date
+        analyst = build_analyst_details(red_req, store, [sig], today=DEMO_TODAY)
+        assert analyst.bcc_account is not None
+        assert analyst.bcc_account.owner_name == "ТОО «Вектор Трейд»"
+        assert analyst.bcc_account.owner_bin == bcc_entry["owner_bin"]
+        assert analyst.bcc_account.opened_at == bcc_entry["opened_at"]
+        assert analyst.bcc_account.owner_matches_recipient is False
+        assert len(analyst.signal_details) == 1
+        assert "Вектор Трейд" in analyst.signal_details[0].reason_ru
+        assert bcc_entry["owner_bin"] in (analyst.signal_details[0].evidence.actual or "")
 
         assert rule_bcc_account_other_owner(_green_request(store), store) is None
         rng = random.Random(101)
@@ -160,12 +211,12 @@ class TestRiskRules:
         assert rule_lookalike_supplier(_green_request(store), store) is None
 
         grey_item = next(q for q in store.queue if q["scenario"] == "grey")
-        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields})
+        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields if k in grey_item})
         assert rule_lookalike_supplier(grey_req, store) is None
 
         # Attack 1: Latin C lookalike with different BIN
         red_item = next(q for q in store.queue if q["scenario"] == "red")
-        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields})
+        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields if k in red_item})
         sig = rule_lookalike_supplier(red_req, store)
         assert sig is not None
         assert sig.rule_id == "lookalike_supplier"
@@ -233,33 +284,86 @@ class TestRiskRules:
         edge_req = red_req.model_copy(update={"recipient_name": "ТОО «Алатау Инжиниринг Плюс»"})
         assert rule_lookalike_supplier(edge_req, store2) is None
 
-    def test_mixed_script_name_rule(self) -> None:
-        store = _make_store()
-        assert rule_mixed_script_name(_green_request(store)) is None
+        # Requirement 3: prefix/token variants, transliteration, and Unicode confusables -> lookalike
+        for variant_name in (
+            "ТОО «Алатау Снабжение»",
+            "ТОО «АлатауСнабСервис»",
+            "ТОО «Алатау Снабкомплект»",
+            "ТОО «Alatau Snab»",
+            'LLP "Alatau Snab"',
+            "ТОО «Alatau Snabzhenie»",
+            "ТОО «Алатау \u13dfнаб»",
+            "ТОО «\u0251латау Снаб»",
+            "ТОО «Алат\u3164ау\u2800 Сн\u0301аб\ufe0f»",
+        ):
+            sig_var = rule_lookalike_supplier(
+                red_req.model_copy(update={"recipient_name": variant_name}),
+                store2,
+            )
+            assert sig_var is not None, f"Expected lookalike for {variant_name!r}"
+            assert sig_var.rule_id == "lookalike_supplier"
+            assert "Алатау Снаб" in sig_var.reason_ru
 
-        # Separate Latin legal form LLP is NOT mixed-script inside a Cyrillic word
+        # Exception preserved: known supplier with its own history is NOT flagged even on variant name
+        green_req = _green_request(store2)
         assert (
-            rule_mixed_script_name(
-                _green_request(store).model_copy(update={"recipient_name": 'LLP "Алатау Снаб"'})
+            rule_lookalike_supplier(
+                green_req.model_copy(update={"recipient_name": "ТОО «Алатау Снабжение»"}),
+                store2,
+            )
+            is None
+        )
+        assert (
+            rule_lookalike_supplier(
+                green_req.model_copy(update={"recipient_name": "ТОО «Alatau Snab»"}),
+                store2,
             )
             is None
         )
 
+    def test_mixed_script_name_rule(self) -> None:
+        store = _make_store()
+        assert rule_mixed_script_name(_green_request(store)) is None
+
+        # Separate Latin legal form, whole Latin brand tokens, and legit numbers are NOT flagged
+        for safe_name in (
+            'LLP "Алатау Снаб"',
+            "ТОО «ЭкоSTAR»",
+            "ТОО «QazaqСтрой»",
+            "ТОО «Алматы-2»",
+            "ТОО «Строй 2020»",
+            "ТОО «1С-Рейтинг»",
+        ):
+            assert (
+                rule_mixed_script_name(_green_request(store).model_copy(update={"recipient_name": safe_name}))
+                is None
+            ), safe_name
+
         # Red scenario has Latin C inside Cyrillic "Cнаб" -> primary 30
         red_item = next(q for q in store.queue if q["scenario"] == "red")
-        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields})
+        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields if k in red_item})
         sig = rule_mixed_script_name(red_req)
         assert sig is not None
         assert sig.rule_id == "mixed_script_name"
         assert sig.severity == "primary"
         assert sig.points == 30
+        assert "цифры вместо букв" in sig.reason_ru
+
+        # Digits 0/3 inside Cyrillic word -> flagged, analyst_details has exact character positions
+        digits_req = red_req.model_copy(update={"recipient_name": "ТОО «Ка3Л0гистик»"})
+        sig_dig = rule_mixed_script_name(digits_req)
+        assert sig_dig is not None and sig_dig.rule_id == "mixed_script_name"
+        assert "Ка3Л0гистик" not in (sig_dig.evidence.actual or "")
+        analyst_dig = build_analyst_details(digits_req, store, [sig_dig], today=DEMO_TODAY)
+        assert len(analyst_dig.signal_details) == 1
+        assert analyst_dig.signal_details[0].evidence.positions == [7, 9]
 
     def test_bin_name_mismatch_clean_attack_and_m3_history_downgrade(self) -> None:
         store = _make_store()
         assert rule_bin_name_mismatch(_green_request(store), store) is None
 
         red_item = next(q for q in store.queue if q["scenario"] == "red")
-        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields})
+        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields if k in red_item})
         sig = rule_bin_name_mismatch(red_req, store)
         assert sig is not None
         assert sig.rule_id == "bin_name_mismatch"
@@ -332,11 +436,17 @@ class TestRiskRules:
         assert rule_bank_changed(green_req, store) is None
 
         yellow_item = next(q for q in store.queue if q["scenario"] == "yellow")
-        yellow_req = CheckRequest(**{k: yellow_item[k] for k in CheckRequest.model_fields})
-        sig_iik = rule_iik_changed(yellow_req, store)
-        sig_bank = rule_bank_changed(yellow_req, store)
+        yellow_req = CheckRequest(**{k: yellow_item[k] for k in CheckRequest.model_fields if k in yellow_item})
+        at_median = yellow_req.model_copy(update={"amount_kzt": 820_000})
+        sig_iik = rule_iik_changed(at_median, store)
+        sig_bank = rule_bank_changed(at_median, store)
+        # Amount 820_000 >= median 820_000 -> 30 pts (escalates 35 + 30 = 65 -> red)
         assert sig_iik is not None and sig_iik.points == 35 and sig_iik.severity == "primary"
-        assert sig_bank is not None and sig_bank.points == 15 and sig_bank.severity == "amplifier"
+        assert sig_bank is not None and sig_bank.points == 30 and sig_bank.severity == "amplifier"
+
+        # Below supplier median -> standard +15 amplifier (35 + 15 = 50 -> yellow)
+        low_amt_sig = rule_bank_changed(yellow_req.model_copy(update={"amount_kzt": 700_000}), store)
+        assert low_amt_sig is not None and low_amt_sig.points == 15
 
         rng = random.Random(303)
         new_halyk_iik = generate_iik(rng, "601", prefix="000")
@@ -362,7 +472,7 @@ class TestRiskRules:
         assert rule_trusted_account(other_payer_req, store) is None
 
         grey_item = next(q for q in store.queue if q["scenario"] == "grey")
-        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields})
+        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields if k in grey_item})
         assert rule_iik_changed(grey_req, store) is None
         assert rule_bank_changed(grey_req, store) is None
 
@@ -436,14 +546,38 @@ class TestRiskRules:
         assert rule_new_bcc_account(old_req, store) is None
 
         red_item = next(q for q in store.queue if q["scenario"] == "red")
-        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields})
+        red_req = CheckRequest(**{k: red_item[k] for k in CheckRequest.model_fields if k in red_item})
         sig = rule_new_bcc_account(red_req, store, today=DEMO_TODAY)
         assert sig is not None and sig.rule_id == "new_bcc_account" and sig.points == 25
+        assert sig.reason_ru == "Счёт получателя открыт недавно."
+        bcc_entry = store.bcc_accounts[red_req.recipient_iik]
+        for leaked in (bcc_entry["opened_at"], "12", bcc_entry["owner_name"], bcc_entry["owner_bin"]):
+            assert leaked not in sig.reason_ru
+            assert leaked not in sig.reason
+            assert leaked not in (sig.evidence.expected or "")
+            assert leaked not in (sig.evidence.actual or "")
+            assert leaked not in (sig.evidence.since or "")
+        assert sig.evidence.since is None
+
+        analyst = build_analyst_details(red_req, store, [sig], today=DEMO_TODAY)
+        assert analyst.bcc_account is not None
+        assert analyst.bcc_account.opened_at == bcc_entry["opened_at"]
+        assert analyst.bcc_account.age_days == 12
+        assert len(analyst.signal_details) == 1
+        assert bcc_entry["opened_at"] in analyst.signal_details[0].reason_ru
+        assert analyst.signal_details[0].evidence.since == bcc_entry["opened_at"]
 
         opened = DEMO_TODAY - timedelta(days=12)
         exact_30_today = opened + timedelta(days=30)
         assert rule_new_bcc_account(red_req, store, today=exact_30_today) is None
         assert rule_new_bcc_account(_green_request(store), store) is None
+
+        # Boundary (Item 14): account opened after DEMO_TODAY -> treated as 0 days (young), not ignored
+        future_today = opened - timedelta(days=5)
+        sig_future = rule_new_bcc_account(red_req, store, today=future_today)
+        assert sig_future is not None and sig_future.rule_id == "new_bcc_account"
+        analyst_future = build_analyst_details(red_req, store, [sig_future], today=future_today)
+        assert analyst_future.bcc_account is not None and analyst_future.bcc_account.age_days == 0
 
     def test_amount_anomaly_h2_primary_amplifier_and_first_payment_p90(self) -> None:
         store = _make_store()
@@ -512,7 +646,7 @@ class TestRiskRules:
         p90 = compute_client_p90(store3)
         assert p90 is not None and p90 > 2_000_000
         grey_item = next(q for q in store3.queue if q["scenario"] == "grey")
-        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields})
+        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields if k in grey_item})
         assert rule_amount_anomaly(grey_req, store3) is None
 
         big_first = grey_req.model_copy(update={"amount_kzt": p90 + 500_000})
@@ -522,12 +656,28 @@ class TestRiskRules:
         assert sig_p90.severity == "amplifier"
         assert 10 <= sig_p90.points <= 20
 
+        # Item 4: first payment > 3x client p90 -> primary 35 (yellow); > 10x -> primary 65 (red)
+        sig_3x = rule_amount_anomaly(
+            grey_req.model_copy(update={"amount_kzt": p90 * 3.5}), store3
+        )
+        assert sig_3x is not None and sig_3x.severity == "primary" and sig_3x.points == 35
+        sig_10x = rule_amount_anomaly(
+            grey_req.model_copy(update={"amount_kzt": p90 * 10.5}), store3
+        )
+        assert sig_10x is not None and sig_10x.severity == "primary" and sig_10x.points == 65
+
+        # Item 4: known supplier >= 10x supplier p90 -> primary 65 (red)
+        sig_sup_10x = rule_amount_anomaly(
+            _green_request(store3).model_copy(update={"amount_kzt": 20_000_000}), store3
+        )
+        assert sig_sup_10x is not None and sig_sup_10x.severity == "primary" and sig_sup_10x.points == 65
+
     def test_first_payment_clean_and_new(self) -> None:
         store = _make_store()
         assert rule_first_payment(_green_request(store), store) is None
 
         grey_item = next(q for q in store.queue if q["scenario"] == "grey")
-        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields})
+        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields if k in grey_item})
         sig = rule_first_payment(grey_req, store)
         assert sig is not None and sig.rule_id == "first_payment" and sig.severity == "info"
         assert sig.points == 0
@@ -558,6 +708,18 @@ class TestRiskRules:
             is None
         )
 
+        # Boundary (Item 14): BIN registered after DEMO_TODAY -> treated as 0 months (young)
+        future_same_yr_bin = make_bin_iin("26064000001")
+        future_next_yr_bin = make_bin_iin("27014000001")
+        sig_f1 = rule_bin_young(
+            req.model_copy(update={"recipient_bin": future_same_yr_bin}), today=DEMO_TODAY
+        )
+        sig_f2 = rule_bin_young(
+            req.model_copy(update={"recipient_bin": future_next_yr_bin}), today=DEMO_TODAY
+        )
+        assert sig_f1 is not None and sig_f1.rule_id == "bin_young"
+        assert sig_f2 is not None and sig_f2.rule_id == "bin_young"
+
         # Edge: IIN returns None (not a BIN)
         rng = random.Random(1201)
         assert (
@@ -566,6 +728,48 @@ class TestRiskRules:
             )
             is None
         )
+
+    def test_kbe_mismatch_and_knp_unusual_rules(self) -> None:
+        store = _make_store()
+        green_req = _green_request(store)
+        rng = random.Random(1313)
+        valid_iin = generate_iin(rng)
+        joint_bin_6 = generate_bin(rng, entity_digit=6)
+
+        # Default empty kbe/knp -> rules skipped (backwards compatible)
+        assert rule_kbe_mismatch(green_req) is None
+        assert rule_knp_unusual(green_req, store) is None
+
+        # KBe=17 with individual IIN triggers primary 40 even when "ТОО" is omitted from name
+        no_opf_iin = green_req.model_copy(
+            update={"recipient_name": "Алатау Снаб", "recipient_bin": valid_iin, "kbe": "17"}
+        )
+        sig_kbe = rule_kbe_mismatch(no_opf_iin)
+        assert sig_kbe is not None
+        assert sig_kbe.rule_id == "kbe_mismatch"
+        assert sig_kbe.severity == "primary"
+        assert sig_kbe.points == 40
+
+        # KBe=17 with BIN and KBe=19 with IIN or joint-venture BIN(6) -> clean
+        assert rule_kbe_mismatch(green_req.model_copy(update={"kbe": "17"})) is None
+        assert rule_kbe_mismatch(no_opf_iin.model_copy(update={"kbe": "19"})) is None
+        assert (
+            rule_kbe_mismatch(
+                green_req.model_copy(update={"recipient_bin": joint_bin_6, "kbe": "19"})
+            )
+            is None
+        )
+        # KBe=19 with corporate BIN(4) -> mismatch
+        sig_19_bin = rule_kbe_mismatch(green_req.model_copy(update={"kbe": "19"}))
+        assert sig_19_bin is not None and sig_19_bin.points == 25
+
+        # KNP matching supplier history (710 for Алатау Снаб) -> None; different KNP -> amplifier 15
+        assert rule_knp_unusual(green_req.model_copy(update={"knp": "710"}), store) is None
+        sig_knp = rule_knp_unusual(green_req.model_copy(update={"knp": "859"}), store)
+        assert sig_knp is not None
+        assert sig_knp.rule_id == "knp_unusual"
+        assert sig_knp.severity == "amplifier"
+        assert sig_knp.points == 15
 
     @pytest.mark.parametrize("phrase", URGENT_PHRASES)
     def test_urgent_wording_detects_all_phrases(self, phrase: str) -> None:
@@ -584,20 +788,121 @@ class TestRiskRules:
         store = _make_store()
         req = _green_request(store)
 
-        # Must NOT fire on words containing "срочно" as a substring
+        # Must NOT fire on words containing "срочно" as a substring (including spaced/translit)
         for safe_purpose in (
             "Оплата по договору, несрочно",
             "Досрочно погашение аренды по счёту № 5",
+            "Оплата по договору, н е с р о ч н о",
+            "Oplata nesrochno po schetu",
+            "Dosrochno pogashenie",
         ):
             assert rule_urgent_wording(req.model_copy(update={"purpose": safe_purpose})) is None
 
-        # Must fire on homoglyphs, ё/е variants, Kazakh folded spelling, and Cf invisibles
+        # Must fire on stems, English, translit, spaced/dotted letters, homoglyphs, and invisibles
         for spoofed_purpose in (
             "Оплата по счёту, cрoчн0!",  # Latin c, o and digit 0
             "Оплата на новый счет",  # е instead of ё
+            "Оплата на новый расчётный счёт",
+            "Смена обслуживающего банка по договору",
+            "Смена банка получателя",
+            "Оплата срочный заказ сегодня",
+            "Срочная поставка оборудования",
             "Төлем с\u200bмена реквизитов",  # Cf invisible char
             "Төлем шугыл түрде",  # Kazakh folded шұғыл
             "Жедел төлем № 14",
+            "Urgent payment for invoice 77",
+            "Payment using new bank details",
+            "Invoice with changed bank account",
+            "Oplata srochno po dogovoru",
+            "Оплата по счёту, с р о ч н о!",
+            "Оплата по счёту, с.р.о.ч.н.о!",
+            "Invoice u r g e n t please",
+            "Oplata s.r.o.c.h.n.o!",
         ):
             sig = rule_urgent_wording(req.model_copy(update={"purpose": spoofed_purpose}))
-            assert sig is not None and sig.rule_id == "urgent_wording"
+            assert sig is not None and sig.rule_id == "urgent_wording", spoofed_purpose
+
+    def test_duplicate_invoice_90d_history_and_memory(self) -> None:
+        assert extract_invoice_number("Оплата по счёту № 214 по договору № 14-А") == "214"
+        assert extract_invoice_number("Оплата сч. 214 за товары") == "214"
+        assert extract_invoice_number("Оплата № 214") == "214"
+        assert extract_invoice_number("Оплата по договору № 14-А без счёта") is None
+        assert extract_invoice_number("Оплата по доп. соглашению № 2 (договор № 19-К)") is None
+
+        store = _make_store()
+        green_req = _green_request(store)
+        # Unique invoice -> None
+        assert rule_duplicate_invoice(green_req, store, today=DEMO_TODAY) is None
+
+        # Invoice #113 paid to Алатау Снаб 11 days ago (within 90d) -> primary 35
+        dup_hist = green_req.model_copy(update={"purpose": "Оплата сч. 113 за материалы"})
+        sig_hist = rule_duplicate_invoice(dup_hist, store, today=DEMO_TODAY)
+        assert sig_hist is not None
+        assert sig_hist.rule_id == "duplicate_invoice"
+        assert sig_hist.severity == "primary" and sig_hist.points == 35
+        assert "Возможна повторная оплата счёта" in sig_hist.reason_ru
+
+        # Invoice #101 paid 356 days ago (> 90d) -> None
+        old_inv = green_req.model_copy(update={"purpose": "Оплата по счёту № 101"})
+        assert rule_duplicate_invoice(old_inv, store, today=DEMO_TODAY) is None
+
+        # Recorded in-memory check -> triggers duplicate_invoice
+        store.record_check(green_req, invoice_no="214", today=DEMO_TODAY)
+        sig_mem = rule_duplicate_invoice(
+            green_req.model_copy(update={"purpose": "Оплата № 214"}), store, today=DEMO_TODAY
+        )
+        assert sig_mem is not None and sig_mem.rule_id == "duplicate_invoice"
+
+    def test_new_recipient_accumulated_7d_and_structuring_72h(self) -> None:
+        store = _make_store()
+        grey_item = next(q for q in store.queue if q["scenario"] == "grey")
+        grey_req = CheckRequest(**{k: grey_item[k] for k in CheckRequest.model_fields if k in grey_item})
+        assert rule_new_recipient_accumulated(grey_req, store, today=DEMO_TODAY) is None
+
+        # Old check (> 7d ago) ignored
+        old_dt = datetime(DEMO_TODAY.year, DEMO_TODAY.month, DEMO_TODAY.day, 10, 0, tzinfo=UTC) - timedelta(days=10)
+        store.record_check(grey_req.model_copy(update={"amount_kzt": 2_000_000}), checked_at=old_dt)
+        assert rule_new_recipient_accumulated(grey_req, store, today=DEMO_TODAY) is None
+
+        # Recent check within 7 days pushes accumulated total above client median -> amplifier
+        recent_dt = datetime(DEMO_TODAY.year, DEMO_TODAY.month, DEMO_TODAY.day, 9, 0, tzinfo=UTC) - timedelta(days=2)
+        store.record_check(grey_req.model_copy(update={"amount_kzt": 1_200_000}), checked_at=recent_dt)
+        sig_acc = rule_new_recipient_accumulated(
+            grey_req.model_copy(update={"amount_kzt": 900_000}), store, today=DEMO_TODAY
+        )
+        assert sig_acc is not None
+        assert sig_acc.rule_id == "new_recipient_accumulated"
+        assert sig_acc.severity == "amplifier"
+
+        # Item 15: 3 payments of ~40% median (540_000 vs 1_350_000) within 72h -> structuring_72h
+        store2 = _make_store()
+        green_req = _green_request(store2)
+        chunk = green_req.model_copy(update={"amount_kzt": 540_000})
+        assert rule_structuring_72h(chunk, store2, today=DEMO_TODAY) is None
+        t0 = datetime(DEMO_TODAY.year, DEMO_TODAY.month, DEMO_TODAY.day, 8, 0, tzinfo=UTC)
+        store2.record_check(chunk.model_copy(update={"purpose": "Оплата сч. 901"}), invoice_no="901", checked_at=t0 - timedelta(hours=20))
+        assert rule_structuring_72h(chunk.model_copy(update={"purpose": "Оплата сч. 902"}), store2, today=DEMO_TODAY) is None
+        store2.record_check(chunk.model_copy(update={"purpose": "Оплата сч. 902"}), invoice_no="902", checked_at=t0 - timedelta(hours=10))
+        sig_split = rule_structuring_72h(chunk.model_copy(update={"purpose": "Оплата сч. 903"}), store2, today=DEMO_TODAY)
+        assert sig_split is not None
+        assert sig_split.rule_id == "structuring_72h"
+        assert sig_split.severity == "amplifier" and sig_split.points == 20
+
+    def test_bcc_owner_verified_same_bin_new_iik(self) -> None:
+        store = _make_store()
+        green_req = _green_request(store)
+        new_bcc_iik = generate_iik(random.Random(1010), BCC_BANK_CODE, prefix="KZT")
+        store.bcc_accounts[new_bcc_iik] = {
+            "owner_bin": green_req.recipient_bin,
+            "owner_name": green_req.recipient_name,
+            "opened_at": (DEMO_TODAY - timedelta(days=90)).isoformat(),
+        }
+        bcc_req = green_req.model_copy(update={"recipient_iik": new_bcc_iik, "recipient_bik": BCC_BIK})
+        assert rule_iik_changed(bcc_req, store) is None
+        assert rule_bank_changed(bcc_req, store) is None
+        sig = rule_bcc_owner_verified(bcc_req, store)
+        assert sig is not None and sig.rule_id == "bcc_owner_verified" and sig.points == 0
+        assert sig.reason_ru == "Счёт подтверждён банком: принадлежит этому поставщику."
+        assert green_req.recipient_bin not in sig.reason_ru
+        assert green_req.recipient_bin not in (sig.evidence.actual or "")
+        assert sig.evidence.since is None
