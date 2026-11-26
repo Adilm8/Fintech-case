@@ -1,7 +1,8 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { VERDICT_META } from "@/lib/format";
+import { useT } from "@/i18n";
+import { VERDICT_STYLES } from "@/lib/format";
 import type { Verdict } from "@/lib/types";
 import { cn } from "cn";
 
@@ -11,22 +12,24 @@ interface VerdictBadgeProps {
 }
 
 export function VerdictBadge({ verdict, className }: VerdictBadgeProps) {
-  const meta = VERDICT_META[verdict] ?? VERDICT_META.grey;
+  const { t } = useT();
+  const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.grey;
+  const label = t.verdicts[verdict] ?? t.verdicts.grey;
 
   return (
     <Badge
       variant="outline"
       className={cn(
         "h-auto min-h-6 gap-1.5 px-2.5 py-0.5 text-xs font-medium",
-        meta.badgeClass,
+        style.badgeClass,
         className
       )}
     >
       <span
         aria-hidden="true"
-        className={cn("size-2 rounded-full shrink-0", meta.dotClass)}
+        className={cn("size-2 rounded-full shrink-0", style.dotClass)}
       />
-      <span>{meta.labelRu}</span>
+      <span>{label}</span>
     </Badge>
   );
 }

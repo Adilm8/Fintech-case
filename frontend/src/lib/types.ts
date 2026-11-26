@@ -16,8 +16,6 @@ export type ApprovalStatus = "pending" | "approved" | "rejected";
 
 export type ApprovalDecision = "approved" | "rejected";
 
-export type UserRole = "accountant" | "director";
-
 export interface CheckRequest {
   payer_id?: string;
   recipient_name: string;
@@ -39,6 +37,7 @@ export interface Signal {
   rule_id: string;
   points: number;
   severity: SignalSeverity;
+  reason?: string;
   reason_ru: string;
   evidence?: Evidence | null;
 }
@@ -53,6 +52,7 @@ export interface ComparisonRow {
 }
 
 export interface NextAction {
+  text?: string;
   text_ru: string;
   primary: PrimaryAction;
   secondary: string[];
@@ -74,6 +74,7 @@ export interface CheckResult {
   check_id: string;
   verdict: Verdict;
   score: number;
+  headline?: string;
   headline_ru: string;
   signals: Signal[];
   comparison: ComparisonRow[];
@@ -122,4 +123,60 @@ export interface DecisionRequest {
   decision: ApprovalDecision;
   director_comment: string;
   trust_account: boolean;
+}
+
+export interface MetricsVerdictCounts {
+  green?: number;
+  yellow?: number;
+  red?: number;
+  grey?: number;
+  invalid?: number;
+}
+
+export interface MetricsConfusion {
+  tp?: number;
+  fn?: number;
+  fp?: number;
+  tn?: number;
+}
+
+export interface MetricsSummary {
+  total_cases?: number;
+  total_legit?: number;
+  total_attack?: number;
+  detection_rate?: number;
+  false_positive_rate?: number;
+  precision?: number;
+  f1?: number;
+  accuracy?: number;
+}
+
+export interface MetricsKindItem {
+  kind?: string;
+  label?: string;
+  count?: number;
+  total?: number;
+  detected?: number;
+  flagged_count?: number;
+  rate?: number | null;
+  detection_rate?: number | null;
+  false_positive_rate?: number | null;
+  verdicts?: MetricsVerdictCounts;
+}
+
+export interface MetricsResponse {
+  seed?: number;
+  dataset_path?: string;
+  positive_verdicts?: Verdict[];
+  summary?: MetricsSummary;
+  confusion?: MetricsConfusion;
+  verdict_by_label?: Record<string, MetricsVerdictCounts>;
+  total?: number;
+  attacks?: number;
+  legit?: number;
+  detection_rate?: number;
+  false_alarm_rate?: number;
+  by_kind?: MetricsKindItem[];
+  disclaimer?: string;
+  disclaimer_ru?: string;
 }

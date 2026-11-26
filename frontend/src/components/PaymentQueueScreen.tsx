@@ -1,26 +1,26 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
-  AlertCircle,
+  AlertTriangle,
+  ArrowUpRight,
   ChevronRight,
+  ClipboardCheck,
   FileText,
-  Loader2,
-  PlusCircle,
-  SearchCheck,
+  Inbox,
+  Plus,
+  Search,
+  SearchX,
+  Wallet,
+  X,
 } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { NewPaymentDialog } from "@/components/NewPaymentDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -30,224 +30,723 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { VerdictBadge } from "@/components/VerdictBadge";
+import { useT } from "@/i18n";
 import {
-  checkPayment,
-  getErrorMessage,
-  isNetworkUnreachableError,
-} from "@/lib/api";
-import {
-  APPROVAL_STATUS_META,
+  APPROVAL_STATUS_STYLES,
   findApprovalForPayment,
 } from "@/lib/approvals";
-import { formatKzt } from "@/lib/format";
+import { VERDICT_STYLES } from "@/lib/format";
 import type {
   Approval,
   CheckRequest,
   CheckResult,
   QueueItem,
+  Verdict,
 } from "@/lib/types";
 import { cn } from "cn";
 
 interface PaymentQueueScreenProps {
   queue: QueueItem[];
   approvals: Approval[];
+  approvalsError?: boolean;
   isLoading: boolean;
   hasError?: boolean;
   prefillRequest?: CheckRequest | null;
+  onClearPrefill?: () => void;
   onSelectPayment: (request: CheckRequest, result: CheckResult) => void;
+  onAddQueueItem: (request: CheckRequest, result: CheckResult) => string;
+  onRefreshQueue: () => Promise<void> | void;
   onNetworkError: (message: string) => void;
 }
 
-interface FormState {
-  recipient_name: string;
-  recipient_bin: string;
-  recipient_iik: string;
-  recipient_bik: string;
-  amount_kzt: string;
-  purpose: string;
+const VERDICT_ORDER: readonly Verdict[] = [
+  "green",
+  "yellow",
+  "red",
+  "grey",
+  "invalid",
+] as const;
+
+type VerdictFilter = "all" | Verdict;
+
+/**
+ * Counts payments requiring accountant/director attention before signing.
+ * Every non-green verdict needs review:
+ * - red: likely spoofing / blocking risk (signing blocked without director)
+ * - invalid: checksum/format error in requisites (cannot be signed)
+ * - yellow: requisite or amount changes compared to history
+ * - grey: first payment to a new supplier with no history to compare against
+ */
+function needsAttention(verdict: Verdict): boolean {
+  return verdict !== "green";
 }
 
-const EMPTY_FORM: FormState = {
-  recipient_name: "",
-  recipient_bin: "",
-  recipient_iik: "",
-  recipient_bik: "",
-  amount_kzt: "",
-  purpose: "",
-};
+function matchesSearchQuery(item: QueueItem, rawQuery: string): boolean {
+  const trimmed = rawQuery.trim().toLowerCase();
+  if (!trimmed) return true;
 
-function sanitizeBin(value: string): string {
-  return value.replace(/\s+/g, "").replace(/\D+/g, "");
+  const compact = trimmed.replace(/\s+/g, "");
+  const name = item.request.recipient_name.toLowerCase();
+  const bin = item.request.recipient_bin.replace(/\s+/g, "").toLowerCase();
+  const iik = item.request.recipient_iik.replace(/\s+/g, "").toLowerCase();
+
+  return (
+    name.includes(trimmed) ||
+    bin.includes(compact) ||
+    iik.includes(compact)
+  );
 }
 
-function sanitizeCode(value: string): string {
-  return value.replace(/\s+/g, "").toUpperCase();
-}
-
-function requestToFormState(req: CheckRequest): FormState {
-  return {
-    recipient_name: req.recipient_name,
-    recipient_bin: sanitizeBin(req.recipient_bin),
-    recipient_iik: sanitizeCode(req.recipient_iik),
-    recipient_bik: sanitizeCode(req.recipient_bik),
-    amount_kzt: String(req.amount_kzt),
-    purpose: req.purpose,
-  };
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+    return true;
+  }
+  return target.isContentEditable;
 }
 
 export function PaymentQueueScreen({
   queue,
   approvals,
+  approvalsError = false,
   isLoading,
   hasError = false,
   prefillRequest,
+  onClearPrefill,
   onSelectPayment,
+  onAddQueueItem,
+  onRefreshQueue,
   onNetworkError,
 }: PaymentQueueScreenProps) {
-  const [form, setForm] = useState<FormState>(() =>
-    prefillRequest ? requestToFormState(prefillRequest) : EMPTY_FORM
-  );
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const { t, formatMoney, interpolate } = useT();
 
-  const updateField = (field: keyof FormState, rawValue: string) => {
-    let value = rawValue;
-    if (field === "recipient_bin") {
-      value = sanitizeBin(rawValue);
-    } else if (field === "recipient_iik" || field === "recipient_bik") {
-      value = sanitizeCode(rawValue);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  const isDialogOpen = dialogOpen || Boolean(prefillRequest);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isDialogOpen) return;
+      if (
+        event.key === "/" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !isEditableElement(event.target)
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (!highlightedId) return;
+    const rafId = window.requestAnimationFrame(() => {
+      const mobileEl = rowRefs.current.get(`mobile:${highlightedId}`);
+      const desktopEl = rowRefs.current.get(`desktop:${highlightedId}`);
+      const target =
+        mobileEl && mobileEl.offsetParent !== null
+          ? mobileEl
+          : desktopEl && desktopEl.offsetParent !== null
+            ? desktopEl
+            : mobileEl ?? desktopEl;
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+    const timer = window.setTimeout(() => {
+      setHighlightedId(null);
+    }, 3500);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.clearTimeout(timer);
+    };
+  }, [highlightedId]);
+
+  const verdictCounts = useMemo(() => {
+    const counts: Record<Verdict, number> = {
+      green: 0,
+      yellow: 0,
+      red: 0,
+      grey: 0,
+      invalid: 0,
+    };
+    for (const item of queue) {
+      if (item.result.verdict in counts) {
+        counts[item.result.verdict] += 1;
+      }
     }
-    setForm((prev) => ({ ...prev, [field]: value }));
-    if (formError) setFormError(null);
+    return counts;
+  }, [queue]);
+
+  const availableVerdicts = useMemo(
+    () =>
+      VERDICT_ORDER.filter(
+        (verdict) => verdictCounts[verdict] > 0 || verdictFilter === verdict
+      ),
+    [verdictCounts, verdictFilter]
+  );
+
+  const attentionCount = useMemo(
+    () => queue.filter((item) => needsAttention(item.result.verdict)).length,
+    [queue]
+  );
+
+  const pendingApprovalsCount = useMemo(
+    () => approvals.filter((item) => item.status === "pending").length,
+    [approvals]
+  );
+
+  const totalQueueAmount = useMemo(
+    () => queue.reduce((sum, item) => sum + (item.request.amount_kzt || 0), 0),
+    [queue]
+  );
+
+  const filteredQueue = useMemo(() => {
+    return queue.filter((item) => {
+      if (verdictFilter !== "all" && item.result.verdict !== verdictFilter) {
+        return false;
+      }
+      return matchesSearchQuery(item, searchQuery);
+    });
+  }, [queue, verdictFilter, searchQuery]);
+
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 || verdictFilter !== "all";
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setVerdictFilter("all");
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    setDialogOpen(nextOpen);
+    if (!nextOpen && prefillRequest) {
+      onClearPrefill?.();
+    }
+  };
 
-    const recipient_name = form.recipient_name.trim();
-    const recipient_bin = sanitizeBin(form.recipient_bin);
-    const recipient_iik = sanitizeCode(form.recipient_iik);
-    const recipient_bik = sanitizeCode(form.recipient_bik);
-    const purpose = form.purpose.trim();
-    const parsedAmount = Number(
-      form.amount_kzt.replace(/\s+/g, "").replace(",", ".")
-    );
-
-    setForm((prev) => ({
-      ...prev,
-      recipient_bin,
-      recipient_iik,
-      recipient_bik,
-    }));
-
+  const handlePaymentCreated = (request: CheckRequest, result: CheckResult) => {
+    if (prefillRequest) {
+      onClearPrefill?.();
+    }
+    const addedId = onAddQueueItem(request, result);
     if (
-      !recipient_name ||
-      !recipient_bin ||
-      !recipient_iik ||
-      !recipient_bik ||
-      !purpose
+      verdictFilter !== "all" &&
+      verdictFilter !== result.verdict
     ) {
-      setFormError("Заполните все реквизиты платежа перед проверкой.");
-      return;
+      setVerdictFilter("all");
     }
-
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setFormError("Укажите корректную сумму платежа больше нуля.");
-      return;
+    if (searchQuery.trim()) {
+      setSearchQuery("");
     }
+    setHighlightedId(addedId);
+    void onRefreshQueue();
+  };
 
-    const payload: CheckRequest = {
-      ...(prefillRequest?.payer_id !== undefined
-        ? { payer_id: prefillRequest.payer_id }
-        : {}),
-      recipient_name,
-      recipient_bin,
-      recipient_iik,
-      recipient_bik,
-      amount_kzt: parsedAmount,
-      purpose,
-    };
-
-    setIsSubmitting(true);
-    try {
-      const result = await checkPayment(payload);
-      onSelectPayment(payload, result);
-    } catch (err) {
-      if (isNetworkUnreachableError(err)) {
-        onNetworkError(getErrorMessage(err));
-      } else {
-        setFormError(getErrorMessage(err));
-      }
-    } finally {
-      setIsSubmitting(false);
+  const registerRowRef = (id: string, node: HTMLElement | null) => {
+    if (node) {
+      rowRefs.current.set(id, node);
+    } else {
+      rowRefs.current.delete(id);
     }
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] items-start">
-      <Card className="min-w-0 border-border shadow-xs">
-        <CardHeader className="border-b border-border pb-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0">
-              <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                <FileText className="size-5 shrink-0 text-[var(--brand)]" />
-                <span>Платежи на подпись</span>
-              </CardTitle>
-              <CardDescription className="mt-1">
-                Нажмите на платёж, чтобы посмотреть результаты проверки
-                реквизитов и истории расчётов перед подписанием.
-              </CardDescription>
-            </div>
-            <div className="text-xs font-medium text-muted-foreground tabular-nums">
-              {isLoading
-                ? "Загрузка..."
-                : hasError && queue.length === 0
-                  ? "Нет связи с сервером"
-                  : `Всего в очереди: ${queue.length}`}
-            </div>
-          </div>
-        </CardHeader>
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+            {t.queue.title}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t.queue.description}
+          </p>
+        </div>
 
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center gap-2.5 py-16 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin text-[var(--brand)]" />
-              <span>Загружаем очередь платежей...</span>
-            </div>
-          ) : hasError && queue.length === 0 ? (
-            <div className="py-12 px-6 text-center text-sm text-muted-foreground">
-              Не удалось загрузить список платежей. Проверьте соединение с
-              сервером и нажмите «Повторить».
-            </div>
-          ) : queue.length === 0 ? (
-            <div className="py-16 px-4 text-center text-sm text-muted-foreground">
-              Очередь платежей пуста. Создайте новый платёж в форме справа или
-              нажмите «Сбросить демо».
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => setDialogOpen(true)}
+          className="min-h-11 w-full gap-2 rounded-xl px-4 font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)] sm:min-h-10 sm:w-auto"
+        >
+          <Plus className="size-4" />
+          <span>{t.queue.addPaymentButton}</span>
+        </Button>
+      </div>
+
+      {/* Summary tiles: 2 columns on phone, 4 on desktop */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {isLoading && queue.length === 0 ? (
+          Array.from({ length: 4 }).map((_, index) => (
+            <Card key={`tile-skeleton-${index}`} className="py-4">
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Skeleton className="h-3.5 w-24" />
+                  <Skeleton className="size-8 rounded-xl" />
+                </div>
+                <Skeleton className="h-8 w-16" />
+                <Skeleton className="h-3 w-28" />
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="group text-left rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Card className="h-full py-4 transition-colors group-hover:border-primary/40">
+                <CardContent className="flex h-full flex-col justify-between gap-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                      {t.queue.tiles.toSignLabel}
+                    </span>
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
+                      <FileText className="size-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
+                    {queue.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.queue.tiles.toSignHint}
+                  </div>
+                </CardContent>
+              </Card>
+            </button>
+
+            <Card className="h-full py-4">
+              <CardContent className="flex h-full flex-col justify-between gap-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                    {t.queue.tiles.needsAttentionLabel}
+                  </span>
+                  <div
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
+                      attentionCount > 0
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-accent text-[var(--brand-text)]"
+                    )}
+                  >
+                    <AlertTriangle className="size-4" />
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    "text-2xl font-bold tabular-nums sm:text-3xl",
+                    attentionCount > 0 ? "text-amber-700" : "text-foreground"
+                  )}
+                >
+                  {attentionCount}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {attentionCount > 0
+                    ? t.queue.tiles.needsAttentionHint
+                    : t.queue.tiles.allClearHint}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Link
+              href="/approvals"
+              className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Card className="h-full py-4 transition-colors group-hover:border-primary/40">
+                <CardContent className="flex h-full flex-col justify-between gap-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                      {t.queue.tiles.pendingApprovalsLabel}
+                    </span>
+                    <div
+                      className={cn(
+                        "flex size-8 shrink-0 items-center justify-center rounded-xl",
+                        approvalsError
+                          ? "bg-muted text-muted-foreground"
+                          : pendingApprovalsCount > 0
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-accent text-[var(--brand-text)]"
+                      )}
+                    >
+                      <ClipboardCheck className="size-4" />
+                    </div>
+                  </div>
+                  <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
+                    {approvalsError ? "—" : pendingApprovalsCount}
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-medium text-[var(--brand-text)]">
+                    <span>
+                      {approvalsError
+                        ? t.queue.tiles.pendingApprovalsUnavailable
+                        : t.queue.tiles.pendingApprovalsHint}
+                    </span>
+                    {!approvalsError && (
+                      <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Card className="h-full py-4">
+              <CardContent className="flex h-full flex-col justify-between gap-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                    {t.queue.tiles.totalAmountLabel}
+                  </span>
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
+                    <Wallet className="size-4" />
+                  </div>
+                </div>
+                <div className="truncate text-lg font-bold tabular-nums text-foreground sm:text-2xl">
+                  {formatMoney(totalQueueAmount)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {t.queue.tiles.totalAmountHint}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+
+      {/* Main Queue Card */}
+      <Card className="min-w-0 py-0">
+        {/* Toolbar: Search + Verdict Chips */}
+        <div className="border-b border-border p-4 space-y-3 sm:px-5">
+          {isLoading && queue.length === 0 ? (
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full max-w-md rounded-xl" />
+              <div className="flex flex-wrap gap-2">
+                <Skeleton className="h-8 w-20 rounded-full" />
+                <Skeleton className="h-8 w-32 rounded-full" />
+                <Skeleton className="h-8 w-32 rounded-full" />
+                <Skeleton className="h-8 w-36 rounded-full" />
+              </div>
             </div>
           ) : (
             <>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative flex-1 sm:max-w-md">
+                  <Search
+                    aria-hidden="true"
+                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    ref={searchInputRef}
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        if (searchQuery) {
+                          e.preventDefault();
+                          setSearchQuery("");
+                        } else {
+                          e.currentTarget.blur();
+                        }
+                      }
+                    }}
+                    placeholder={t.queue.searchPlaceholder}
+                    aria-label={t.queue.searchAriaLabel}
+                    className="h-11 rounded-xl bg-background/70 pl-9 pr-10 sm:h-10 [&::-webkit-search-cancel-button]:hidden"
+                  />
+                  {searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery("");
+                        searchInputRef.current?.focus();
+                      }}
+                      aria-label={t.queue.clearSearch}
+                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  ) : (
+                    <kbd
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
+                    >
+                      /
+                    </kbd>
+                  )}
+                </div>
+
+                <div className="text-xs font-medium text-muted-foreground tabular-nums">
+                  {hasError && queue.length === 0
+                    ? t.common.noServerConnection
+                    : hasActiveFilters
+                      ? interpolate(t.queue.shownOfTotal, {
+                          shown: filteredQueue.length,
+                          total: queue.length,
+                        })
+                      : interpolate(t.queue.totalInQueue, {
+                          count: queue.length,
+                        })}
+                </div>
+              </div>
+
+              {queue.length > 0 && (
+                <div
+                  role="group"
+                  aria-label={t.queue.filtersAriaLabel}
+                  className="no-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 py-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={verdictFilter === "all"}
+                    onClick={() => setVerdictFilter("all")}
+                    className={cn(
+                      "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:min-h-8",
+                      verdictFilter === "all"
+                        ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                        : "border-border bg-card text-foreground hover:bg-muted/70"
+                    )}
+                  >
+                    <span>{t.queue.filterAll}</span>
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
+                        verdictFilter === "all"
+                          ? "bg-white/20 text-white"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {queue.length}
+                    </span>
+                  </button>
+
+                  {availableVerdicts.map((verdict) => {
+                    const isSelected = verdictFilter === verdict;
+                    const style = VERDICT_STYLES[verdict];
+                    return (
+                      <button
+                        key={verdict}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() =>
+                          setVerdictFilter((prev) =>
+                            prev === verdict ? "all" : verdict
+                          )
+                        }
+                        className={cn(
+                          "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 sm:min-h-8",
+                          isSelected
+                            ? cn(
+                                style.badgeClass,
+                                "ring-1 ring-current/25 font-semibold shadow-xs"
+                              )
+                            : "border-border bg-card text-foreground hover:bg-muted/70"
+                        )}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            style.dotClass
+                          )}
+                        />
+                        <span>{t.verdicts[verdict]}</span>
+                        <span
+                          className={cn(
+                            "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
+                            isSelected
+                              ? "bg-white/70 text-current"
+                              : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {verdictCounts[verdict]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <CardContent className="p-0">
+          {isLoading && queue.length === 0 ? (
+            <>
+              {/* Phone skeleton cards */}
               <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
-                {queue.map((item) => {
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div
+                    key={`card-skeleton-${index}`}
+                    className="rounded-xl border border-border bg-card p-3.5 space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <Skeleton className="h-5 w-44" />
+                      <Skeleton className="h-6 w-24 rounded-full" />
+                    </div>
+                    <Skeleton className="h-7 w-32" />
+                    <Skeleton className="h-3.5 w-56" />
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop skeleton table */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableHead className="pl-4 lg:pl-5">
+                        {t.queue.colRecipient}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {t.queue.colAmount}
+                      </TableHead>
+                      <TableHead>{t.queue.colPurpose}</TableHead>
+                      <TableHead className="whitespace-normal">
+                        {t.queue.colCheckResult}
+                      </TableHead>
+                      <TableHead className="w-9 pr-3 lg:pr-4" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <TableRow
+                        key={`row-skeleton-${index}`}
+                        className="hover:bg-transparent"
+                      >
+                        <TableCell className="pl-4 lg:pl-5 py-4">
+                          <div className="space-y-2">
+                            <Skeleton className="h-4 w-48" />
+                            <Skeleton className="h-3 w-64" />
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-4">
+                          <Skeleton className="ml-auto h-4 w-24" />
+                        </TableCell>
+                        <TableCell className="py-4">
+                          <Skeleton className="h-4 w-44" />
+                        </TableCell>
+                        <TableCell className="py-4">
+                          <Skeleton className="h-6 w-28 rounded-full" />
+                        </TableCell>
+                        <TableCell className="pr-3 lg:pr-4 py-4">
+                          <Skeleton className="ml-auto size-4 rounded" />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          ) : hasError && queue.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2.5 py-14 px-6 text-center">
+              <div className="flex size-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                <AlertTriangle className="size-5" />
+              </div>
+              <p className="max-w-md text-sm text-muted-foreground">
+                {t.queue.loadErrorEmpty}
+              </p>
+            </div>
+          ) : queue.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
+              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                <Inbox className="size-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="text-base font-semibold text-foreground">
+                  {t.queue.emptyTitle}
+                </div>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  {t.queue.emptyQueue}
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() => setDialogOpen(true)}
+                className="mt-1 min-h-11 gap-2 rounded-xl sm:min-h-9"
+              >
+                <Plus className="size-4" />
+                <span>{t.queue.addPaymentButton}</span>
+              </Button>
+            </div>
+          ) : filteredQueue.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
+              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                <SearchX className="size-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="text-base font-semibold text-foreground">
+                  {t.queue.emptyFilteredTitle}
+                </div>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  {t.queue.emptyFilteredDescription}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetFilters}
+                className="mt-1 min-h-11 rounded-xl sm:min-h-9"
+              >
+                {t.queue.resetFilters}
+              </Button>
+            </div>
+          ) : (
+            <>
+              {/* Mobile payment cards (< md) */}
+              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+                {filteredQueue.map((item) => {
                   const approval = findApprovalForPayment(
                     approvals,
                     item.request
                   );
-                  const approvalMeta = approval
-                    ? APPROVAL_STATUS_META[approval.status]
+                  const approvalStyle = approval
+                    ? APPROVAL_STATUS_STYLES[approval.status]
+                    : null;
+                  const approvalLabel = approval
+                    ? t.approvalStatus[approval.status]
                     : null;
                   const directorComment = approval?.director_comment?.trim();
+                  const isHighlighted = highlightedId === item.id;
 
                   return (
                     <button
                       key={item.id}
+                      ref={(node) => registerRowRef(`mobile:${item.id}`, node)}
                       type="button"
                       onClick={() => onSelectPayment(item.request, item.result)}
-                      className="w-full min-h-11 rounded-xl border border-border bg-card p-3.5 text-left shadow-xs transition-colors hover:bg-muted/50 active:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className={cn(
+                        "w-full min-h-11 rounded-xl border bg-card p-3.5 text-left shadow-xs transition-all hover:bg-muted/50 active:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                        isHighlighted
+                          ? "border-primary bg-accent/60 ring-2 ring-primary/35"
+                          : "border-border"
+                      )}
                     >
                       <div className="flex items-start justify-between gap-2.5">
-                        <div className="min-w-0 flex-1 text-base font-semibold leading-snug text-foreground break-words">
-                          {item.request.recipient_name}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-base font-semibold leading-snug text-foreground break-words">
+                              {item.request.recipient_name}
+                            </span>
+                            {isHighlighted && (
+                              <Badge
+                                variant="outline"
+                                className="h-auto border-primary/30 bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground"
+                              >
+                                {t.queue.newBadge}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <VerdictBadge
                           verdict={item.result.verdict}
@@ -257,13 +756,17 @@ export function PaymentQueueScreen({
 
                       <div className="mt-2 flex items-center justify-between gap-2">
                         <div className="text-xl font-bold tabular-nums text-foreground">
-                          {formatKzt(item.request.amount_kzt)}
+                          {formatMoney(item.request.amount_kzt)}
                         </div>
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                       </div>
 
                       <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs text-muted-foreground">
-                        <span>БИН {item.request.recipient_bin}</span>
+                        <span>
+                          {interpolate(t.common.binPrefix, {
+                            bin: item.request.recipient_bin,
+                          })}
+                        </span>
                         <span aria-hidden="true">·</span>
                         <span className="break-all">
                           {item.request.recipient_iik}
@@ -274,22 +777,24 @@ export function PaymentQueueScreen({
                         {item.request.purpose}
                       </p>
 
-                      {(approvalMeta || directorComment) && (
+                      {(approvalStyle || directorComment) && (
                         <div className="mt-2.5 flex flex-col items-start gap-1.5 border-t border-border/60 pt-2.5">
-                          {approvalMeta && (
+                          {approvalStyle && approvalLabel && (
                             <Badge
                               variant="outline"
                               className={cn(
                                 "h-auto px-2 py-0.5 text-[11px] font-medium",
-                                approvalMeta.badgeClass
+                                approvalStyle.badgeClass
                               )}
                             >
-                              {approvalMeta.labelRu}
+                              {approvalLabel}
                             </Badge>
                           )}
                           {directorComment && (
                             <p className="line-clamp-2 text-xs text-muted-foreground break-words">
-                              Директор: {directorComment}
+                              {interpolate(t.queue.directorPrefix, {
+                                comment: directorComment,
+                              })}
                             </p>
                           )}
                         </div>
@@ -299,34 +804,46 @@ export function PaymentQueueScreen({
                 })}
               </div>
 
+              {/* Desktop table (>= md) */}
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="pl-4 lg:pl-5">Получатель</TableHead>
-                      <TableHead className="text-right">Сумма</TableHead>
-                      <TableHead>Назначение</TableHead>
+                      <TableHead className="pl-4 lg:pl-5">
+                        {t.queue.colRecipient}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {t.queue.colAmount}
+                      </TableHead>
+                      <TableHead>{t.queue.colPurpose}</TableHead>
                       <TableHead className="whitespace-normal">
-                        Результат проверки
+                        {t.queue.colCheckResult}
                       </TableHead>
                       <TableHead className="w-9 pr-3 lg:pr-4" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {queue.map((item) => {
+                    {filteredQueue.map((item) => {
                       const approval = findApprovalForPayment(
                         approvals,
                         item.request
                       );
-                      const approvalMeta = approval
-                        ? APPROVAL_STATUS_META[approval.status]
+                      const approvalStyle = approval
+                        ? APPROVAL_STATUS_STYLES[approval.status]
+                        : null;
+                      const approvalLabel = approval
+                        ? t.approvalStatus[approval.status]
                         : null;
                       const directorComment =
                         approval?.director_comment?.trim();
+                      const isHighlighted = highlightedId === item.id;
 
                       return (
                         <TableRow
                           key={item.id}
+                          ref={(node) =>
+                            registerRowRef(`desktop:${item.id}`, node)
+                          }
                           tabIndex={0}
                           role="button"
                           onClick={() =>
@@ -338,14 +855,31 @@ export function PaymentQueueScreen({
                               onSelectPayment(item.request, item.result);
                             }
                           }}
-                          className="cursor-pointer transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+                          className={cn(
+                            "cursor-pointer transition-colors hover:bg-muted/60 focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                            isHighlighted && "bg-accent/65 hover:bg-accent/80"
+                          )}
                         >
                           <TableCell className="pl-4 lg:pl-5 py-3.5 whitespace-normal">
-                            <div className="font-medium text-foreground break-words">
-                              {item.request.recipient_name}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-foreground break-words">
+                                {item.request.recipient_name}
+                              </span>
+                              {isHighlighted && (
+                                <Badge
+                                  variant="outline"
+                                  className="h-auto border-primary/30 bg-card px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground"
+                                >
+                                  {t.queue.newBadge}
+                                </Badge>
+                              )}
                             </div>
                             <div className="mt-0.5 font-mono text-xs text-muted-foreground">
-                              <span>БИН {item.request.recipient_bin}</span>
+                              <span>
+                                {interpolate(t.common.binPrefix, {
+                                  bin: item.request.recipient_bin,
+                                })}
+                              </span>
                               <span> · </span>
                               <span className="break-all">
                                 {item.request.recipient_iik}
@@ -353,9 +887,9 @@ export function PaymentQueueScreen({
                             </div>
                           </TableCell>
                           <TableCell className="py-3.5 text-right font-semibold tabular-nums whitespace-nowrap text-foreground">
-                            {formatKzt(item.request.amount_kzt)}
+                            {formatMoney(item.request.amount_kzt)}
                           </TableCell>
-                          <TableCell className="py-3.5 max-w-[200px] lg:max-w-xs whitespace-normal text-muted-foreground">
+                          <TableCell className="py-3.5 max-w-[220px] lg:max-w-sm whitespace-normal text-muted-foreground">
                             <span className="line-clamp-2 break-words">
                               {item.request.purpose}
                             </span>
@@ -363,20 +897,22 @@ export function PaymentQueueScreen({
                           <TableCell className="py-3.5 whitespace-normal">
                             <div className="flex flex-col items-start gap-1.5">
                               <VerdictBadge verdict={item.result.verdict} />
-                              {approvalMeta && (
+                              {approvalStyle && approvalLabel && (
                                 <Badge
                                   variant="outline"
                                   className={cn(
                                     "h-auto px-2 py-0.5 text-[11px] font-medium",
-                                    approvalMeta.badgeClass
+                                    approvalStyle.badgeClass
                                   )}
                                 >
-                                  {approvalMeta.labelRu}
+                                  {approvalLabel}
                                 </Badge>
                               )}
                               {directorComment && (
                                 <p className="max-w-[220px] line-clamp-2 text-xs text-muted-foreground break-words">
-                                  Директор: {directorComment}
+                                  {interpolate(t.queue.directorPrefix, {
+                                    comment: directorComment,
+                                  })}
                                 </p>
                               )}
                             </div>
@@ -395,120 +931,15 @@ export function PaymentQueueScreen({
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 border-border shadow-xs">
-        <CardHeader className="border-b border-border pb-4">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <PlusCircle className="size-4 shrink-0 text-[var(--brand)]" />
-            <span>Новый платёж</span>
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Проверьте произвольные реквизиты поставщика до отправки на подпись.
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="pt-4">
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            {formError && (
-              <Alert variant="destructive">
-                <AlertCircle className="size-4" />
-                <AlertDescription>{formError}</AlertDescription>
-              </Alert>
-            )}
-
-            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-              <div className="min-w-0 space-y-1.5 md:col-span-2">
-                <Label htmlFor="recipient_name">Наименование получателя</Label>
-                <Input
-                  id="recipient_name"
-                  placeholder='ТОО "СтройСнаб Сервис"'
-                  className="h-11 md:h-9"
-                  value={form.recipient_name}
-                  onChange={(e) =>
-                    updateField("recipient_name", e.target.value)
-                  }
-                />
-              </div>
-
-              <div className="min-w-0 space-y-1.5">
-                <Label htmlFor="recipient_bin">БИН / ИИН</Label>
-                <Input
-                  id="recipient_bin"
-                  inputMode="numeric"
-                  placeholder="180540012345"
-                  className="h-11 font-mono md:h-9"
-                  value={form.recipient_bin}
-                  onChange={(e) => updateField("recipient_bin", e.target.value)}
-                />
-              </div>
-
-              <div className="min-w-0 space-y-1.5">
-                <Label htmlFor="recipient_bik">БИК банка</Label>
-                <Input
-                  id="recipient_bik"
-                  placeholder="KCJBKZKX"
-                  className="h-11 font-mono uppercase md:h-9"
-                  value={form.recipient_bik}
-                  onChange={(e) => updateField("recipient_bik", e.target.value)}
-                />
-              </div>
-
-              <div className="min-w-0 space-y-1.5 xl:col-span-2">
-                <Label htmlFor="recipient_iik">ИИК (счёт получателя)</Label>
-                <Input
-                  id="recipient_iik"
-                  placeholder="KZ86125KZT5004100100"
-                  className="h-11 font-mono uppercase md:h-9"
-                  value={form.recipient_iik}
-                  onChange={(e) => updateField("recipient_iik", e.target.value)}
-                />
-              </div>
-
-              <div className="min-w-0 space-y-1.5 xl:col-span-2">
-                <Label htmlFor="amount_kzt">Сумма, ₸</Label>
-                <Input
-                  id="amount_kzt"
-                  type="number"
-                  min="1"
-                  step="any"
-                  placeholder="450000"
-                  className="h-11 tabular-nums md:h-9"
-                  value={form.amount_kzt}
-                  onChange={(e) => updateField("amount_kzt", e.target.value)}
-                />
-              </div>
-
-              <div className="min-w-0 space-y-1.5 md:col-span-2">
-                <Label htmlFor="purpose">Назначение платежа</Label>
-                <Input
-                  id="purpose"
-                  placeholder="Оплата за строительные материалы по счёту №14"
-                  className="h-11 md:h-9"
-                  value={form.purpose}
-                  onChange={(e) => updateField("purpose", e.target.value)}
-                />
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              className="min-h-11 w-full gap-2 md:min-h-10"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  <span>Проверяем реквизиты...</span>
-                </>
-              ) : (
-                <>
-                  <SearchCheck className="size-4" />
-                  <span>Проверить платёж</span>
-                </>
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      <NewPaymentDialog
+        key={prefillRequest ? JSON.stringify(prefillRequest) : "new-payment"}
+        open={isDialogOpen}
+        onOpenChange={handleDialogOpenChange}
+        prefillRequest={prefillRequest}
+        onPaymentCreated={handlePaymentCreated}
+        onOpenPaymentCheck={onSelectPayment}
+        onNetworkError={onNetworkError}
+      />
     </div>
   );
 }

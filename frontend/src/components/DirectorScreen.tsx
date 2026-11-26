@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
+  ClipboardCheck,
   Inbox,
   Loader2,
   MessageSquare,
   RefreshCw,
   ShieldCheck,
-  X,
   XCircle,
 } from "lucide-react";
 import { ComparisonTable } from "@/components/ComparisonTable";
@@ -29,7 +32,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useT } from "@/i18n";
 import {
   ApiError,
   decideApproval,
@@ -40,7 +45,8 @@ import {
   canTrustApproval,
   MIN_DIRECTOR_COMMENT_LENGTH,
 } from "@/lib/approvals";
-import { formatDateRu, formatKzt } from "@/lib/format";
+import { pickHeadline } from "@/lib/format";
+import { notify } from "@/lib/toast";
 import type { Approval, ApprovalDecision } from "@/lib/types";
 import { cn } from "cn";
 
@@ -56,11 +62,15 @@ function getFieldFromComparison(approval: Approval, field: string): string {
   return row?.in_invoice ?? "";
 }
 
-function getApprovalSummary(approval: Approval) {
+function getApprovalSummary(
+  approval: Approval,
+  formatMoney: (amount: number | null | undefined) => string,
+  recipientFallback: string
+) {
   const recipientName =
     approval.request?.recipient_name ||
     getFieldFromComparison(approval, "name") ||
-    "Получатель не указан";
+    recipientFallback;
   const recipientBin =
     approval.request?.recipient_bin || getFieldFromComparison(approval, "bin");
   const recipientIik =
@@ -69,13 +79,13 @@ function getApprovalSummary(approval: Approval) {
 
   let amountDisplay = "—";
   if (approval.request?.amount_kzt !== undefined) {
-    amountDisplay = formatKzt(approval.request.amount_kzt);
+    amountDisplay = formatMoney(approval.request.amount_kzt);
   } else {
     const rawAmount = getFieldFromComparison(approval, "amount");
     if (rawAmount) {
       const cleaned = rawAmount.replace(/\s+/g, "").replace(",", ".");
       amountDisplay = Number.isFinite(Number(cleaned))
-        ? formatKzt(Number(cleaned))
+        ? formatMoney(Number(cleaned))
         : rawAmount;
     }
   }
@@ -102,13 +112,18 @@ function PendingApprovalCard({
   onConflictError,
   onNetworkError,
 }: PendingApprovalCardProps) {
+  const { t, lang, formatMoney, interpolate, plural } = useT();
   const [comment, setComment] = useState("");
   const [trustAccount, setTrustAccount] = useState(false);
   const [submittingDecision, setSubmittingDecision] =
     useState<ApprovalDecision | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
 
-  const summary = getApprovalSummary(approval);
+  const summary = getApprovalSummary(
+    approval,
+    formatMoney,
+    t.director.recipientFallback
+  );
   const isRed = approval.check.verdict === "red";
   const allowTrust = canTrustApproval(approval);
   const effectiveTrust = allowTrust && trustAccount;
@@ -119,25 +134,35 @@ function PendingApprovalCard({
     trimmedComment.length < MIN_DIRECTOR_COMMENT_LENGTH;
 
   const isApproveDisabled = submittingDecision !== null || commentTooShort;
+  const minCharsLabel = plural(
+    MIN_DIRECTOR_COMMENT_LENGTH,
+    t.plurals.charsGenitive
+  );
 
   const handleDecision = async (decision: ApprovalDecision) => {
     setCardError(null);
     setSubmittingDecision(decision);
     try {
-      await decideApproval(approval.id, {
-        decision,
-        director_comment: trimmedComment,
-        trust_account: decision === "approved" ? effectiveTrust : false,
-      });
+      await decideApproval(
+        approval.id,
+        {
+          decision,
+          director_comment: trimmedComment,
+          trust_account: decision === "approved" ? effectiveTrust : false,
+        },
+        lang
+      );
       await onDecided(decision, summary.recipientName);
     } catch (err) {
+      const message = getErrorMessage(err);
       if (isNetworkUnreachableError(err)) {
-        onNetworkError(getErrorMessage(err));
+        onNetworkError(message);
+        notify.error(t.common.serverErrorTitle, message);
       } else if (err instanceof ApiError && err.status === 409) {
-        setCardError(err.message);
-        await onConflictError(err.message);
+        await onConflictError(message);
       } else {
-        setCardError(getErrorMessage(err));
+        setCardError(message);
+        notify.error(t.director.saveErrorTitle, message);
       }
     } finally {
       setSubmittingDecision(null);
@@ -145,7 +170,7 @@ function PendingApprovalCard({
   };
 
   return (
-    <Card className="min-w-0 border-border shadow-xs">
+    <Card className="min-w-0">
       <CardHeader className="border-b border-border pb-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1 space-y-1">
@@ -156,7 +181,11 @@ function PendingApprovalCard({
               {(summary.recipientBin || summary.recipientIik) && (
                 <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs">
                   {summary.recipientBin && (
-                    <span>БИН {summary.recipientBin}</span>
+                    <span>
+                      {interpolate(t.common.binPrefix, {
+                        bin: summary.recipientBin,
+                      })}
+                    </span>
                   )}
                   {summary.recipientBin && summary.recipientIik && (
                     <span aria-hidden="true">·</span>
@@ -173,8 +202,9 @@ function PendingApprovalCard({
               )}
               {approval.check.history?.compared_with && (
                 <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
-                  Сравнение с похожим поставщиком:{" "}
-                  {approval.check.history.compared_with}
+                  {interpolate(t.check.comparedWith, {
+                    supplier: approval.check.history.compared_with,
+                  })}
                 </div>
               )}
             </CardDescription>
@@ -191,7 +221,7 @@ function PendingApprovalCard({
       <CardContent className="pt-5 space-y-5">
         <VerdictBanner
           verdict={approval.check.verdict}
-          headlineRu={approval.check.headline_ru}
+          headline={pickHeadline(approval.check)}
         />
 
         <ComparisonTable
@@ -204,15 +234,15 @@ function PendingApprovalCard({
           score={approval.check.score}
         />
 
-        <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-1.5">
+        <div className="rounded-xl border border-border bg-background/80 p-4 space-y-1.5">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <MessageSquare className="size-3.5 shrink-0" />
-            <span>Комментарий бухгалтера</span>
+            <span>{t.director.accountantNoteTitle}</span>
           </div>
           <p className="text-sm text-foreground break-words">
             {approval.accountant_note?.trim()
               ? approval.accountant_note
-              : "Бухгалтер не оставил дополнительный комментарий."}
+              : t.director.noAccountantNote}
           </p>
         </div>
 
@@ -222,7 +252,7 @@ function PendingApprovalCard({
           {cardError && (
             <Alert variant="destructive" className="bg-red-50/90 border-red-300">
               <AlertCircle className="size-4" />
-              <AlertTitle>Не удалось сохранить решение</AlertTitle>
+              <AlertTitle>{t.director.saveErrorTitle}</AlertTitle>
               <AlertDescription className="break-words">
                 {cardError}
               </AlertDescription>
@@ -232,7 +262,7 @@ function PendingApprovalCard({
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label htmlFor={`director-comment-${approval.id}`}>
-                Комментарий директора
+                {t.director.directorCommentLabel}
                 {commentRequiredForApprove && (
                   <span className="ml-1 text-red-600 font-semibold">*</span>
                 )}
@@ -241,12 +271,19 @@ function PendingApprovalCard({
                 <span
                   className={cn(
                     "text-xs font-medium tabular-nums",
-                    commentTooShort ? "text-red-700" : "text-emerald-700"
+                    commentTooShort ? "text-red-700" : "text-[#006B49]"
                   )}
                 >
-                  {isRed
-                    ? `Обязательно для одобрения (минимум ${MIN_DIRECTOR_COMMENT_LENGTH} символов: ${trimmedComment.length}/${MIN_DIRECTOR_COMMENT_LENGTH})`
-                    : `Обязательно для доверенного счёта (минимум ${MIN_DIRECTOR_COMMENT_LENGTH} символов: ${trimmedComment.length}/${MIN_DIRECTOR_COMMENT_LENGTH})`}
+                  {interpolate(
+                    isRed
+                      ? t.director.requiredForRedApprove
+                      : t.director.requiredForTrustApprove,
+                    {
+                      minChars: minCharsLabel,
+                      current: trimmedComment.length,
+                      min: MIN_DIRECTOR_COMMENT_LENGTH,
+                    }
+                  )}
                 </span>
               )}
             </div>
@@ -257,8 +294,10 @@ function PendingApprovalCard({
               className="w-full min-h-24"
               placeholder={
                 commentRequiredForApprove
-                  ? `Укажите причину одобрения (не менее ${MIN_DIRECTOR_COMMENT_LENGTH} символов). Для отклонения комментарий не обязателен.`
-                  : "Комментарий руководителя (необязательно)..."
+                  ? interpolate(t.director.commentPlaceholderRequired, {
+                      minChars: minCharsLabel,
+                    })
+                  : t.director.commentPlaceholderOptional
               }
               value={comment}
               onChange={(e) => {
@@ -268,13 +307,13 @@ function PendingApprovalCard({
             />
             {commentRequiredForApprove && (
               <p className="text-xs text-muted-foreground">
-                Для отклонения платёжной заявки комментарий не требуется.
+                {t.director.rejectNoCommentHint}
               </p>
             )}
           </div>
 
           {allowTrust && (
-            <div className="flex min-h-11 items-start gap-3 rounded-lg border border-border bg-background px-3.5 py-2.5">
+            <div className="flex min-h-11 items-start gap-3 rounded-xl border border-border bg-background/80 px-3.5 py-2.5">
               <Checkbox
                 id={`trust-account-${approval.id}`}
                 checked={trustAccount}
@@ -289,12 +328,12 @@ function PendingApprovalCard({
                   htmlFor={`trust-account-${approval.id}`}
                   className="cursor-pointer font-medium text-foreground"
                 >
-                  Доверять этому счёту
+                  {t.director.trustAccountLabel}
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  После одобрения счёт будет добавлен в доверенные реквизиты
-                  поставщика для будущих платежей (требуется комментарий от{" "}
-                  {MIN_DIRECTOR_COMMENT_LENGTH} символов).
+                  {interpolate(t.director.trustAccountDescription, {
+                    minChars: minCharsLabel,
+                  })}
                 </p>
               </div>
             </div>
@@ -311,12 +350,12 @@ function PendingApprovalCard({
               {submittingDecision === "approved" ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>Сохранение...</span>
+                  <span>{t.director.saving}</span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="size-4" />
-                  <span>Одобрить</span>
+                  <span>{t.director.approve}</span>
                 </>
               )}
             </Button>
@@ -332,12 +371,12 @@ function PendingApprovalCard({
               {submittingDecision === "rejected" ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>Отклонение...</span>
+                  <span>{t.director.rejecting}</span>
                 </>
               ) : (
                 <>
                   <XCircle className="size-4" />
-                  <span>Отклонить</span>
+                  <span>{t.director.reject}</span>
                 </>
               )}
             </Button>
@@ -354,40 +393,60 @@ export function DirectorScreen({
   onRefresh,
   onNetworkError,
 }: DirectorScreenProps) {
-  const [feedback, setFeedback] = useState<{
-    decision: ApprovalDecision;
-    recipientName: string;
-  } | null>(null);
-  const [screenError, setScreenError] = useState<string | null>(null);
+  const { t, formatMoney, formatDate, interpolate } = useT();
 
-  const pendingApprovals = approvals.filter((a) => a.status === "pending");
-  const resolvedApprovals = approvals.filter((a) => a.status !== "pending");
+  const pendingApprovals = useMemo(
+    () => approvals.filter((a) => a.status === "pending"),
+    [approvals]
+  );
+  const resolvedApprovals = useMemo(
+    () => approvals.filter((a) => a.status !== "pending"),
+    [approvals]
+  );
+  const highRiskPendingCount = useMemo(
+    () =>
+      pendingApprovals.filter(
+        (a) => a.check.verdict === "red" || a.check.verdict === "invalid"
+      ).length,
+    [pendingApprovals]
+  );
+  const trustedCount = useMemo(
+    () =>
+      resolvedApprovals.filter(
+        (a) => a.status === "approved" && a.trust_account
+      ).length,
+    [resolvedApprovals]
+  );
 
   const handleDecided = async (
     decision: ApprovalDecision,
     recipientName: string
   ) => {
-    setScreenError(null);
-    setFeedback({ decision, recipientName });
+    const description = interpolate(t.toast.decisionSavedDescription, {
+      recipient: recipientName,
+    });
+    if (decision === "approved") {
+      notify.success(t.toast.approvedTitle, description);
+    } else {
+      notify.info(t.toast.rejectedTitle, description);
+    }
     await onRefresh();
   };
 
   const handleConflictError = async (message: string) => {
-    setFeedback(null);
-    setScreenError(message);
+    notify.error(t.director.conflictTitle, message);
     await onRefresh();
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Кабинет директора — согласование платежей
+          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+            {t.director.title}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Рассмотрение платежей, отправленных бухгалтером на дополнительное
-            подтверждение.
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t.director.subtitle}
           </p>
         </div>
 
@@ -397,87 +456,165 @@ export function DirectorScreen({
           size="sm"
           onClick={() => void onRefresh()}
           disabled={isLoading}
-          className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
+          className="min-h-11 w-full gap-1.5 rounded-xl sm:min-h-9 sm:w-auto"
         >
           <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
-          <span>Обновить</span>
+          <span>{t.common.refresh}</span>
         </Button>
       </div>
 
-      {screenError && (
-        <Alert
-          variant="destructive"
-          className="bg-red-50/90 border-red-300 pr-12"
-        >
-          <AlertCircle className="size-4" />
-          <AlertTitle>Заявка обновлена</AlertTitle>
-          <AlertDescription className="break-words">
-            {screenError}
-          </AlertDescription>
-          <button
-            type="button"
-            aria-label="Закрыть уведомление"
-            onClick={() => setScreenError(null)}
-            className="absolute top-1.5 right-1.5 flex size-11 items-center justify-center rounded opacity-70 hover:opacity-100 sm:top-2 sm:right-2 sm:size-8"
-          >
-            <X className="size-4" />
-          </button>
-        </Alert>
-      )}
+      {/* Summary tiles */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {isLoading && approvals.length === 0 ? (
+          Array.from({ length: 4 }).map((_, index) => (
+            <Card key={`approval-tile-skeleton-${index}`} className="py-4">
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Skeleton className="h-3.5 w-24" />
+                  <Skeleton className="size-8 rounded-xl" />
+                </div>
+                <Skeleton className="h-8 w-14" />
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <>
+            <Card className="py-4">
+              <CardContent className="flex flex-col justify-between gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                    {t.director.tiles.pendingLabel}
+                  </span>
+                  <div
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
+                      pendingApprovals.length > 0
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-accent text-[var(--brand-text)]"
+                    )}
+                  >
+                    <ClipboardCheck className="size-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
+                  {pendingApprovals.length}
+                </div>
+              </CardContent>
+            </Card>
 
-      {feedback && (
-        <Alert
-          className={cn(
-            "pr-12",
-            feedback.decision === "approved"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-950"
-              : "border-slate-300 bg-slate-50 text-slate-950"
-          )}
-        >
-          {feedback.decision === "approved" ? (
-            <CheckCircle2 className="size-4 text-emerald-600" />
-          ) : (
-            <XCircle className="size-4 text-slate-600" />
-          )}
-          <AlertTitle>
-            {feedback.decision === "approved"
-              ? "Платёж одобрен"
-              : "Платёж отклонён"}
-          </AlertTitle>
-          <AlertDescription className="break-words">
-            Решение по платежу для {feedback.recipientName} сохранено.
-          </AlertDescription>
-          <button
-            type="button"
-            aria-label="Закрыть уведомление"
-            onClick={() => setFeedback(null)}
-            className="absolute top-1.5 right-1.5 flex size-11 items-center justify-center rounded opacity-70 hover:opacity-100 sm:top-2 sm:right-2 sm:size-8"
-          >
-            <X className="size-4" />
-          </button>
-        </Alert>
-      )}
+            <Card className="py-4">
+              <CardContent className="flex flex-col justify-between gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                    {t.director.tiles.highRiskLabel}
+                  </span>
+                  <div
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-xl",
+                      highRiskPendingCount > 0
+                        ? "bg-red-50 text-red-600"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    <AlertTriangle className="size-4" />
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    "text-2xl font-bold tabular-nums sm:text-3xl",
+                    highRiskPendingCount > 0 ? "text-red-700" : "text-foreground"
+                  )}
+                >
+                  {highRiskPendingCount}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="py-4">
+              <CardContent className="flex flex-col justify-between gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                    {t.director.tiles.resolvedLabel}
+                  </span>
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
+                    <CheckCircle2 className="size-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
+                  {resolvedApprovals.length}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="py-4">
+              <CardContent className="flex flex-col justify-between gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                    {t.director.tiles.trustedLabel}
+                  </span>
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
+                    <ShieldCheck className="size-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
+                  {trustedCount}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
 
       {isLoading && approvals.length === 0 ? (
-        <Card className="border-border shadow-xs">
-          <CardContent className="flex items-center justify-center gap-2.5 py-16 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin text-[var(--brand)]" />
-            <span>Загружаем заявки на согласование...</span>
+        <Card className="min-w-0">
+          <CardHeader className="border-b border-border pb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-56" />
+                <Skeleton className="h-4 w-72" />
+                <Skeleton className="h-4 w-64" />
+              </div>
+              <div className="flex flex-col items-start gap-2 sm:items-end">
+                <Skeleton className="h-8 w-36" />
+                <Skeleton className="h-6 w-28 rounded-full" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-5 space-y-5">
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <div className="space-y-2.5">
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+            <Skeleton className="h-24 w-full rounded-xl" />
+            <div className="flex gap-3">
+              <Skeleton className="h-11 w-32 rounded-lg" />
+              <Skeleton className="h-11 w-32 rounded-lg" />
+            </div>
           </CardContent>
         </Card>
       ) : pendingApprovals.length === 0 ? (
-        <Card className="border-border shadow-xs">
-          <CardContent className="flex flex-col items-center justify-center gap-2.5 py-14 text-center">
-            <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Inbox className="size-5" />
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-14 text-center">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+              <Inbox className="size-6" />
             </div>
-            <div className="text-base font-medium text-foreground">
-              Нет платежей, ожидающих решения
+            <div className="space-y-1">
+              <div className="text-base font-semibold text-foreground">
+                {t.director.emptyTitle}
+              </div>
+              <p className="max-w-md text-sm text-muted-foreground">
+                {t.director.emptyDescription}
+              </p>
             </div>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Когда бухгалтер отправит платёж на согласование, карточка
-              проверки появится здесь.
-            </p>
+            <Link
+              href="/"
+              className="mt-1 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+            >
+              <ArrowLeft className="size-4" />
+              <span>{t.director.backToPayments}</span>
+            </Link>
           </CardContent>
         </Card>
       ) : (
@@ -495,13 +632,19 @@ export function DirectorScreen({
       )}
 
       {resolvedApprovals.length > 0 && (
-        <Card className="min-w-0 border-border shadow-xs">
+        <Card className="min-w-0">
           <CardHeader className="border-b border-border pb-3.5">
-            <CardTitle className="text-base font-semibold">Решённые</CardTitle>
+            <CardTitle className="text-base font-semibold">
+              {t.director.resolvedTitle}
+            </CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-border p-0">
             {resolvedApprovals.map((approval) => {
-              const summary = getApprovalSummary(approval);
+              const summary = getApprovalSummary(
+                approval,
+                formatMoney,
+                t.director.recipientFallback
+              );
               const isApproved = approval.status === "approved";
 
               return (
@@ -520,7 +663,9 @@ export function DirectorScreen({
                     </div>
                     {approval.director_comment && (
                       <p className="text-xs text-muted-foreground break-words">
-                        Комментарий директора: {approval.director_comment}
+                        {interpolate(t.check.directorCommentLine, {
+                          comment: approval.director_comment,
+                        })}
                       </p>
                     )}
                   </div>
@@ -529,10 +674,10 @@ export function DirectorScreen({
                     {approval.trust_account && (
                       <Badge
                         variant="outline"
-                        className="h-auto gap-1 border-emerald-200 bg-emerald-50 py-0.5 text-emerald-800"
+                        className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
                       >
                         <ShieldCheck className="size-3" />
-                        <span>Доверенный счёт</span>
+                        <span>{t.director.trustedBadge}</span>
                       </Badge>
                     )}
                     <Badge
@@ -540,15 +685,17 @@ export function DirectorScreen({
                       className={cn(
                         "h-auto py-0.5",
                         isApproved
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          ? "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]"
                           : "border-red-200 bg-red-50 text-red-800"
                       )}
                     >
-                      {isApproved ? "Одобрено" : "Отклонено"}
+                      {isApproved
+                        ? t.director.statusApprovedShort
+                        : t.director.statusRejectedShort}
                     </Badge>
                     {approval.decided_at && (
                       <span className="text-xs text-muted-foreground">
-                        {formatDateRu(approval.decided_at)}
+                        {formatDate(approval.decided_at)}
                       </span>
                     )}
                   </div>

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
-  CheckCircle2,
   Clock,
   FileEdit,
   Loader2,
@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
-  X,
   XCircle,
 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
@@ -33,6 +32,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { VerdictBanner } from "@/components/VerdictBanner";
+import { useT } from "@/i18n";
 import {
   checkPayment,
   createApproval,
@@ -40,14 +40,15 @@ import {
   isNetworkUnreachableError,
 } from "@/lib/api";
 import {
-  APPROVAL_STATUS_META,
+  APPROVAL_STATUS_STYLES,
   findApprovalForPayment,
 } from "@/lib/approvals";
 import {
-  formatDateRu,
-  formatKzt,
-  formatTrustedBannerText,
+  pickActionText,
+  pickHeadline,
+  VERDICT_STYLES,
 } from "@/lib/format";
+import { notify } from "@/lib/toast";
 import type { Approval, CheckRequest, CheckResult } from "@/lib/types";
 import { cn } from "cn";
 
@@ -62,12 +63,6 @@ interface CheckScreenProps {
   onNetworkError?: (message: string) => void;
 }
 
-interface ToastState {
-  tone: "success" | "warning";
-  title: string;
-  description: string;
-}
-
 export function CheckScreen({
   request,
   result,
@@ -78,6 +73,10 @@ export function CheckScreen({
   onApprovalCreated,
   onNetworkError,
 }: CheckScreenProps) {
+  const router = useRouter();
+  const { t, lang, formatMoney, formatDate, interpolate, formatTrustedBanner } =
+    useT();
+
   const [override, setOverride] = useState<{
     baseCheckId: string;
     result: CheckResult;
@@ -88,8 +87,10 @@ export function CheckScreen({
       : result;
 
   const [isRechecking, setIsRechecking] = useState(false);
-  const [toast, setToast] = useState<ToastState | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [recheckError, setRecheckError] = useState<string | null>(null);
+  const [demoActionStatus, setDemoActionStatus] = useState<
+    "signed" | "postponed" | null
+  >(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [accountantNote, setAccountantNote] = useState("");
@@ -98,6 +99,40 @@ export function CheckScreen({
 
   const [sentApprovalId, setSentApprovalId] = useState<string | null>(null);
   const [localApproval, setLocalApproval] = useState<Approval | null>(null);
+
+  const lastFetchedLangRef = useRef(lang);
+  const baseCheckIdRef = useRef(result.check_id);
+  const onNetworkErrorRef = useRef(onNetworkError);
+
+  useEffect(() => {
+    baseCheckIdRef.current = result.check_id;
+  }, [result.check_id]);
+
+  useEffect(() => {
+    onNetworkErrorRef.current = onNetworkError;
+  }, [onNetworkError]);
+
+  useEffect(() => {
+    if (lastFetchedLangRef.current === lang) return;
+    lastFetchedLangRef.current = lang;
+    let active = true;
+
+    checkPayment(request, lang)
+      .then((updated) => {
+        if (!active) return;
+        setOverride({ baseCheckId: baseCheckIdRef.current, result: updated });
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (isNetworkUnreachableError(err)) {
+          onNetworkErrorRef.current?.(getErrorMessage(err));
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [lang, request]);
 
   const matchedApproval = findApprovalForPayment(approvals, request);
   const effectiveApproval = matchedApproval ?? localApproval;
@@ -112,22 +147,20 @@ export function CheckScreen({
 
   const handleRecheck = async () => {
     setIsRechecking(true);
-    setActionError(null);
+    setRecheckError(null);
     try {
-      const updated = await checkPayment(request);
+      const updated = await checkPayment(request, lang);
+      lastFetchedLangRef.current = lang;
       setOverride({ baseCheckId: result.check_id, result: updated });
       onResultUpdate?.(updated);
-      setToast({
-        tone: "success",
-        title: "Проверка обновлена",
-        description:
-          "Реквизиты и история платежей перепроверены по актуальным данным.",
-      });
+      notify.success(t.toast.recheckTitle, t.toast.recheckDescription);
     } catch (err) {
+      const message = getErrorMessage(err);
       if (isNetworkUnreachableError(err)) {
-        onNetworkError?.(getErrorMessage(err));
+        onNetworkError?.(message);
       } else {
-        setActionError(getErrorMessage(err));
+        setRecheckError(message);
+        notify.error(t.check.actionErrorTitle, message);
       }
     } finally {
       setIsRechecking(false);
@@ -135,24 +168,21 @@ export function CheckScreen({
   };
 
   const handleSignDemo = () => {
-    setActionError(null);
-    setToast({
-      tone: "success",
-      title: "Платёж подписан (демо)",
-      description: `Платёж на сумму ${formatKzt(
-        request.amount_kzt
-      )} в пользу ${request.recipient_name} передан в исполнение.`,
-    });
+    setRecheckError(null);
+    setDemoActionStatus("signed");
+    notify.success(
+      t.toast.signedTitle,
+      interpolate(t.toast.signedDescription, {
+        amount: formatMoney(request.amount_kzt),
+        recipient: request.recipient_name,
+      })
+    );
   };
 
   const handlePostponeDemo = () => {
-    setActionError(null);
-    setToast({
-      tone: "warning",
-      title: "Платёж отложен на проверку",
-      description:
-        "Платёж снят с подписания до подтверждения реквизитов у поставщика.",
-    });
+    setRecheckError(null);
+    setDemoActionStatus("postponed");
+    notify.warning(t.toast.postponedTitle, t.toast.postponedDescription);
   };
 
   const handleSendToDirector = async () => {
@@ -163,27 +193,34 @@ export function CheckScreen({
     setDialogError(null);
     setIsSendingApproval(true);
     try {
-      const created = await createApproval({
-        request,
-        accountant_note: accountantNote.trim(),
-      });
+      const created = await createApproval(
+        {
+          request,
+          accountant_note: accountantNote.trim(),
+        },
+        lang
+      );
       setSentApprovalId(created.id);
       setLocalApproval(created);
       setDialogOpen(false);
       setAccountantNote("");
       onApprovalCreated?.(created);
-      setToast({
-        tone: "success",
-        title: "Отправлено директору",
-        description:
-          "Заявка на согласование появилась в кабинете директора. Вы можете переключить роль в шапке, чтобы рассмотреть её.",
+      notify.success(t.toast.sentToDirectorTitle, {
+        description: t.toast.sentToDirectorDescription,
+        action: {
+          label: t.common.openApprovals,
+          onClick: () => router.push("/approvals"),
+        },
       });
     } catch (err) {
+      const message = getErrorMessage(err);
       if (isNetworkUnreachableError(err)) {
         setDialogOpen(false);
-        onNetworkError?.(getErrorMessage(err));
+        onNetworkError?.(message);
+        notify.error(t.common.serverErrorTitle, message);
       } else {
-        setDialogError(getErrorMessage(err));
+        setDialogError(message);
+        notify.error(t.check.actionErrorTitle, message);
       }
     } finally {
       setIsSendingApproval(false);
@@ -191,12 +228,21 @@ export function CheckScreen({
   };
 
   const verdict = currentResult.verdict;
-  const approvalMeta = effectiveApproval
-    ? APPROVAL_STATUS_META[effectiveApproval.status]
-    : approvalStatus
-      ? APPROVAL_STATUS_META[approvalStatus]
-      : null;
+  const resolvedApprovalStatus = effectiveApproval?.status ?? approvalStatus;
+  const approvalStyle = resolvedApprovalStatus
+    ? APPROVAL_STATUS_STYLES[resolvedApprovalStatus]
+    : null;
+  const approvalLabel = resolvedApprovalStatus
+    ? t.approvalStatus[resolvedApprovalStatus]
+    : null;
   const directorComment = effectiveApproval?.director_comment?.trim() || null;
+
+  const invalidBtnClass =
+    VERDICT_STYLES.invalid.actionButtonClass ??
+    "bg-rose-900 text-white hover:bg-rose-950";
+  const redBtnClass =
+    VERDICT_STYLES.red.actionButtonClass ??
+    "bg-red-600 text-white hover:bg-red-700";
 
   const openDirectorDialog = () => {
     if (isPendingApproval || sentApprovalId !== null) {
@@ -215,24 +261,26 @@ export function CheckScreen({
           onClick={() =>
             onFixRequisites ? onFixRequisites(request) : onBack()
           }
-          className="min-h-11 w-full gap-2 bg-orange-600 text-white hover:bg-orange-700"
+          className={cn("min-h-11 w-full gap-2", invalidBtnClass)}
         >
           <FileEdit className="size-4" />
-          <span>Исправить реквизиты</span>
+          <span>{t.check.actionFixRequisites}</span>
         </Button>
       );
     }
 
     if (isRejectedByDirector) {
       return (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-3.5 text-sm text-red-950 space-y-1">
+        <div className="rounded-xl border border-red-300 bg-red-50 p-3.5 text-sm text-red-950 space-y-1">
           <div className="flex items-center gap-2 font-semibold text-red-800">
             <XCircle className="size-4 shrink-0" />
-            <span>Платёж отклонён директором</span>
+            <span>{t.check.rejectedTitle}</span>
           </div>
           {directorComment && (
             <p className="text-xs text-red-900 break-words">
-              Комментарий директора: {directorComment}
+              {interpolate(t.check.directorCommentLine, {
+                comment: directorComment,
+              })}
             </p>
           )}
         </div>
@@ -249,10 +297,10 @@ export function CheckScreen({
             className="min-h-11 w-full gap-2"
           >
             <ShieldCheck className="size-4" />
-            <span>Подписать</span>
+            <span>{t.check.actionSign}</span>
           </Button>
-          <p className="text-xs text-emerald-800">
-            Согласовано директором — подписание платежа разрешено.
+          <p className="text-xs text-[#006B49]">
+            {t.check.approvedAllowedHint}
           </p>
         </div>
       );
@@ -266,10 +314,10 @@ export function CheckScreen({
               type="button"
               size="lg"
               onClick={handlePostponeDemo}
-              className="min-h-11 w-full gap-2 bg-red-600 text-white hover:bg-red-700"
+              className={cn("min-h-11 w-full gap-2", redBtnClass)}
             >
               <PauseCircle className="size-4" />
-              <span>Отложить и проверить</span>
+              <span>{t.check.actionPostpone}</span>
             </Button>
             <Button
               type="button"
@@ -279,10 +327,10 @@ export function CheckScreen({
               className="min-h-11 w-full gap-2"
             >
               <Clock className="size-4" />
-              <span>Отправлено директору</span>
+              <span>{t.check.actionSentToDirector}</span>
             </Button>
             <p className="pt-1 text-xs text-muted-foreground">
-              Подписание платежа заблокировано до решения директора.
+              {t.check.blockedUntilDecisionHint}
             </p>
           </div>
         );
@@ -298,7 +346,7 @@ export function CheckScreen({
               className="min-h-11 w-full gap-2"
             >
               <ShieldCheck className="size-4" />
-              <span>Подписать</span>
+              <span>{t.check.actionSign}</span>
             </Button>
             <Button
               type="button"
@@ -308,7 +356,7 @@ export function CheckScreen({
               className="min-h-11 w-full gap-2"
             >
               <Clock className="size-4" />
-              <span>Отправлено директору</span>
+              <span>{t.check.actionSentToDirector}</span>
             </Button>
           </div>
         );
@@ -323,7 +371,7 @@ export function CheckScreen({
             className="min-h-11 w-full gap-2"
           >
             <Clock className="size-4" />
-            <span>Отправлено директору</span>
+            <span>{t.check.actionSentToDirector}</span>
           </Button>
           <Button
             type="button"
@@ -333,7 +381,7 @@ export function CheckScreen({
             className="min-h-11 w-full gap-2"
           >
             <ShieldCheck className="size-4" />
-            <span>Подписать</span>
+            <span>{t.check.actionSign}</span>
           </Button>
         </div>
       );
@@ -348,7 +396,7 @@ export function CheckScreen({
           className="min-h-11 w-full gap-2"
         >
           <ShieldCheck className="size-4" />
-          <span>Подписать</span>
+          <span>{t.check.actionSign}</span>
         </Button>
       );
     }
@@ -360,10 +408,10 @@ export function CheckScreen({
             type="button"
             size="lg"
             onClick={handlePostponeDemo}
-            className="min-h-11 w-full gap-2 bg-red-600 text-white hover:bg-red-700"
+            className={cn("min-h-11 w-full gap-2", redBtnClass)}
           >
             <PauseCircle className="size-4" />
-            <span>Отложить и проверить</span>
+            <span>{t.check.actionPostpone}</span>
           </Button>
           <Button
             type="button"
@@ -373,11 +421,10 @@ export function CheckScreen({
             className="min-h-11 w-full gap-2"
           >
             <Send className="size-4" />
-            <span>Отправить директору</span>
+            <span>{t.check.actionSendToDirector}</span>
           </Button>
           <p className="pt-1 text-xs text-muted-foreground">
-            Подписание платежа заблокировано до проверки или согласования
-            директором.
+            {t.check.blockedUntilCheckOrApprovalHint}
           </p>
         </div>
       );
@@ -392,7 +439,7 @@ export function CheckScreen({
           className="min-h-11 w-full gap-2"
         >
           <Send className="size-4" />
-          <span>Отправить директору</span>
+          <span>{t.check.actionSendToDirector}</span>
         </Button>
         <Button
           type="button"
@@ -402,7 +449,7 @@ export function CheckScreen({
           className="min-h-11 w-full gap-2"
         >
           <ShieldCheck className="size-4" />
-          <span>Подписать</span>
+          <span>{t.check.actionSign}</span>
         </Button>
       </div>
     );
@@ -417,10 +464,10 @@ export function CheckScreen({
           onClick={() =>
             onFixRequisites ? onFixRequisites(request) : onBack()
           }
-          className="min-h-11 w-full gap-2 bg-orange-600 text-white hover:bg-orange-700"
+          className={cn("min-h-11 w-full gap-2", invalidBtnClass)}
         >
           <FileEdit className="size-4" />
-          <span>Исправить реквизиты</span>
+          <span>{t.check.actionFixRequisites}</span>
         </Button>
       );
     }
@@ -438,7 +485,7 @@ export function CheckScreen({
           className="min-h-11 w-full gap-2"
         >
           <ShieldCheck className="size-4" />
-          <span>Подписать</span>
+          <span>{t.check.actionSign}</span>
         </Button>
       );
     }
@@ -449,10 +496,10 @@ export function CheckScreen({
           type="button"
           size="lg"
           onClick={handlePostponeDemo}
-          className="min-h-11 w-full gap-2 bg-red-600 text-white hover:bg-red-700"
+          className={cn("min-h-11 w-full gap-2", redBtnClass)}
         >
           <PauseCircle className="size-4" />
-          <span>Отложить и проверить</span>
+          <span>{t.check.actionPostpone}</span>
         </Button>
       );
     }
@@ -466,7 +513,7 @@ export function CheckScreen({
           className="min-h-11 w-full gap-2"
         >
           <Clock className="size-4" />
-          <span>Отправлено директору</span>
+          <span>{t.check.actionSentToDirector}</span>
         </Button>
       );
     }
@@ -479,7 +526,7 @@ export function CheckScreen({
         className="min-h-11 w-full gap-2"
       >
         <Send className="size-4" />
-        <span>Отправить директору</span>
+        <span>{t.check.actionSendToDirector}</span>
       </Button>
     );
   };
@@ -503,7 +550,7 @@ export function CheckScreen({
           className="min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
         >
           <ArrowLeft className="size-4" />
-          <span>Назад к списку</span>
+          <span>{t.check.backToList}</span>
         </Button>
 
         <Button
@@ -517,70 +564,26 @@ export function CheckScreen({
           <RefreshCw
             className={cn("size-3.5", isRechecking && "animate-spin")}
           />
-          <span>{isRechecking ? "Перепроверка..." : "Перепроверить"}</span>
+          <span>{isRechecking ? t.check.rechecking : t.check.recheck}</span>
         </Button>
       </div>
 
-      {toast && (
-        <Alert
-          className={cn(
-            "pr-12",
-            toast.tone === "success"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-950"
-              : "border-amber-300 bg-amber-50 text-amber-950"
-          )}
-        >
-          {toast.tone === "success" ? (
-            <CheckCircle2 className="size-4 text-emerald-600" />
-          ) : (
-            <PauseCircle className="size-4 text-amber-600" />
-          )}
-          <AlertTitle>{toast.title}</AlertTitle>
-          <AlertDescription
-            className={cn(
-              "break-words",
-              toast.tone === "success" ? "text-emerald-900" : "text-amber-900"
-            )}
-          >
-            {toast.description}
-          </AlertDescription>
-          <button
-            type="button"
-            aria-label="Закрыть уведомление"
-            onClick={() => setToast(null)}
-            className="absolute top-1.5 right-1.5 flex size-11 items-center justify-center rounded opacity-70 hover:opacity-100 sm:top-2 sm:right-2 sm:size-8"
-          >
-            <X className="size-4" />
-          </button>
-        </Alert>
-      )}
-
-      {actionError && (
-        <Alert variant="destructive" className="bg-red-50/90 border-red-300">
-          <AlertCircle className="size-4" />
-          <AlertTitle>Не удалось выполнить действие</AlertTitle>
-          <AlertDescription className="break-words">
-            {actionError}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <Card className="min-w-0 border-border shadow-xs">
+      <Card className="min-w-0">
         <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Платёжное поручение на проверку
+                {t.check.paymentOrderEyebrow}
               </span>
-              {approvalMeta && (
+              {approvalStyle && approvalLabel && (
                 <Badge
                   variant="outline"
                   className={cn(
                     "h-auto px-2 py-0.5 text-xs font-medium",
-                    approvalMeta.badgeClass
+                    approvalStyle.badgeClass
                   )}
                 >
-                  {approvalMeta.labelRu}
+                  {approvalLabel}
                 </Badge>
               )}
             </div>
@@ -591,8 +594,10 @@ export function CheckScreen({
               {request.purpose}
             </div>
             {directorComment && (
-              <div className="rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs text-foreground break-words">
-                <span className="font-semibold">Комментарий директора: </span>
+              <div className="rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-xs text-foreground break-words">
+                <span className="font-semibold">
+                  {t.check.directorCommentLabel}
+                </span>
                 <span>{directorComment}</span>
               </div>
             )}
@@ -600,20 +605,22 @@ export function CheckScreen({
 
           <div className="min-w-0 shrink-0 space-y-1 text-left sm:text-right">
             <div className="text-2xl font-bold tabular-nums text-foreground">
-              {formatKzt(request.amount_kzt)}
+              {formatMoney(request.amount_kzt)}
             </div>
             <div className="text-xs text-muted-foreground space-y-1">
               <div>
                 {(currentResult.history?.payments_count ?? 0) > 0
-                  ? `В истории платежей: ${currentResult.history.payments_count} · последний ${formatDateRu(
-                      currentResult.history.last_payment_date
-                    )}`
-                  : "Ранее платежей этому получателю не было"}
+                  ? interpolate(t.check.historySummary, {
+                      count: currentResult.history.payments_count,
+                      date: formatDate(currentResult.history.last_payment_date),
+                    })
+                  : t.check.noPriorPayments}
               </div>
               {currentResult.history?.compared_with && (
                 <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
-                  Сравнение с похожим поставщиком:{" "}
-                  {currentResult.history.compared_with}
+                  {interpolate(t.check.comparedWith, {
+                    supplier: currentResult.history.compared_with,
+                  })}
                 </div>
               )}
             </div>
@@ -623,27 +630,39 @@ export function CheckScreen({
 
       <VerdictBanner
         verdict={verdict}
-        headlineRu={currentResult.headline_ru}
+        headline={pickHeadline(currentResult)}
       />
 
       {showTrustedBanner && (
-        <Alert className="border-emerald-300 bg-emerald-50 text-emerald-950">
-          <ShieldCheck className="size-4 text-emerald-600" />
-          <AlertTitle>Счёт в списке доверенных</AlertTitle>
-          <AlertDescription className="text-emerald-900 font-medium break-words">
-            {formatTrustedBannerText(currentResult.trusted_info)}
+        <Alert className="rounded-xl border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]">
+          <ShieldCheck className="size-4 text-[var(--brand-text)]" />
+          <AlertTitle>{t.check.trustedBannerTitle}</AlertTitle>
+          <AlertDescription className="text-[#064A34]/90 font-medium break-words">
+            {formatTrustedBanner(currentResult.trusted_info)}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {recheckError && (
+        <Alert variant="destructive" className="rounded-xl bg-red-50/90 border-red-300">
+          <AlertCircle className="size-4" />
+          <AlertTitle>{t.check.actionErrorTitle}</AlertTitle>
+          <AlertDescription className="break-words">
+            {recheckError}
           </AlertDescription>
         </Alert>
       )}
 
       {isRejectedByDirector && (
-        <Alert className="border-red-300 bg-red-50 text-red-950">
+        <Alert className="rounded-xl border-red-300 bg-red-50 text-red-950">
           <XCircle className="size-4 text-red-600" />
-          <AlertTitle>Платёж отклонён директором</AlertTitle>
+          <AlertTitle>{t.check.rejectedTitle}</AlertTitle>
           <AlertDescription className="text-red-900 break-words">
             {directorComment
-              ? `Комментарий директора: ${directorComment}`
-              : "Подписание и повторная отправка этого платежа заблокированы."}
+              ? interpolate(t.check.directorCommentLine, {
+                  comment: directorComment,
+                })
+              : t.check.rejectedBlocked}
           </AlertDescription>
         </Alert>
       )}
@@ -661,25 +680,41 @@ export function CheckScreen({
           />
         </div>
 
-        <div className="min-w-0 space-y-4 lg:sticky lg:top-20">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-28">
           <AdviceBox
-            textRu={currentResult.next_action.text_ru}
+            text={pickActionText(currentResult.next_action)}
             verdict={verdict}
           />
 
-          <Card className="min-w-0 border-border shadow-xs">
+          <Card className="min-w-0">
             <CardContent className="pt-4 space-y-2.5">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Действия по платежу
+                {t.check.actionsEyebrow}
               </div>
               {renderActionButtons()}
+              {demoActionStatus === "signed" && (
+                <div
+                  role="status"
+                  className="rounded-xl border border-[#00AB75]/35 bg-[#E8F8F2] px-3 py-2 text-xs font-medium text-[#064A34]"
+                >
+                  {t.check.signedStatusNote}
+                </div>
+              )}
+              {demoActionStatus === "postponed" && (
+                <div
+                  role="status"
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950"
+                >
+                  {t.check.postponedStatusNote}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
 
       {mobilePrimaryAction && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/90 md:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(29,29,30,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/90 md:hidden">
           <div className="mx-auto max-w-[1248px]">{mobilePrimaryAction}</div>
         </div>
       )}
@@ -687,11 +722,8 @@ export function CheckScreen({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Отправить платёж директору</DialogTitle>
-            <DialogDescription>
-              Укажите комментарий для руководителя: например, звонили ли вы
-              поставщику и почему счёт изменился.
-            </DialogDescription>
+            <DialogTitle>{t.check.dialogTitle}</DialogTitle>
+            <DialogDescription>{t.check.dialogDescription}</DialogDescription>
           </DialogHeader>
 
           <div className="min-w-0 space-y-3 py-1">
@@ -704,13 +736,13 @@ export function CheckScreen({
               </Alert>
             )}
 
-            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs space-y-0.5">
+            <div className="rounded-lg border border-border bg-background/80 px-3 py-2 text-xs space-y-0.5">
               <div className="font-medium text-foreground break-words">
                 {request.recipient_name}
               </div>
               <div className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
                 <span className="tabular-nums">
-                  {formatKzt(request.amount_kzt)}
+                  {formatMoney(request.amount_kzt)}
                 </span>
                 <span aria-hidden="true">·</span>
                 <span className="font-mono break-all">
@@ -720,11 +752,13 @@ export function CheckScreen({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="accountant_note">Комментарий бухгалтера</Label>
+              <Label htmlFor="accountant_note">
+                {t.check.accountantNoteLabel}
+              </Label>
               <Textarea
                 id="accountant_note"
                 rows={3}
-                placeholder="Например: поставщик прислал письмо о смене счёта, прошу подтвердить..."
+                placeholder={t.check.accountantNotePlaceholder}
                 value={accountantNote}
                 onChange={(e) => setAccountantNote(e.target.value)}
               />
@@ -739,7 +773,7 @@ export function CheckScreen({
               disabled={isSendingApproval}
               className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
-              Отмена
+              {t.common.cancel}
             </Button>
             <Button
               type="button"
@@ -754,12 +788,12 @@ export function CheckScreen({
               {isSendingApproval ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>Отправка...</span>
+                  <span>{t.check.sending}</span>
                 </>
               ) : (
                 <>
                   <Send className="size-4" />
-                  <span>Отправить</span>
+                  <span>{t.check.send}</span>
                 </>
               )}
             </Button>

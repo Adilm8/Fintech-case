@@ -1,3 +1,10 @@
+import {
+  getCurrentLang,
+  getDictionary,
+  interpolate,
+  type Dictionary,
+  type Lang,
+} from "@/i18n";
 import type {
   Approval,
   CheckRequest,
@@ -5,6 +12,7 @@ import type {
   CreateApprovalRequest,
   DecisionRequest,
   HistoryEntry,
+  MetricsResponse,
   QueueItem,
 } from "./types";
 
@@ -36,34 +44,41 @@ export function isNetworkUnreachableError(err: unknown): boolean {
   return err instanceof ApiError && err.isNetworkError;
 }
 
-export function getErrorMessage(
-  err: unknown,
-  fallback = "Произошла ошибка при обращении к серверу."
-): string {
+export function getErrorMessage(err: unknown, fallback?: string): string {
   if (err instanceof ApiError) {
     return err.message;
   }
   if (err instanceof Error && err.message) {
     return err.message;
   }
-  return fallback;
+  return fallback ?? getDictionary(getCurrentLang()).errors.generic;
 }
 
-function mapLocToRussianMessage(loc: unknown): string {
+function appendLangParam(path: string, lang: Lang): string {
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  if (!params.has("lang")) {
+    params.set("lang", lang);
+  }
+  return `${API_BASE_URL}${base}?${params.toString()}`;
+}
+
+function mapLocToMessage(loc: unknown, dict: Dictionary): string {
   if (!Array.isArray(loc)) {
-    return "Проверьте введённые данные";
+    return dict.errors.validationDefault;
   }
   const joined = loc.map((part) => String(part).toLowerCase()).join(".");
-  if (joined.includes("amount")) return "Проверьте сумму платежа";
-  if (joined.includes("iik")) return "Проверьте ИИК (IBAN)";
-  if (joined.includes("bin")) return "Проверьте БИН/ИИН получателя";
-  if (joined.includes("bik")) return "Проверьте БИК банка";
-  if (joined.includes("name")) return "Укажите название получателя";
-  return "Проверьте введённые данные";
+  if (joined.includes("amount")) return dict.errors.validationAmount;
+  if (joined.includes("iik")) return dict.errors.validationIik;
+  if (joined.includes("bin")) return dict.errors.validationBin;
+  if (joined.includes("bik")) return dict.errors.validationBik;
+  if (joined.includes("name")) return dict.errors.validationName;
+  return dict.errors.validationDefault;
 }
 
 function extractValidationMessage(
   detail: unknown,
+  dict: Dictionary,
   status?: number
 ): string | null {
   if (typeof detail === "string" && detail.trim()) {
@@ -76,8 +91,8 @@ function extractValidationMessage(
       for (const item of detail) {
         const msg =
           item && typeof item === "object" && "loc" in item
-            ? mapLocToRussianMessage((item as { loc: unknown }).loc)
-            : "Проверьте введённые данные";
+            ? mapLocToMessage((item as { loc: unknown }).loc, dict)
+            : dict.errors.validationDefault;
         if (!seen.has(msg)) {
           seen.add(msg);
           mapped.push(msg);
@@ -111,9 +126,11 @@ function extractValidationMessage(
 
 async function requestJson<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  lang: Lang = getCurrentLang()
 ): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
+  const dict = getDictionary(lang);
+  const url = appendLangParam(path, lang);
   let response: Response;
 
   const headers = new Headers(init?.headers);
@@ -131,11 +148,16 @@ async function requestJson<T>(
       headers,
       cache: "no-store",
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw err;
+    }
     throw new ApiError({
       status: 0,
       isNetworkError: true,
-      message: `Сервер проверки платежей недоступен (${API_BASE_URL}). Убедитесь, что бэкенд запущен.`,
+      message: interpolate(dict.errors.networkUnreachable, {
+        url: API_BASE_URL,
+      }),
     });
   }
 
@@ -163,21 +185,25 @@ async function requestJson<T>(
         : body;
 
     if (response.status === 422) {
-      const validationMessage = extractValidationMessage(detail, 422);
+      const validationMessage = extractValidationMessage(detail, dict, 422);
       throw new ApiError({
         status: 422,
         detail,
-        message: validationMessage || "Проверьте введённые данные",
+        message: validationMessage || dict.errors.validationDefault,
       });
     }
 
-    const parsedMessage = extractValidationMessage(detail, response.status);
+    const parsedMessage = extractValidationMessage(
+      detail,
+      dict,
+      response.status
+    );
     throw new ApiError({
       status: response.status,
       detail,
       message:
         parsedMessage ||
-        `Ошибка сервера (${response.status}). Попробуйте повторить запрос.`,
+        interpolate(dict.errors.serverStatus, { status: response.status }),
     });
   }
 
@@ -185,12 +211,19 @@ async function requestJson<T>(
 }
 
 export async function checkPayment(
-  payload: CheckRequest
+  payload: CheckRequest,
+  lang: Lang = getCurrentLang(),
+  options?: { signal?: AbortSignal }
 ): Promise<CheckResult> {
-  return requestJson<CheckResult>("/api/payments/check", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return requestJson<CheckResult>(
+    "/api/payments/check",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      signal: options?.signal,
+    },
+    lang
+  );
 }
 
 interface RawQueueItem extends CheckRequest {
@@ -198,10 +231,16 @@ interface RawQueueItem extends CheckRequest {
   check: CheckResult;
 }
 
-export async function getQueue(): Promise<QueueItem[]> {
-  const raw = await requestJson<RawQueueItem[]>("/api/payments/queue", {
-    method: "GET",
-  });
+export async function getQueue(
+  lang: Lang = getCurrentLang()
+): Promise<QueueItem[]> {
+  const raw = await requestJson<RawQueueItem[]>(
+    "/api/payments/queue",
+    {
+      method: "GET",
+    },
+    lang
+  );
   return raw.map((item) => ({
     id: item.id,
     request: {
@@ -217,10 +256,12 @@ export async function getQueue(): Promise<QueueItem[]> {
   }));
 }
 
-export async function getHistory(): Promise<HistoryEntry[]> {
+export async function getHistory(
+  lang: Lang = getCurrentLang()
+): Promise<HistoryEntry[]> {
   const raw = await requestJson<
     { payments: (HistoryEntry & { paid_at?: string })[] } | HistoryEntry[]
-  >("/api/history", { method: "GET" });
+  >("/api/history", { method: "GET" }, lang);
   const list = Array.isArray(raw) ? raw : raw.payments;
   return list.map((p) => ({
     ...p,
@@ -249,36 +290,50 @@ function adaptApproval(raw: RawApproval): Approval {
 }
 
 export async function createApproval(
-  payload: CreateApprovalRequest
+  payload: CreateApprovalRequest,
+  lang: Lang = getCurrentLang()
 ): Promise<Approval> {
-  const raw = await requestJson<RawApproval>("/api/approvals", {
-    method: "POST",
-    body: JSON.stringify({
-      check_request: payload.request,
-      accountant_note: payload.accountant_note,
-    }),
-  });
+  const raw = await requestJson<RawApproval>(
+    "/api/approvals",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        check_request: payload.request,
+        accountant_note: payload.accountant_note,
+      }),
+    },
+    lang
+  );
   return adaptApproval(raw);
 }
 
-export async function getApprovals(): Promise<Approval[]> {
-  const raw = await requestJson<RawApproval[]>("/api/approvals", {
-    method: "GET",
-  });
+export async function getApprovals(
+  lang: Lang = getCurrentLang()
+): Promise<Approval[]> {
+  const raw = await requestJson<RawApproval[]>(
+    "/api/approvals",
+    {
+      method: "GET",
+    },
+    lang
+  );
   return raw.map(adaptApproval);
 }
 
 export async function decideApproval(
   id: string,
-  payload: DecisionRequest
+  payload: DecisionRequest,
+  lang: Lang = getCurrentLang()
 ): Promise<Approval> {
+  const dict = getDictionary(lang);
   try {
     const raw = await requestJson<RawApproval>(
       `/api/approvals/${encodeURIComponent(id)}/decision`,
       {
         method: "POST",
         body: JSON.stringify(payload),
-      }
+      },
+      lang
     );
     return adaptApproval(raw);
   } catch (err) {
@@ -287,14 +342,14 @@ export async function decideApproval(
         throw new ApiError({
           status: 409,
           detail: err.detail,
-          message: "Заявка уже обработана",
+          message: dict.errors.approvalAlreadyProcessed,
         });
       }
       if (err.status === 422) {
         const detailText =
           typeof err.detail === "string" && err.detail.trim()
             ? err.detail.trim()
-            : "Это действие недоступно для данной заявки";
+            : dict.errors.approvalActionUnavailable;
         throw new ApiError({
           status: 422,
           detail: err.detail,
@@ -306,8 +361,26 @@ export async function decideApproval(
   }
 }
 
-export async function resetDemo(): Promise<void> {
-  await requestJson<unknown>("/api/demo/reset", {
-    method: "POST",
-  });
+export async function getMetrics(
+  lang: Lang = getCurrentLang(),
+  options?: { signal?: AbortSignal }
+): Promise<MetricsResponse> {
+  return requestJson<MetricsResponse>(
+    "/api/metrics",
+    {
+      method: "GET",
+      signal: options?.signal,
+    },
+    lang
+  );
+}
+
+export async function resetDemo(lang: Lang = getCurrentLang()): Promise<void> {
+  await requestJson<unknown>(
+    "/api/demo/reset",
+    {
+      method: "POST",
+    },
+    lang
+  );
 }

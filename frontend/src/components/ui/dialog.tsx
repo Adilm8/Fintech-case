@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "cn"
 
 import { Button } from "@/components/ui/button"
+import { useT } from "@/i18n"
 import { XIcon } from "lucide-react"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
@@ -31,7 +32,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 backdrop-blur-[1px] transition-opacity duration-150",
+        "fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px] transition-opacity duration-150",
         className
       )}
       {...props}
@@ -43,17 +44,24 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  mobileSheet = false,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  mobileSheet?: boolean
 }) {
+  const { t } = useT()
+
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[60] grid max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-xl outline-none sm:w-full sm:p-6",
+          "fixed z-[60] grid overflow-y-auto overscroll-contain border border-border bg-card text-sm text-foreground shadow-xl outline-none",
+          mobileSheet
+            ? "inset-x-0 bottom-0 max-h-[92dvh] w-full gap-4 rounded-t-2xl rounded-b-none p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[calc(100dvh-2rem)] sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6"
+            : "top-1/2 left-1/2 max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl p-4 sm:w-full sm:p-6",
           className
         )}
         {...props}
@@ -65,13 +73,13 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-2 right-2 size-11 text-slate-500 hover:bg-slate-100 hover:text-slate-900 sm:top-3 sm:right-3 sm:size-7"
+                className="absolute top-2 right-2 size-11 text-muted-foreground hover:bg-muted hover:text-foreground sm:top-3 sm:right-3 sm:size-7"
                 size="icon-sm"
               />
             }
           >
             <XIcon />
-            <span className="sr-only">Закрыть</span>
+            <span className="sr-only">{t.common.close}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -97,11 +105,13 @@ function DialogFooter({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
 }) {
+  const { t } = useT()
+
   return (
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6 sm:py-4",
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-border bg-background/80 px-4 py-3.5 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6 sm:py-4",
         className
       )}
       {...props}
@@ -109,7 +119,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close render={<Button variant="outline" />}>
-          Закрыть
+          {t.common.close}
         </DialogPrimitive.Close>
       )}
     </div>
@@ -121,7 +131,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-snug font-semibold text-slate-900",
+        "font-heading text-base leading-snug font-semibold text-foreground",
         className
       )}
       {...props}
@@ -137,7 +147,7 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm leading-relaxed text-slate-600 *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-slate-900",
+        "text-sm leading-relaxed text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
         className
       )}
       {...props}

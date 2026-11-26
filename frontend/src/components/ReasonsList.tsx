@@ -10,7 +10,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { formatDateRu, SIGNAL_RULE_LABELS } from "@/lib/format";
+import { useT } from "@/i18n";
+import { pickReason } from "@/lib/format";
 import type { Signal, SignalSeverity } from "@/lib/types";
 import { cn } from "cn";
 
@@ -24,33 +25,29 @@ const SEVERITY_DOT_CLASS: Record<SignalSeverity, string> = {
   block: "bg-red-600",
   primary: "bg-red-500",
   amplifier: "bg-amber-500",
-  info: "bg-slate-400",
-};
-
-const SEVERITY_LABEL_RU: Record<SignalSeverity, string> = {
-  block: "Блокирующий факт",
-  primary: "Основной сигнал",
-  amplifier: "Усиливающий признак",
-  info: "Информация",
+  info: "bg-[#737376]",
 };
 
 export function ReasonsList({ signals, score, className }: ReasonsListProps) {
+  const { t, formatDate, interpolate } = useT();
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const orderedSignals = signals ?? [];
   const topReasons = orderedSignals.slice(0, 4);
   const hiddenCount = Math.max(0, orderedSignals.length - topReasons.length);
 
+  const signalRulesMap: Record<string, string> = t.signalRules;
+
   return (
-    <Card className={cn("min-w-0 border-border shadow-xs", className)}>
+    <Card className={cn("min-w-0", className)}>
       <CardHeader className="border-b border-border pb-3.5">
-        <CardTitle className="text-base font-semibold">Почему</CardTitle>
+        <CardTitle className="text-base font-semibold">
+          {t.reasons.title}
+        </CardTitle>
       </CardHeader>
       <CardContent className="pt-4 space-y-4">
         {topReasons.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Отклонений и подозрительных признаков не выявлено.
-          </p>
+          <p className="text-sm text-muted-foreground">{t.reasons.empty}</p>
         ) : (
           <ul className="space-y-2.5">
             {topReasons.map((signal, idx) => {
@@ -65,11 +62,13 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                     className={cn(
                       "mt-2 size-2 shrink-0 rounded-full",
                       isTrustedSignal
-                        ? "bg-emerald-600"
-                        : SEVERITY_DOT_CLASS[signal.severity] ?? "bg-slate-400"
+                        ? "bg-[#00AB75]"
+                        : SEVERITY_DOT_CLASS[signal.severity] ?? "bg-[#737376]"
                     )}
                   />
-                  <span className="min-w-0 break-words">{signal.reason_ru}</span>
+                  <span className="min-w-0 break-words">
+                    {pickReason(signal)}
+                  </span>
                 </li>
               );
             })}
@@ -90,8 +89,10 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
             >
               <span>
                 {hiddenCount > 0
-                  ? `Подробнее (ещё ${hiddenCount})`
-                  : "Подробнее"}
+                  ? interpolate(t.reasons.moreDetailsHidden, {
+                      count: hiddenCount,
+                    })
+                  : t.reasons.moreDetails}
               </span>
               <ChevronDown
                 className={cn(
@@ -101,11 +102,11 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
               />
             </CollapsibleTrigger>
 
-            <CollapsibleContent className="mt-3 space-y-3 rounded-lg border border-border bg-muted/40 p-3 sm:p-3.5">
+            <CollapsibleContent className="mt-3 space-y-3 rounded-xl border border-border bg-background/80 p-3 sm:p-3.5">
               {score !== undefined && (
                 <div className="flex items-center justify-between gap-2 border-b border-border pb-2 text-xs">
                   <span className="font-medium text-muted-foreground">
-                    Суммарный балл риска
+                    {t.reasons.totalRiskScore}
                   </span>
                   <span className="shrink-0 font-mono font-semibold text-foreground">
                     {score} / 100
@@ -115,12 +116,12 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
 
               <div className="space-y-2.5">
                 {orderedSignals.map((signal, idx) => {
-                  const ruleLabel = SIGNAL_RULE_LABELS[signal.rule_id];
+                  const ruleLabel = signalRulesMap[signal.rule_id];
                   const isExtra = idx >= 4;
                   return (
                     <div
                       key={`${signal.rule_id}-detail-${idx}`}
-                      className="min-w-0 rounded-md border border-border bg-card p-3 text-xs space-y-1.5"
+                      className="min-w-0 rounded-lg border border-border bg-card p-3 text-xs space-y-1.5"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
@@ -136,15 +137,14 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                             </span>
                           )}
                           <span className="text-muted-foreground">
-                            {SEVERITY_LABEL_RU[signal.severity] ??
-                              signal.severity}
+                            {t.severity[signal.severity] ?? signal.severity}
                           </span>
                           {isExtra && (
                             <Badge
                               variant="secondary"
                               className="h-auto text-[10px] px-1.5 py-0.5"
                             >
-                              Дополнительно
+                              {t.reasons.extraBadge}
                             </Badge>
                           )}
                         </div>
@@ -152,32 +152,34 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                           {signal.points > 0
                             ? `+${signal.points}`
                             : signal.points}{" "}
-                          б.
+                          {t.reasons.pointsSuffix}
                         </span>
                       </div>
 
                       <p className="text-sm text-foreground break-words">
-                        {signal.reason_ru}
+                        {pickReason(signal)}
                       </p>
 
                       {signal.evidence && (
-                        <div className="grid grid-cols-1 gap-1.5 rounded bg-muted/50 px-2.5 py-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-1.5 rounded bg-muted/60 px-2.5 py-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
                           <div className="min-w-0 break-words">
-                            <span className="text-foreground/70">Поле: </span>
+                            <span className="text-foreground/70">
+                              {t.reasons.evidenceField}
+                            </span>
                             {signal.evidence.field}
                           </div>
                           {signal.evidence.since && (
                             <div className="min-w-0">
                               <span className="text-foreground/70">
-                                С даты:{" "}
+                                {t.reasons.evidenceSince}
                               </span>
-                              {formatDateRu(signal.evidence.since)}
+                              {formatDate(signal.evidence.since)}
                             </div>
                           )}
                           {signal.evidence.expected !== null && (
                             <div className="min-w-0 break-all">
                               <span className="text-foreground/70">
-                                Ожидалось:{" "}
+                                {t.reasons.evidenceExpected}
                               </span>
                               {signal.evidence.expected}
                             </div>
@@ -185,7 +187,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                           {signal.evidence.actual !== null && (
                             <div className="min-w-0 break-all">
                               <span className="text-foreground/70">
-                                Получено:{" "}
+                                {t.reasons.evidenceActual}
                               </span>
                               {signal.evidence.actual}
                             </div>

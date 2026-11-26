@@ -2,27 +2,23 @@ import type { Approval, ApprovalStatus, CheckRequest } from "./types";
 
 export const MIN_DIRECTOR_COMMENT_LENGTH = 10;
 
-export const APPROVAL_STATUS_META: Record<
+export const APPROVAL_STATUS_STYLES: Record<
   ApprovalStatus,
   {
-    labelRu: string;
     badgeClass: string;
     bannerClass: string;
   }
 > = {
   pending: {
-    labelRu: "На согласовании",
-    badgeClass: "border-amber-300 bg-amber-50 text-amber-900",
+    badgeClass: "border-amber-300/80 bg-amber-50 text-amber-900",
     bannerClass: "border-amber-300 bg-amber-50/90 text-amber-950",
   },
   approved: {
-    labelRu: "Одобрено директором",
-    badgeClass: "border-emerald-300 bg-emerald-50 text-emerald-800",
-    bannerClass: "border-emerald-300 bg-emerald-50/90 text-emerald-950",
+    badgeClass: "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]",
+    bannerClass: "border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]",
   },
   rejected: {
-    labelRu: "Отклонено директором",
-    badgeClass: "border-red-300 bg-red-50 text-red-800",
+    badgeClass: "border-red-300/80 bg-red-50 text-red-800",
     bannerClass: "border-red-300 bg-red-50/90 text-red-950",
   },
 };
@@ -152,10 +148,14 @@ export function findApprovalForPayment(
 }
 
 export function canTrustApproval(approval: Approval): boolean {
-  if (approval.check?.verdict === "red") {
+  if (approval.check?.verdict !== "yellow") {
     return false;
   }
   const signals = approval.check?.signals ?? [];
+  const hasBlock = signals.some((signal) => signal.severity === "block");
+  if (hasBlock) {
+    return false;
+  }
   return signals.some(
     (signal) =>
       signal.rule_id === "iik_changed" || signal.rule_id === "bank_changed"

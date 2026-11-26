@@ -10,8 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useT } from "@/i18n";
 import { isLatinInCyrillic, resolveComparisonDiff } from "@/lib/diff";
-import { FIELD_LABELS, formatDateRu, formatKzt } from "@/lib/format";
 import type { ComparisonField, ComparisonRow } from "@/lib/types";
 import { cn } from "cn";
 
@@ -23,26 +23,20 @@ interface ComparisonTableProps {
 
 const MONOSPACE_FIELDS = new Set<ComparisonField>(["iik", "bin", "bik"]);
 
-function formatCellValue(field: ComparisonField, value: string): string {
-  if (field === "amount") {
-    const cleaned = value.replace(/\s+/g, "").replace(",", ".");
-    if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
-      return formatKzt(Number(cleaned));
-    }
-  }
-  return value;
-}
-
 function HighlightedDiffChars({
   value,
   diffPositions,
   variant,
   monospace,
+  latinTag,
+  latinTooltip,
 }: {
   value: string;
   diffPositions: number[];
   variant: "invoice" | "history";
   monospace: boolean;
+  latinTag: string;
+  latinTooltip: string;
 }) {
   const diffSet = new Set(diffPositions);
   const chars = Array.from(value);
@@ -72,16 +66,12 @@ function HighlightedDiffChars({
         return (
           <Fragment key={idx}>
             <mark
-              title={
-                isLatinHomoglyph
-                  ? "Латинская буква внутри кириллического названия"
-                  : undefined
-              }
+              title={isLatinHomoglyph ? latinTooltip : undefined}
               className={cn(
                 "inline-flex items-baseline gap-0.5 rounded-[3px] px-[2px] py-[1px] mx-[0.5px] font-bold sm:px-[3px]",
                 variant === "invoice"
                   ? "bg-red-600 text-white shadow-xs"
-                  : "bg-emerald-100 text-emerald-950 ring-1 ring-emerald-400"
+                  : "bg-[#E8F8F2] text-[#064A34] ring-1 ring-[#00AB75]/50"
               )}
             >
               <span
@@ -94,7 +84,7 @@ function HighlightedDiffChars({
               </span>
               {isLatinHomoglyph && (
                 <span
-                  title="Латинская буква внутри кириллического названия"
+                  title={latinTooltip}
                   className={cn(
                     "ml-0.5 inline-block -translate-y-0.5 rounded px-1 py-[1px] text-[10px] font-semibold leading-none tracking-normal",
                     variant === "invoice"
@@ -102,7 +92,7 @@ function HighlightedDiffChars({
                       : "bg-amber-200 text-amber-950"
                   )}
                 >
-                  лат.
+                  {latinTag}
                 </span>
               )}
             </mark>
@@ -119,6 +109,18 @@ export function ComparisonTable({
   trusted = false,
   className,
 }: ComparisonTableProps) {
+  const { t, formatMoney, formatDate, interpolate } = useT();
+
+  const formatCellValue = (field: ComparisonField, value: string): string => {
+    if (field === "amount") {
+      const cleaned = value.replace(/\s+/g, "").replace(",", ".");
+      if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
+        return formatMoney(Number(cleaned));
+      }
+    }
+    return value;
+  };
+
   const preparedRows = comparison.map((row) => {
     const showDiff = !trusted && row.differs;
     const resolvedDiff = trusted
@@ -146,16 +148,16 @@ export function ComparisonTable({
   });
 
   return (
-    <Card className={cn("min-w-0 border-border shadow-xs", className)}>
+    <Card className={cn("min-w-0", className)}>
       <CardHeader className="border-b border-border pb-3.5">
         <CardTitle className="text-base font-semibold">
-          Сверка реквизитов со счётом и историей
+          {t.comparison.title}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {preparedRows.length === 0 ? (
           <div className="px-4 py-8 text-sm text-muted-foreground sm:px-5">
-            Данные для сравнения отсутствуют.
+            {t.comparison.empty}
           </div>
         ) : (
           <>
@@ -181,18 +183,18 @@ export function ComparisonTable({
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold text-foreground">
-                        {FIELD_LABELS[row.field] ?? row.field}
+                        {t.fields[row.field] ?? row.field}
                       </span>
                       {showDiff && (
                         <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
-                          Отличается
+                          {t.comparison.differsBadge}
                         </span>
                       )}
                     </div>
 
                     <div className="min-w-0 space-y-0.5">
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        В счёте
+                        {t.comparison.colInInvoice}
                       </div>
                       <div className="min-w-0">
                         {hasInvoiceDiff ? (
@@ -201,6 +203,8 @@ export function ComparisonTable({
                             diffPositions={resolvedDiff.invoicePositions}
                             variant="invoice"
                             monospace={isMonospace}
+                            latinTag={t.comparison.latinTag}
+                            latinTooltip={t.comparison.latinTooltip}
                           />
                         ) : (
                           <span
@@ -221,7 +225,7 @@ export function ComparisonTable({
 
                     <div className="min-w-0 space-y-0.5">
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        В истории
+                        {t.comparison.colInHistory}
                       </div>
                       {formattedHistory ? (
                         <div className="min-w-0 space-y-1">
@@ -232,6 +236,8 @@ export function ComparisonTable({
                                 diffPositions={resolvedDiff.historyPositions}
                                 variant="history"
                                 monospace={isMonospace}
+                                latinTag={t.comparison.latinTag}
+                                latinTooltip={t.comparison.latinTooltip}
                               />
                             ) : (
                               <span
@@ -248,13 +254,15 @@ export function ComparisonTable({
                           </div>
                           {row.last_seen && (
                             <div className="text-xs text-muted-foreground">
-                              Последний платёж: {formatDateRu(row.last_seen)}
+                              {interpolate(t.comparison.lastPayment, {
+                                date: formatDate(row.last_seen),
+                              })}
                             </div>
                           )}
                         </div>
                       ) : (
                         <span className="text-sm text-muted-foreground">
-                          Нет в истории
+                          {t.comparison.notInHistory}
                         </span>
                       )}
                     </div>
@@ -268,13 +276,13 @@ export function ComparisonTable({
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead className="w-[26%] lg:w-[24%] pl-4 lg:pl-5 whitespace-normal">
-                      Поле
+                      {t.comparison.colField}
                     </TableHead>
                     <TableHead className="w-[37%] lg:w-[38%] whitespace-normal">
-                      В счёте
+                      {t.comparison.colInInvoice}
                     </TableHead>
                     <TableHead className="w-[37%] lg:w-[38%] pr-4 lg:pr-5 whitespace-normal">
-                      В истории (последний платёж, дата)
+                      {t.comparison.colInHistoryFull}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -299,10 +307,10 @@ export function ComparisonTable({
                       >
                         <TableCell className="min-w-0 pl-4 lg:pl-5 py-3.5 align-top font-medium text-foreground whitespace-normal break-words">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span>{FIELD_LABELS[row.field] ?? row.field}</span>
+                            <span>{t.fields[row.field] ?? row.field}</span>
                             {showDiff && (
                               <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
-                                Отличается
+                                {t.comparison.differsBadge}
                               </span>
                             )}
                           </div>
@@ -315,6 +323,8 @@ export function ComparisonTable({
                               diffPositions={resolvedDiff.invoicePositions}
                               variant="invoice"
                               monospace={isMonospace}
+                              latinTag={t.comparison.latinTag}
+                              latinTooltip={t.comparison.latinTooltip}
                             />
                           ) : (
                             <span
@@ -344,6 +354,8 @@ export function ComparisonTable({
                                     }
                                     variant="history"
                                     monospace={isMonospace}
+                                    latinTag={t.comparison.latinTag}
+                                    latinTooltip={t.comparison.latinTooltip}
                                   />
                                 ) : (
                                   <span
@@ -360,14 +372,15 @@ export function ComparisonTable({
                               </div>
                               {row.last_seen && (
                                 <div className="text-xs text-muted-foreground">
-                                  Последний платёж:{" "}
-                                  {formatDateRu(row.last_seen)}
+                                  {interpolate(t.comparison.lastPayment, {
+                                    date: formatDate(row.last_seen),
+                                  })}
                                 </div>
                               )}
                             </div>
                           ) : (
                             <span className="text-sm text-muted-foreground">
-                              Нет в истории
+                              {t.comparison.notInHistory}
                             </span>
                           )}
                         </TableCell>

@@ -7,13 +7,14 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { VERDICT_META } from "@/lib/format";
+import { useT } from "@/i18n";
+import { VERDICT_STYLES } from "@/lib/format";
 import type { Verdict } from "@/lib/types";
 import { cn } from "cn";
 
 interface VerdictBannerProps {
   verdict: Verdict;
-  headlineRu: string;
+  headline: string;
   subtitle?: string | null;
   className?: string;
 }
@@ -32,15 +33,16 @@ function normalizeText(value: string): string {
 
 export function VerdictBanner({
   verdict,
-  headlineRu,
+  headline,
   subtitle,
   className,
 }: VerdictBannerProps) {
-  const meta = VERDICT_META[verdict] ?? VERDICT_META.grey;
+  const { t } = useT();
+  const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.grey;
   const Icon = VERDICT_ICONS[verdict] ?? HelpCircle;
 
-  const title = meta.labelRu;
-  const trimmedHeadline = headlineRu?.trim() ?? "";
+  const title = t.verdicts[verdict] ?? t.verdicts.grey;
+  const trimmedHeadline = headline?.trim() ?? "";
   const trimmedSubtitle = subtitle?.trim() ?? "";
 
   const normalizedTitle = normalizeText(title);
@@ -57,14 +59,14 @@ export function VerdictBanner({
       className={cn(
         "flex min-w-0 gap-3 rounded-xl border-2 px-4 py-3.5 shadow-xs sm:gap-4 sm:px-5 sm:py-4",
         resolvedSubtitle ? "items-start" : "items-center",
-        meta.bannerClass,
+        style.bannerClass,
         className
       )}
     >
       <div
         className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-xs sm:size-11",
-          meta.iconColorClass
+          "flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-xs sm:size-11",
+          style.iconColorClass
         )}
       >
         <Icon className="size-5 sm:size-6" />

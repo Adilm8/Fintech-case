@@ -1,115 +1,86 @@
-import type { ComparisonField, TrustedInfo, Verdict } from "./types";
+import type {
+  CheckResult,
+  MetricsResponse,
+  NextAction,
+  Signal,
+  Verdict,
+} from "./types";
 
-export function formatKzt(amount: number | null | undefined): string {
-  if (amount === null || amount === undefined || Number.isNaN(amount)) {
-    return "—";
-  }
-  const hasFraction = Math.abs(amount % 1) > 0.001;
-  const formatted = new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: hasFraction ? 2 : 0,
-    maximumFractionDigits: hasFraction ? 2 : 0,
-  })
-    .format(amount)
-    .replace(/\u00a0/g, " ");
-
-  return `${formatted} ₸`;
-}
-
-export function formatDateRu(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—";
-  const parsed = new Date(dateStr);
-  if (Number.isNaN(parsed.getTime())) {
-    return dateStr;
-  }
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(parsed);
-}
-
-export function formatTrustedBannerText(
-  trustedInfo: TrustedInfo | null | undefined
+export function pickHeadline(
+  result: Pick<CheckResult, "headline" | "headline_ru">
 ): string {
-  const datePart = trustedInfo?.decided_at
-    ? ` ${formatDateRu(trustedInfo.decided_at)}`
-    : "";
-  const comment = trustedInfo?.director_comment?.trim();
-  const base = `Новый счёт подтверждён директором${datePart}`;
-  return comment ? `${base}: ${comment}` : base;
+  const localized = result.headline?.trim();
+  return localized || result.headline_ru;
 }
 
-export interface VerdictMeta {
+export function pickReason(
+  signal: Pick<Signal, "reason" | "reason_ru">
+): string {
+  const localized = signal.reason?.trim();
+  return localized || signal.reason_ru;
+}
+
+export function pickActionText(
+  action: Pick<NextAction, "text" | "text_ru">
+): string {
+  const localized = action.text?.trim();
+  return localized || action.text_ru;
+}
+
+export function pickDisclaimer(
+  metrics: Pick<MetricsResponse, "disclaimer" | "disclaimer_ru">
+): string | null {
+  const localized = metrics.disclaimer?.trim();
+  if (localized) return localized;
+  const fallback = metrics.disclaimer_ru?.trim();
+  return fallback || null;
+}
+
+export interface VerdictStyle {
   verdict: Verdict;
-  labelRu: string;
   badgeClass: string;
   bannerClass: string;
   dotClass: string;
   iconColorClass: string;
+  actionButtonClass?: string;
 }
 
-export const VERDICT_META: Record<Verdict, VerdictMeta> = {
+export const VERDICT_STYLES: Record<Verdict, VerdictStyle> = {
   green: {
     verdict: "green",
-    labelRu: "Всё как раньше",
-    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    bannerClass: "border-emerald-200 bg-emerald-50/90 text-emerald-950",
-    dotClass: "bg-emerald-600",
-    iconColorClass: "text-emerald-600",
+    badgeClass: "border-[#00AB75]/30 bg-[#00AB75]/10 text-[#006B49]",
+    bannerClass: "border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]",
+    dotClass: "bg-[#00AB75]",
+    iconColorClass: "text-[var(--brand-text)]",
   },
   yellow: {
     verdict: "yellow",
-    labelRu: "Есть изменения",
-    badgeClass: "border-amber-200 bg-amber-50 text-amber-900",
-    bannerClass: "border-amber-200 bg-amber-50/90 text-amber-950",
+    badgeClass: "border-amber-300/80 bg-amber-50 text-amber-900",
+    bannerClass: "border-amber-300 bg-amber-50/95 text-amber-950",
     dotClass: "bg-amber-500",
-    iconColorClass: "text-amber-600",
+    iconColorClass: "text-amber-700",
   },
   red: {
     verdict: "red",
-    labelRu: "Похоже на подмену",
-    badgeClass: "border-red-200 bg-red-50 text-red-800",
-    bannerClass: "border-red-300 bg-red-50/90 text-red-950",
+    badgeClass: "border-red-300/80 bg-red-50 text-red-800",
+    bannerClass: "border-red-300 bg-red-50/95 text-red-950",
     dotClass: "bg-red-600",
     iconColorClass: "text-red-600",
+    actionButtonClass: "bg-red-600 text-white hover:bg-red-700",
   },
   grey: {
     verdict: "grey",
-    labelRu: "Нет истории",
-    badgeClass: "border-slate-200 bg-slate-100 text-slate-700",
-    bannerClass: "border-slate-200 bg-slate-100/90 text-slate-900",
-    dotClass: "bg-slate-500",
-    iconColorClass: "text-slate-600",
+    badgeClass: "border-[#DCDCE2] bg-[#F0F0F5] text-[#4A4A4E]",
+    bannerClass: "border-[#DCDCE2] bg-[#F0F0F5] text-[#1D1D1E]",
+    dotClass: "bg-[#737376]",
+    iconColorClass: "text-[#57575A]",
   },
   invalid: {
     verdict: "invalid",
-    labelRu: "Ошибка в реквизитах",
-    badgeClass: "border-orange-300 bg-orange-50 text-orange-900",
-    bannerClass: "border-orange-300 bg-orange-50/90 text-orange-950",
-    dotClass: "bg-orange-600",
-    iconColorClass: "text-orange-600",
+    badgeClass: "border-rose-300 bg-rose-50 text-rose-950",
+    bannerClass: "border-rose-400/80 bg-rose-50/95 text-rose-950",
+    dotClass: "bg-rose-900",
+    iconColorClass: "text-rose-900",
+    actionButtonClass: "bg-rose-900 text-white hover:bg-rose-950",
   },
-};
-
-export const FIELD_LABELS: Record<ComparisonField, string> = {
-  name: "Наименование получателя",
-  bin: "БИН / ИИН",
-  iik: "ИИК (счёт)",
-  bik: "БИК",
-  bank: "Банк получателя",
-  amount: "Сумма платежа",
-};
-
-export const SIGNAL_RULE_LABELS: Record<string, string> = {
-  trusted_account: "Доверенный счёт (подтверждён директором)",
-  iik_changed: "Изменён ИИК получателя",
-  bank_changed: "Изменён банк получателя",
-  bik_changed: "Изменён БИК банка",
-  bin_changed: "Изменён БИН / ИИН",
-  name_lookalike: "Похожее наименование поставщика",
-  homoglyph_name: "Символы другого алфавита в названии",
-  bcc_account_mismatch: "Владелец счёта в BCC не совпадает",
-  amount_anomaly: "Нетипичная сумма платежа",
-  urgent_purpose: "Признаки срочности в назначении",
-  first_payment: "Первый платёж получателю",
 };
