@@ -98,7 +98,7 @@ All BIN/IIN/IIK values pass Kazakhstan checksums (mod-11 for BIN/IIN, ISO 13616 
 - `data/bcc_accounts.json` — Internal BCC (`856` / `KCJBKZKX`) account directory with owner BIN and account opening date.
 - `data/history.json` — 12 months of deterministic history for `ТОО «ТехноСтрой Астана»`: **150 payments** across **12 suppliers** in 11 banks (with typical `knp` codes, seasonal spikes, advance/balance cycles, a mid-year legal account switch for `ТОО «ЕвразияКранМонтаж»`, and an IE supplier `ИП Байжанов К.Т.` paid by IIN).
 - `data/queue.json` — **10 signing-queue items** (`Q-001`..`Q-010`) with current engine verdicts:
-  - `Q-001` (`green`), `Q-002` (`red` — known supplier + new IIK in another bank + amount `820 000 ₸ >=` median `820 000 ₸`), `Q-003` (`red`), `Q-004` (`grey`), `Q-005` (`green`), `Q-006` (`green`), `Q-007` (`invalid`), `Q-008` (`green`), `Q-009` (`red`), `Q-010` (`yellow`).
+  - `Q-001` (`green`), `Q-002` (`yellow` — known supplier + new IIK in another bank, amount `700 000 ₸` below median; at/above median the same change is `red`), `Q-003` (`red`), `Q-004` (`grey`), `Q-005` (`green`), `Q-006` (`green`), `Q-007` (`invalid`), `Q-008` (`green`), `Q-009` (`red`), `Q-010` (`yellow`).
 - `data/eval_set.json` — **400 labeled cases** (`200 legit`, `200 attack`, `seed=42`) across 20 scenario kinds (`9 legit`, `11 attack`), including budget payments, legitimate brand/numeric names, Unicode & digit-in-word evasion, lookalike variants/transliteration, KBe=17 droppers, duplicate invoices, and 72-hour structuring.
 
 ## Evaluation Summary (`ruleset=2026.11.26-r1`)
