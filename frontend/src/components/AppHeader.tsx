@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Keyboard, Loader2, RotateCcw } from "lucide-react";
+import { Keyboard, Loader2, Menu, RotateCcw, X } from "lucide-react";
+import {
+  BrandLogo,
+  CompanyChip,
+  LanguageSwitch,
+} from "@/components/nav/HeaderControls";
+import { NavTileList, type NavTileItem } from "@/components/nav/NavTile";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LANG_OPTIONS, useT } from "@/i18n";
+import { useT } from "@/i18n";
 import { cn } from "cn";
 
 interface AppHeaderProps {
@@ -39,18 +44,30 @@ export function AppHeader({
   const pathname = usePathname();
   const { t, lang, setLang } = useT();
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const activeTabRef = useRef<HTMLAnchorElement | null>(null);
+  const [menuState, setMenuState] = useState<{
+    pathname: string;
+    open: boolean;
+  }>({ pathname, open: false });
+
+  const menuOpen = menuState.pathname === pathname && menuState.open;
+  const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    setMenuState((prev) => {
+      const currentOpen = prev.pathname === pathname && prev.open;
+      const resolved = typeof next === "function" ? next(currentOpen) : next;
+      return { pathname, open: resolved };
+    });
+  };
 
   useEffect(() => {
-    const el = activeTabRef.current;
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({
-        behavior: "smooth",
-        inline: "center",
-        block: "nearest",
-      });
-    }
-  }, [pathname, lang]);
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuState((prev) => ({ ...prev, open: false }));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   const resetLabel = isResetting ? t.nav.resetting : t.nav.resetDemo;
 
@@ -60,101 +77,101 @@ export function AppHeader({
     setResetDialogOpen(false);
   };
 
-  const navItems = [
+  const handleHomeClick = () => {
+    if (pathname === "/") {
+      onHomeReset?.();
+    }
+  };
+
+  const navItems: NavTileItem[] = [
     {
+      key: "payments",
       href: "/",
       label: t.nav.payments,
       active: pathname === "/" || pathname.startsWith("/check"),
-      badge: null as number | null,
+      badge: null,
+      onClick: handleHomeClick,
     },
     {
+      key: "approvals",
       href: "/approvals",
       label: t.nav.approvals,
       active: pathname.startsWith("/approvals"),
       badge: pendingCount,
     },
     {
+      key: "history",
       href: "/history",
       label: t.nav.history,
       active: pathname.startsWith("/history"),
-      badge: null as number | null,
+      badge: null,
     },
     {
+      key: "attack",
       href: "/attack",
       label: t.nav.attack,
       active: pathname.startsWith("/attack"),
-      badge: null as number | null,
+      badge: null,
     },
     {
+      key: "metrics",
       href: "/metrics",
       label: t.nav.metrics,
       active: pathname.startsWith("/metrics"),
-      badge: null as number | null,
+      badge: null,
     },
   ];
 
   return (
-    <header className="relative z-30 border-b border-border bg-card md:sticky md:top-0">
+    <header className="hdr-shell">
       <div className="mx-auto w-full max-w-[1248px] px-4 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Link
-              href="/"
-              onClick={() => {
-                if (pathname === "/") {
-                  onHomeReset?.();
-                }
-              }}
-              className="flex min-h-11 min-w-0 shrink-0 items-center gap-2 rounded-[6px] text-left transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.svg"
-                alt=""
-                width={28}
-                height={28}
-                className="h-7 w-7 shrink-0"
+        <div className="hdr-card px-2.5 py-2 md:px-4 md:py-2.5">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 md:grid-cols-[minmax(0,1fr)_auto] md:gap-x-3">
+            {/* Brand + company chip */}
+            <div className="order-1 flex min-w-0 items-center gap-3">
+              <BrandLogo
+                href="/"
+                name={t.brand.name}
+                onClick={handleHomeClick}
               />
-              <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">
-                {t.brand.name}
-              </span>
-            </Link>
-
-            <div className="hidden min-w-0 items-center border-l border-border pl-3 md:flex">
-              <span className="truncate text-[13px] text-muted-foreground">
-                {t.brand.companyName}
-              </span>
+              <CompanyChip
+                name={t.brand.companyName}
+                className="hidden max-w-[260px] md:inline-flex lg:max-w-[340px]"
+              />
             </div>
-          </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            <div
-              className="inline-flex items-center rounded-[6px] border border-border bg-muted p-0.5"
-              role="group"
-              aria-label={t.nav.langAriaLabel}
-            >
-              {LANG_OPTIONS.map((option) => {
-                const isSelected = lang === option.code;
-                return (
-                  <button
-                    key={option.code}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => setLang(option.code)}
-                    className={cn(
-                      "inline-flex min-h-9 w-[40px] items-center justify-center rounded-[4px] border text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-7",
-                      isSelected
-                        ? "border-border bg-card text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
+            {/* Right controls (language switch + existing icon buttons; mobile utility toggle on < md) */}
+            <div className="order-3 flex shrink-0 items-center gap-1.5 md:order-2 md:gap-2">
+              <LanguageSwitch
+                lang={lang}
+                onChange={setLang}
+                ariaLabel={t.nav.langAriaLabel}
+                className="hidden md:inline-flex"
+              />
+
+              {onOpenShortcuts && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={onOpenShortcuts}
+                        aria-label={t.nav.shortcutsTooltip}
+                        title={t.nav.shortcutsTooltip}
+                        className="hidden size-8 shrink-0 rounded-[10px] p-0 text-muted-foreground hover:text-foreground md:inline-flex"
+                      />
+                    }
                   >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
+                    <Keyboard className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {t.nav.shortcutsTooltip}
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
-            {onOpenShortcuts && (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -162,81 +179,89 @@ export function AppHeader({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={onOpenShortcuts}
-                      aria-label={t.nav.shortcutsTooltip}
-                      title={t.nav.shortcutsTooltip}
-                      className="hidden size-8 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:inline-flex"
+                      onClick={() => setResetDialogOpen(true)}
+                      disabled={isResetting}
+                      aria-label={resetLabel}
+                      title={resetLabel}
+                      className="size-10 shrink-0 rounded-[10px] p-0 text-muted-foreground hover:text-foreground sm:size-8"
                     />
                   }
                 >
-                  <Keyboard className="size-4" />
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {t.nav.shortcutsTooltip}
-                </TooltipContent>
-              </Tooltip>
-            )}
-
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setResetDialogOpen(true)}
-                    disabled={isResetting}
-                    aria-label={resetLabel}
-                    title={resetLabel}
-                    className="size-11 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:size-8"
+                  <RotateCcw
+                    className={cn("size-4", isResetting && "animate-spin")}
                   />
-                }
-              >
-                <RotateCcw
-                  className={cn("size-4", isResetting && "animate-spin")}
-                />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{resetLabel}</TooltipContent>
-            </Tooltip>
-          </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{resetLabel}</TooltipContent>
+              </Tooltip>
 
-          <div className="flex w-full min-w-0 items-center md:hidden">
-            <span className="truncate text-xs text-muted-foreground">
-              {t.brand.companyName}
-            </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                aria-expanded={menuOpen}
+                aria-controls="app-mobile-utilities"
+                aria-label={menuOpen ? t.prod.nav.closeMenu : t.prod.nav.menu}
+                className={cn(
+                  "inline-flex size-10 shrink-0 rounded-[10px] p-0 text-muted-foreground hover:text-foreground sm:size-8 md:hidden",
+                  menuOpen && "border-foreground/30 bg-muted text-foreground"
+                )}
+              >
+                {menuOpen ? (
+                  <X className="size-4" />
+                ) : (
+                  <Menu className="size-4" />
+                )}
+              </Button>
+            </div>
+
+            {/* Section navigation tiles (inline scrollable row on < md, full second row on md+) */}
+            <NavTileList
+              items={navItems}
+              ariaLabel={t.nav.ariaLabel}
+              scrollKey={`${pathname}:${lang}`}
+              className="order-2 md:order-3 md:col-span-2 md:mt-2.5 md:border-t md:border-border/70 md:pt-2.5"
+            />
+
+            {/* Collapsible utility tray on < md (keeps language switch, company chip, shortcuts accessible) */}
+            {menuOpen && (
+              <div
+                id="app-mobile-utilities"
+                className="order-4 col-span-3 mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2.5 md:hidden"
+              >
+                <CompanyChip
+                  name={t.brand.companyName}
+                  className="max-w-full"
+                />
+
+                <div className="flex items-center gap-2">
+                  <LanguageSwitch
+                    lang={lang}
+                    onChange={setLang}
+                    ariaLabel={t.nav.langAriaLabel}
+                  />
+
+                  {onOpenShortcuts && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onOpenShortcuts();
+                      }}
+                      aria-label={t.nav.shortcutsTooltip}
+                      title={t.nav.shortcutsTooltip}
+                      className="size-8 shrink-0 rounded-[10px] p-0 text-muted-foreground hover:text-foreground"
+                    >
+                      <Keyboard className="size-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-
-        <nav
-          aria-label={t.nav.ariaLabel}
-          className="ui-tabs no-scrollbar -mx-4 border-t border-border border-b-0 px-4 sm:mx-0 sm:px-0"
-        >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              ref={item.active ? activeTabRef : undefined}
-              href={item.href}
-              aria-current={item.active ? "page" : undefined}
-              onClick={() => {
-                if (item.href === "/" && pathname === "/") {
-                  onHomeReset?.();
-                }
-              }}
-              className="ui-tab mb-0 min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10"
-            >
-              <span>{item.label}</span>
-              {item.badge !== null && (
-                <span
-                  className={
-                    item.badge > 0 ? "ui-tag tabular-nums" : "ui-tab-count"
-                  }
-                >
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          ))}
-        </nav>
       </div>
 
       <Dialog
