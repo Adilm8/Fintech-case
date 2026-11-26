@@ -2,19 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  Plus,
-  Send,
-  ShieldCheck,
-  Upload,
-} from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { notifyProdNotificationsUpdated } from "@/components/prod/NotificationBell";
 import { notifyProdApprovalsUpdated } from "@/components/prod/ProdShell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -147,20 +138,18 @@ export function BatchToolbar({
             <Button
               type="button"
               onClick={onNewPayment}
-              className="min-h-11 gap-2 rounded-xl px-4 font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)] sm:min-h-10"
+              className="min-h-11 sm:min-h-9"
             >
-              <Plus className="size-4" />
-              <span>{t.prod.payments.actions.newPayment}</span>
+              {t.prod.payments.actions.newPayment}
             </Button>
 
             <Button
               type="button"
               variant="outline"
               onClick={onOpenImport}
-              className="min-h-11 gap-2 rounded-xl sm:min-h-10"
+              className="min-h-11 sm:min-h-9"
             >
-              <Upload className="size-4" />
-              <span>{t.prod.payments.actions.importFile}</span>
+              {t.prod.payments.actions.importFile}
             </Button>
           </>
         )}
@@ -171,14 +160,11 @@ export function BatchToolbar({
             variant="outline"
             disabled={greenCount === 0}
             onClick={() => openModal("sign-green")}
-            className="min-h-11 gap-2 rounded-xl border-[#00AB75]/40 bg-[#E8F8F2]/60 text-[#006B49] hover:bg-[#E8F8F2] disabled:opacity-50 sm:min-h-10"
+            className="min-h-11 sm:min-h-9"
           >
-            <ShieldCheck className="size-4" />
-            <span>
-              {interpolate(t.prod.payments.actions.signAllGreen, {
-                count: greenCount,
-              })}
-            </span>
+            {interpolate(t.prod.payments.actions.signAllGreen, {
+              count: greenCount,
+            })}
           </Button>
         )}
 
@@ -188,14 +174,11 @@ export function BatchToolbar({
             variant="outline"
             disabled={sendToDirectorCount === 0}
             onClick={() => openModal("send-director")}
-            className="min-h-11 gap-2 rounded-xl sm:min-h-10"
+            className="min-h-11 sm:min-h-9"
           >
-            <Send className="size-4" />
-            <span>
-              {interpolate(t.prod.payments.actions.sendRestToDirector, {
-                count: sendToDirectorCount,
-              })}
-            </span>
+            {interpolate(t.prod.payments.actions.sendRestToDirector, {
+              count: sendToDirectorCount,
+            })}
           </Button>
         )}
       </div>
@@ -223,26 +206,25 @@ export function BatchToolbar({
 
           {result ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="h-auto gap-1.5 border-[#00AB75]/35 bg-[#E8F8F2] px-3 py-1 text-xs font-semibold text-[#006B49]"
-                >
-                  <CheckCircle2 className="size-3.5" />
-                  <span>
+              <div className="ui-kpi-strip !grid-cols-2 [&>*]:border-b-0">
+                <div className="ui-kpi-cell">
+                  <span className="ui-kpi-label">
                     {interpolate(t.prod.batch.resultDone, {
                       count: result.done.length,
                     })}
                   </span>
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className="h-auto px-3 py-1 text-xs font-semibold text-muted-foreground"
-                >
-                  {interpolate(t.prod.batch.resultSkipped, {
-                    count: result.skipped.length,
-                  })}
-                </Badge>
+                  <span className="ui-kpi-value text-[var(--status-ok-text)]">
+                    {result.done.length}
+                  </span>
+                </div>
+                <div className="ui-kpi-cell">
+                  <span className="ui-kpi-label">
+                    {interpolate(t.prod.batch.resultSkipped, {
+                      count: result.skipped.length,
+                    })}
+                  </span>
+                  <span className="ui-kpi-value">{result.skipped.length}</span>
+                </div>
               </div>
 
               {result.skipped.length === 0 ? (
@@ -251,29 +233,24 @@ export function BatchToolbar({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="ui-label-meta">
                     {t.prod.batch.skippedListTitle}
                   </div>
-                  <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-xl border border-border bg-background/80 p-2.5">
+                  <div className="max-h-56 divide-y divide-border overflow-y-auto rounded-[6px] border border-border bg-card">
                     {result.skipped.map((item) => (
                       <div
                         key={`${item.id}-${item.code}`}
-                        className="rounded-lg border border-border bg-card px-3 py-2 text-xs space-y-1"
+                        className="px-3 py-2 text-xs space-y-1"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <Link
                             href={`/payments/${item.id}`}
                             onClick={() => closeModal(false)}
-                            className="font-mono font-semibold text-[var(--brand-text)] hover:underline"
+                            className="font-mono font-medium text-[var(--brand-text)] hover:underline"
                           >
                             {item.id}
                           </Link>
-                          <Badge
-                            variant="outline"
-                            className="h-auto font-mono text-[10px] text-muted-foreground"
-                          >
-                            {item.code}
-                          </Badge>
+                          <span className="ui-tag font-mono">{item.code}</span>
                         </div>
                         <p className="text-muted-foreground break-words">
                           {item.detail}
@@ -288,7 +265,7 @@ export function BatchToolbar({
                 <Button
                   type="button"
                   onClick={() => closeModal(false)}
-                  className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                 >
                   {t.prod.batch.doneButton}
                 </Button>
@@ -297,10 +274,7 @@ export function BatchToolbar({
           ) : (
             <div className="space-y-4">
               {error && (
-                <Alert
-                  variant="destructive"
-                  className="border-red-300 bg-red-50/90"
-                >
+                <Alert variant="destructive">
                   <AlertCircle className="size-4" />
                   <AlertDescription className="break-words">
                     {error}
@@ -332,7 +306,7 @@ export function BatchToolbar({
                   variant="outline"
                   onClick={() => closeModal(false)}
                   disabled={isRunning}
-                  className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                 >
                   {t.common.cancel}
                 </Button>
@@ -340,7 +314,7 @@ export function BatchToolbar({
                   type="button"
                   onClick={() => void handleConfirm()}
                   disabled={isRunning}
-                  className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
+                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                 >
                   {isRunning ? (
                     <>
@@ -352,15 +326,9 @@ export function BatchToolbar({
                       </span>
                     </>
                   ) : activeModal === "sign-green" ? (
-                    <>
-                      <ShieldCheck className="size-4" />
-                      <span>{t.prod.batch.signGreenConfirm}</span>
-                    </>
+                    <span>{t.prod.batch.signGreenConfirm}</span>
                   ) : (
-                    <>
-                      <Send className="size-4" />
-                      <span>{t.prod.batch.sendDirectorConfirm}</span>
-                    </>
+                    <span>{t.prod.batch.sendDirectorConfirm}</span>
                   )}
                 </Button>
               </DialogFooter>

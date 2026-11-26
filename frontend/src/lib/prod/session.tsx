@@ -11,9 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ShieldOff } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "cn";
 import { useT } from "@/i18n";
@@ -166,8 +164,8 @@ export function RequireRole({ roles, children }: RequireRoleProps) {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-8 w-56" />
-        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-7 w-56 rounded-[6px]" />
+        <Skeleton className="h-40 w-full rounded-[8px]" />
       </div>
     );
   }
@@ -179,30 +177,21 @@ export function RequireRole({ roles, children }: RequireRoleProps) {
   if (!roles.includes(session.user.role)) {
     const homeHref = defaultHomeForRole(session.user.role);
     return (
-      <Card className="mx-auto max-w-lg">
-        <CardContent className="flex flex-col items-center justify-center gap-4 py-14 px-6 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
-            <ShieldOff className="size-6" />
-          </div>
-          <div className="space-y-1.5">
-            <h1 className="text-lg font-semibold text-foreground">
-              {t.prod.access.deniedTitle}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t.prod.access.deniedDescription}
-            </p>
-          </div>
+      <div className="ui-panel max-w-lg">
+        <div className="ui-empty">
+          <h1 className="ui-empty-title">{t.prod.access.deniedTitle}</h1>
+          <p className="ui-empty-desc">{t.prod.access.deniedDescription}</p>
           <Link
             href={homeHref}
             className={cn(
-              buttonVariants({ variant: "default" }),
-              "mt-1 min-h-11 rounded-xl px-4 sm:min-h-9"
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "mt-2 min-h-10 sm:min-h-8"
             )}
           >
             {t.prod.access.backHome}
           </Link>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 

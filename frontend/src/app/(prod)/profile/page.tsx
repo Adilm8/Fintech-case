@@ -1,20 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  AlertCircle,
-  Building2,
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  KeyRound,
-  Landmark,
-  Loader2,
-  Save,
-  UserCircle2,
-} from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -171,26 +159,14 @@ export default function ProdProfilePage() {
     t.prod.roles.bankAnalystCompany;
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <div className="min-w-0">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-            <UserCircle2 className="size-5" />
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.prod.profile.title}
-          </h1>
-        </div>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {t.prod.profile.subtitle}
-        </p>
+        <h1 className="ui-page-title">{t.prod.profile.title}</h1>
+        <p className="ui-page-subtitle">{t.prod.profile.subtitle}</p>
       </div>
 
       {loadError && (
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertCircle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="break-words">{loadError}</AlertDescription>
@@ -198,63 +174,44 @@ export default function ProdProfilePage() {
       )}
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <Skeleton className="h-80 w-full rounded-2xl" />
-          <Skeleton className="h-80 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Skeleton className="h-80 w-full rounded-[8px]" />
+          <Skeleton className="h-80 w-full rounded-[8px]" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 sm:gap-5 lg:grid-cols-2">
           {/* Personal details & default language */}
           <Card className="min-w-0">
-            <CardHeader className="border-b border-border pb-4">
-              <CardTitle className="text-base font-semibold">
-                {t.prod.profile.accountCardTitle}
-              </CardTitle>
+            <CardHeader className="border-b border-border pb-3.5">
+              <CardTitle>{t.prod.profile.accountCardTitle}</CardTitle>
               <CardDescription>
                 {t.prod.profile.accountCardDescription}
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="pt-5">
-              <div className="mb-5 grid grid-cols-1 gap-2.5 rounded-xl border border-border bg-background/70 p-3.5 text-xs sm:grid-cols-2">
-                <div className="space-y-0.5 min-w-0">
-                  <div className="text-muted-foreground">
-                    {t.prod.profile.loginLabel}
-                  </div>
-                  <div className="font-mono text-sm font-semibold text-foreground break-all">
+            <CardContent className="space-y-4 pt-4">
+              <dl className="ui-dl">
+                <div className="ui-dl-row">
+                  <dt className="ui-dt">{t.prod.profile.loginLabel}</dt>
+                  <dd className="ui-dd font-mono break-all">
                     {profile?.login ?? session?.user.login}
-                  </div>
+                  </dd>
                 </div>
-
-                <div className="space-y-1 min-w-0">
-                  <div className="text-muted-foreground">
-                    {t.prod.profile.roleLabel}
-                  </div>
-                  <Badge variant="secondary" className="h-auto px-2 py-0.5 text-xs">
-                    {roleLabel}
-                  </Badge>
+                <div className="ui-dl-row">
+                  <dt className="ui-dt">{t.prod.profile.roleLabel}</dt>
+                  <dd className="ui-dd">{roleLabel}</dd>
                 </div>
-
-                <div className="space-y-0.5 sm:col-span-2 min-w-0">
-                  <div className="text-muted-foreground">
-                    {t.prod.profile.companyLabel}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-foreground break-words">
-                    {profile?.company ? (
-                      <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <Landmark className="size-3.5 shrink-0 text-[var(--brand-text)]" />
-                    )}
-                    <span>{companyLabel}</span>
-                  </div>
+                <div className="ui-dl-row">
+                  <dt className="ui-dt">{t.prod.profile.companyLabel}</dt>
+                  <dd className="ui-dd break-words">{companyLabel}</dd>
                 </div>
-              </div>
+              </dl>
 
               <form onSubmit={handleSaveProfile} className="space-y-4">
                 {profileError && (
                   <Alert
                     variant="destructive"
-                    className="rounded-xl border-red-300 bg-red-50/90"
+                    className="ui-notice ui-notice-danger"
                   >
                     <AlertCircle className="size-4" />
                     <AlertDescription className="break-words">
@@ -278,7 +235,7 @@ export default function ProdProfilePage() {
                     }}
                     placeholder={t.prod.profile.fullNamePlaceholder}
                     disabled={isSavingProfile}
-                    className="h-11 rounded-xl sm:h-10"
+                    className="h-10 rounded-[6px] sm:h-9"
                   />
                 </div>
 
@@ -287,7 +244,7 @@ export default function ProdProfilePage() {
                   <div
                     role="group"
                     aria-label={t.prod.profile.defaultLangLabel}
-                    className="inline-flex items-center rounded-xl border border-border bg-background p-1"
+                    className="inline-flex items-center rounded-[6px] border border-border bg-muted p-0.5"
                   >
                     {LANG_OPTIONS.map((option) => {
                       const selected = defaultLang === option.code;
@@ -299,10 +256,10 @@ export default function ProdProfilePage() {
                           onClick={() => setDefaultLang(option.code)}
                           disabled={isSavingProfile}
                           className={cn(
-                            "inline-flex min-h-10 min-w-[64px] cursor-pointer items-center justify-center rounded-lg px-3 text-xs font-semibold tracking-wide transition-all sm:min-h-8",
+                            "inline-flex min-h-10 min-w-[56px] cursor-pointer items-center justify-center rounded-[4px] border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:min-h-8",
                             selected
-                              ? "bg-card text-[var(--brand-text)] shadow-xs ring-1 ring-border"
-                              : "text-muted-foreground hover:text-foreground"
+                              ? "border-border bg-card text-foreground"
+                              : "border-transparent text-muted-foreground hover:text-foreground"
                           )}
                         >
                           {option.label}
@@ -315,7 +272,7 @@ export default function ProdProfilePage() {
                 <Button
                   type="submit"
                   disabled={isSavingProfile}
-                  className="min-h-11 w-full gap-2 rounded-xl font-semibold sm:min-h-10 sm:w-auto"
+                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                 >
                   {isSavingProfile ? (
                     <>
@@ -323,10 +280,7 @@ export default function ProdProfilePage() {
                       <span>{t.prod.profile.savingProfile}</span>
                     </>
                   ) : (
-                    <>
-                      <Save className="size-4" />
-                      <span>{t.prod.profile.saveProfile}</span>
-                    </>
+                    <span>{t.prod.profile.saveProfile}</span>
                   )}
                 </Button>
               </form>
@@ -335,22 +289,19 @@ export default function ProdProfilePage() {
 
           {/* Change password card */}
           <Card className="min-w-0">
-            <CardHeader className="border-b border-border pb-4">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <KeyRound className="size-4 text-muted-foreground" />
-                <span>{t.prod.profile.passwordCardTitle}</span>
-              </CardTitle>
+            <CardHeader className="border-b border-border pb-3.5">
+              <CardTitle>{t.prod.profile.passwordCardTitle}</CardTitle>
               <CardDescription>
                 {t.prod.profile.passwordCardDescription}
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="pt-5">
+            <CardContent className="pt-4">
               <form onSubmit={handleChangePassword} className="space-y-4">
                 {passwordError && (
                   <Alert
                     variant="destructive"
-                    className="rounded-xl border-red-300 bg-red-50/90"
+                    className="ui-notice ui-notice-danger"
                   >
                     <AlertCircle className="size-4" />
                     <AlertDescription className="break-words">
@@ -360,12 +311,12 @@ export default function ProdProfilePage() {
                 )}
 
                 {passwordSuccess && (
-                  <Alert className="rounded-xl border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]">
-                    <CheckCircle2 className="size-4 text-[var(--brand-text)]" />
-                    <AlertDescription className="break-words text-[#064A34]">
-                      {passwordSuccess}
-                    </AlertDescription>
-                  </Alert>
+                  <div
+                    role="status"
+                    className="ui-notice ui-notice-ok text-sm text-foreground break-words"
+                  >
+                    {passwordSuccess}
+                  </div>
                 )}
 
                 <div className="space-y-1.5">
@@ -384,7 +335,7 @@ export default function ProdProfilePage() {
                       }}
                       placeholder={t.prod.profile.currentPasswordPlaceholder}
                       disabled={isChangingPassword}
-                      className="h-11 rounded-xl pr-11 sm:h-10"
+                      className="h-10 rounded-[6px] pr-10 sm:h-9"
                     />
                     <button
                       type="button"
@@ -394,7 +345,7 @@ export default function ProdProfilePage() {
                           ? t.prod.login.hidePassword
                           : t.prod.login.showPassword
                       }
-                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-muted hover:text-foreground sm:size-7"
                     >
                       {showCurrent ? (
                         <EyeOff className="size-4" />
@@ -421,7 +372,7 @@ export default function ProdProfilePage() {
                       }}
                       placeholder={t.prod.profile.newPasswordPlaceholder}
                       disabled={isChangingPassword}
-                      className="h-11 rounded-xl pr-11 sm:h-10"
+                      className="h-10 rounded-[6px] pr-10 sm:h-9"
                     />
                     <button
                       type="button"
@@ -431,7 +382,7 @@ export default function ProdProfilePage() {
                           ? t.prod.login.hidePassword
                           : t.prod.login.showPassword
                       }
-                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-muted hover:text-foreground sm:size-7"
                     >
                       {showNew ? (
                         <EyeOff className="size-4" />
@@ -461,7 +412,7 @@ export default function ProdProfilePage() {
                       }}
                       placeholder={t.prod.profile.confirmPasswordPlaceholder}
                       disabled={isChangingPassword}
-                      className="h-11 rounded-xl pr-11 sm:h-10"
+                      className="h-10 rounded-[6px] pr-10 sm:h-9"
                     />
                     <button
                       type="button"
@@ -471,7 +422,7 @@ export default function ProdProfilePage() {
                           ? t.prod.login.hidePassword
                           : t.prod.login.showPassword
                       }
-                      className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-muted hover:text-foreground sm:size-7"
                     >
                       {showConfirm ? (
                         <EyeOff className="size-4" />
@@ -491,7 +442,7 @@ export default function ProdProfilePage() {
                     !newPassword ||
                     !confirmPassword
                   }
-                  className="min-h-11 w-full gap-2 rounded-xl font-semibold sm:min-h-10 sm:w-auto"
+                  className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                 >
                   {isChangingPassword ? (
                     <>
@@ -499,10 +450,7 @@ export default function ProdProfilePage() {
                       <span>{t.prod.profile.changingPassword}</span>
                     </>
                   ) : (
-                    <>
-                      <KeyRound className="size-4" />
-                      <span>{t.prod.profile.changePasswordButton}</span>
-                    </>
+                    <span>{t.prod.profile.changePasswordButton}</span>
                   )}
                 </Button>
               </form>

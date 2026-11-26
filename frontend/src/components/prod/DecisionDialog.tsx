@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -166,36 +166,43 @@ export function DecisionDialog({
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
-                variant={isApprove ? "default" : "outline"}
+                variant="outline"
+                aria-pressed={isApprove}
                 onClick={() => {
                   setDecision("approved");
                   setError(null);
                 }}
                 disabled={isSubmitting}
-                className="min-h-11 gap-2 rounded-xl sm:min-h-9"
+                className={cn(
+                  "min-h-11 sm:min-h-9",
+                  isApprove && "border-foreground bg-muted font-semibold"
+                )}
               >
-                <CheckCircle2 className="size-4" />
-                <span>{t.director.approve}</span>
+                {t.director.approve}
               </Button>
               <Button
                 type="button"
-                variant={!isApprove ? "destructive" : "outline"}
+                variant="outline"
+                aria-pressed={!isApprove}
                 onClick={() => {
                   setDecision("rejected");
                   setTrustAccount(false);
                   setError(null);
                 }}
                 disabled={isSubmitting}
-                className="min-h-11 gap-2 rounded-xl sm:min-h-9"
+                className={cn(
+                  "min-h-11 sm:min-h-9",
+                  !isApprove &&
+                    "border-[#E5A3A3] bg-[#FEF2F2] font-semibold text-[#B91C1C]"
+                )}
               >
-                <XCircle className="size-4" />
-                <span>{t.director.reject}</span>
+                {t.director.reject}
               </Button>
             </div>
           )}
 
           {isApprove && isInvalid && (
-            <Alert variant="destructive" className="border-rose-300 bg-rose-50">
+            <Alert variant="destructive">
               <AlertCircle className="size-4" />
               <AlertDescription className="break-words">
                 {t.prod.approvals.invalidCannotApprove}
@@ -204,7 +211,7 @@ export function DecisionDialog({
           )}
 
           {error && (
-            <Alert variant="destructive" className="border-red-300 bg-red-50/90">
+            <Alert variant="destructive">
               <AlertCircle className="size-4" />
               <AlertDescription className="break-words">
                 {error}
@@ -217,14 +224,18 @@ export function DecisionDialog({
               <Label htmlFor={`prod-decision-comment-${approvalId}`}>
                 {t.director.directorCommentLabel}
                 {commentRequired && (
-                  <span className="ml-1 font-semibold text-red-600">*</span>
+                  <span className="ml-1 font-semibold text-[var(--status-danger-text)]">
+                    *
+                  </span>
                 )}
               </Label>
               {commentRequired && (
                 <span
                   className={cn(
                     "text-xs font-medium tabular-nums",
-                    commentTooShort ? "text-red-700" : "text-[#006B49]"
+                    commentTooShort
+                      ? "text-[var(--status-danger-text)]"
+                      : "text-[var(--status-ok-text)]"
                   )}
                 >
                   {interpolate(
@@ -269,7 +280,7 @@ export function DecisionDialog({
           </div>
 
           {isApprove && canTrust && (
-            <div className="flex min-h-11 items-start gap-3 rounded-xl border border-border bg-background/80 px-3.5 py-2.5">
+            <div className="ui-subpanel flex min-h-11 items-start gap-3">
               <Checkbox
                 id={`prod-trust-account-${approvalId}`}
                 checked={trustAccount}
@@ -278,7 +289,7 @@ export function DecisionDialog({
                   if (error) setError(null);
                 }}
                 disabled={isSubmitting}
-                className="mt-1"
+                className="mt-0.5"
               />
               <div className="min-w-0 flex-1 space-y-0.5">
                 <Label
@@ -303,7 +314,7 @@ export function DecisionDialog({
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={isSubmitting}
-            className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+            className="min-h-11 w-full sm:min-h-9 sm:w-auto"
           >
             {t.common.cancel}
           </Button>
@@ -312,7 +323,7 @@ export function DecisionDialog({
             variant={isApprove ? "default" : "destructive"}
             disabled={isSubmitDisabled}
             onClick={() => void handleSubmit()}
-            className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
+            className="min-h-11 w-full sm:min-h-9 sm:w-auto"
           >
             {isSubmitting ? (
               <>
@@ -322,15 +333,9 @@ export function DecisionDialog({
                 </span>
               </>
             ) : isApprove ? (
-              <>
-                <CheckCircle2 className="size-4" />
-                <span>{t.director.approve}</span>
-              </>
+              <span>{t.director.approve}</span>
             ) : (
-              <>
-                <XCircle className="size-4" />
-                <span>{t.director.reject}</span>
-              </>
+              <span>{t.director.reject}</span>
             )}
           </Button>
         </DialogFooter>

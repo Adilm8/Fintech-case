@@ -3,18 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Building2,
-  ChevronRight,
-  History,
-  Inbox,
-  RefreshCw,
-  Search,
-  SearchX,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { AlertTriangle, ChevronRight, RefreshCw, Search, X } from "lucide-react";
 import { SupplierBadge } from "@/components/prod/SupplierBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -152,15 +141,11 @@ export default function ProdSuppliersPage() {
   const hasFilters = debouncedQuery.length > 0 || onlyChanged90;
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.prod.supplier.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.prod.supplier.subtitle}
-          </p>
+          <h1 className="ui-page-title">{t.prod.supplier.title}</h1>
+          <p className="ui-page-subtitle">{t.prod.supplier.subtitle}</p>
         </div>
 
         <Button
@@ -169,7 +154,7 @@ export default function ProdSuppliersPage() {
           size="sm"
           onClick={handleRefresh}
           disabled={isLoading}
-          className="min-h-11 w-full gap-1.5 rounded-xl sm:min-h-9 sm:w-auto"
+          className="min-h-10 w-full gap-1.5 sm:min-h-8 sm:w-auto"
         >
           <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
           <span>{t.common.refresh}</span>
@@ -177,10 +162,7 @@ export default function ProdSuppliersPage() {
       </div>
 
       {error && (
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertTriangle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words">
@@ -190,7 +172,7 @@ export default function ProdSuppliersPage() {
               variant="outline"
               size="sm"
               onClick={handleRefresh}
-              className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+              className="min-h-10 gap-1.5 sm:min-h-8"
             >
               <RefreshCw className="size-3.5" />
               <span>{t.common.retry}</span>
@@ -199,100 +181,58 @@ export default function ProdSuppliersPage() {
         </Alert>
       )}
 
-      {/* Summary tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.prod.supplier.tiles.totalSuppliers}
-              </span>
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
-                <Building2 className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-              {formatIntegerForLang(stats.total, lang)}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Summary KPI strip */}
+      <div className="ui-kpi-strip">
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">
+            {t.prod.supplier.tiles.totalSuppliers}
+          </span>
+          <span className="ui-kpi-value">
+            {formatIntegerForLang(stats.total, lang)}
+          </span>
+        </div>
 
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.prod.supplier.tiles.changedRecently}
-              </span>
-              <div
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                  stats.changedRecently > 0
-                    ? "bg-amber-50 text-amber-700"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                <History className="size-4" />
-              </div>
-            </div>
-            <div
-              className={cn(
-                "text-2xl font-bold tabular-nums sm:text-3xl",
-                stats.changedRecently > 0 ? "text-amber-700" : "text-foreground"
-              )}
-            >
-              {formatIntegerForLang(stats.changedRecently, lang)}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">
+            {t.prod.supplier.tiles.changedRecently}
+          </span>
+          <span
+            className={cn(
+              "ui-kpi-value",
+              stats.changedRecently > 0 && "text-[var(--status-warn-text)]"
+            )}
+          >
+            {formatIntegerForLang(stats.changedRecently, lang)}
+          </span>
+        </div>
 
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.prod.supplier.tiles.pendingChanges}
-              </span>
-              <div
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                  stats.pendingChanges > 0
-                    ? "bg-orange-50 text-orange-700"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                <AlertTriangle className="size-4" />
-              </div>
-            </div>
-            <div
-              className={cn(
-                "text-2xl font-bold tabular-nums sm:text-3xl",
-                stats.pendingChanges > 0 ? "text-orange-700" : "text-foreground"
-              )}
-            >
-              {formatIntegerForLang(stats.pendingChanges, lang)}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">
+            {t.prod.supplier.tiles.pendingChanges}
+          </span>
+          <span
+            className={cn(
+              "ui-kpi-value",
+              stats.pendingChanges > 0 && "text-[var(--status-warn-text)]"
+            )}
+          >
+            {formatIntegerForLang(stats.pendingChanges, lang)}
+          </span>
+        </div>
 
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.prod.supplier.tiles.trustedAccounts}
-              </span>
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                <ShieldCheck className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-              {formatIntegerForLang(stats.trustedAccounts, lang)}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">
+            {t.prod.supplier.tiles.trustedAccounts}
+          </span>
+          <span className="ui-kpi-value">
+            {formatIntegerForLang(stats.trustedAccounts, lang)}
+          </span>
+        </div>
       </div>
 
       {/* Main directory card */}
       <Card className="min-w-0 py-0">
-        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1 sm:max-w-md">
             <Search
               aria-hidden="true"
@@ -316,7 +256,7 @@ export default function ProdSuppliersPage() {
               }}
               placeholder={t.prod.supplier.searchPlaceholder}
               aria-label={t.prod.supplier.searchAriaLabel}
-              className="h-11 rounded-xl bg-background/70 pl-9 pr-10 sm:h-10 [&::-webkit-search-cancel-button]:hidden"
+              className="h-10 rounded-[6px] bg-card pl-9 pr-10 sm:h-9 [&::-webkit-search-cancel-button]:hidden"
             />
             {searchInput ? (
               <button
@@ -327,14 +267,14 @@ export default function ProdSuppliersPage() {
                   searchInputRef.current?.focus();
                 }}
                 aria-label={t.queue.clearSearch}
-                className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:size-7"
               >
                 <X className="size-4" />
               </button>
             ) : (
               <kbd
                 aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
+                className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 items-center justify-center rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
               >
                 /
               </kbd>
@@ -345,14 +285,8 @@ export default function ProdSuppliersPage() {
             type="button"
             aria-pressed={onlyChanged90}
             onClick={() => setOnlyChanged90((prev) => !prev)}
-            className={cn(
-              "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-medium transition-all sm:min-h-9 sm:py-1.5",
-              onlyChanged90
-                ? "border-amber-300 bg-amber-50 font-semibold text-amber-950 shadow-xs"
-                : "border-border bg-card text-foreground hover:bg-muted/70"
-            )}
+            className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <History className="size-3.5 shrink-0" />
             <span>{t.prod.supplier.filterChanged90}</span>
           </button>
         </div>
@@ -361,40 +295,32 @@ export default function ProdSuppliersPage() {
           {isLoading ? (
             <div className="space-y-3 p-4">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                <Skeleton key={i} className="h-14 w-full rounded-[6px]" />
               ))}
             </div>
           ) : suppliers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                {hasFilters ? (
-                  <SearchX className="size-6" />
-                ) : (
-                  <Inbox className="size-6" />
-                )}
+            <div className="ui-empty">
+              <div className="ui-empty-title">
+                {hasFilters
+                  ? t.prod.supplier.emptyFilteredTitle
+                  : t.prod.supplier.emptyTitle}
               </div>
-              <div className="space-y-1">
-                <div className="text-base font-semibold text-foreground">
-                  {hasFilters
-                    ? t.prod.supplier.emptyFilteredTitle
-                    : t.prod.supplier.emptyTitle}
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {hasFilters
-                    ? t.prod.supplier.emptyFilteredDescription
-                    : t.prod.supplier.emptyDescription}
-                </p>
-              </div>
+              <p className="ui-empty-desc">
+                {hasFilters
+                  ? t.prod.supplier.emptyFilteredDescription
+                  : t.prod.supplier.emptyDescription}
+              </p>
               {hasFilters && (
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={() => {
                     setSearchInput("");
                     setDebouncedQuery("");
                     setOnlyChanged90(false);
                   }}
-                  className="mt-1 min-h-11 rounded-xl sm:min-h-9"
+                  className="mt-2 min-h-10 sm:min-h-8"
                 >
                   {t.queue.resetFilters}
                 </Button>
@@ -402,30 +328,30 @@ export default function ProdSuppliersPage() {
             </div>
           ) : (
             <>
-              {/* Mobile cards (< md) */}
-              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+              {/* Mobile flat list (< md) */}
+              <div className="divide-y divide-border md:hidden">
                 {suppliers.map((supplier) => (
                   <Link
                     key={supplier.id}
                     href={`/suppliers/${supplier.id}`}
-                    className="block w-full rounded-xl border border-border bg-card p-3.5 text-left shadow-xs transition-all hover:bg-muted/50 active:bg-muted/70"
+                    className="block w-full min-h-11 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40 active:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="text-base font-semibold text-foreground break-words">
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="text-sm font-semibold text-foreground break-words">
                           {supplier.name}
                         </div>
-                        <div className="font-mono text-xs text-muted-foreground">
+                        <div className="font-mono text-xs tabular-nums text-muted-foreground">
                           {interpolate(t.common.binPrefix, {
                             bin: supplier.bin,
                           })}
                         </div>
                       </div>
-                      <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
+                      <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     </div>
 
-                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span className="font-semibold text-sm tabular-nums text-foreground">
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
                         {formatMoney(supplier.total_paid_kzt)}
                       </span>
                       <span className="tabular-nums">
@@ -436,7 +362,7 @@ export default function ProdSuppliersPage() {
                     </div>
 
                     {supplier.last_payment_at && (
-                      <div className="mt-1 text-xs text-muted-foreground">
+                      <div className="mt-1 text-xs text-muted-foreground tabular-nums">
                         {t.prod.supplier.colLastPayment}:{" "}
                         {formatDate(supplier.last_payment_at)}
                       </div>
@@ -448,7 +374,7 @@ export default function ProdSuppliersPage() {
                       }
                       hasPendingChange={supplier.has_pending_change}
                       trustedAccountsCount={supplier.trusted_accounts_count}
-                      className="mt-2.5"
+                      className="mt-2"
                     />
                   </Link>
                 ))}
@@ -458,8 +384,8 @@ export default function ProdSuppliersPage() {
               <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="pl-4 lg:pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-4">
                         {t.prod.supplier.colSupplier}
                       </TableHead>
                       <TableHead className="w-[90px] text-right">
@@ -477,7 +403,7 @@ export default function ProdSuppliersPage() {
                       <TableHead className="w-[260px]">
                         {t.prod.supplier.colRequisitesStatus}
                       </TableHead>
-                      <TableHead className="w-9 pr-3 lg:pr-4" />
+                      <TableHead className="w-8 pr-4" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -493,38 +419,38 @@ export default function ProdSuppliersPage() {
                             router.push(`/suppliers/${supplier.id}`);
                           }
                         }}
-                        className="cursor-pointer transition-colors hover:bg-muted/45 focus-visible:bg-accent/50 focus-visible:outline-none"
+                        className="cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none"
                       >
-                        <TableCell className="min-w-0 max-w-[300px] pl-4 lg:pl-5 py-3.5 align-top whitespace-normal">
-                          <div className="font-semibold text-foreground break-words">
+                        <TableCell className="min-w-0 max-w-[300px] pl-4 py-2.5 align-top whitespace-normal">
+                          <div className="font-medium text-foreground break-words">
                             {supplier.name}
                           </div>
-                          <div className="font-mono text-xs text-muted-foreground">
+                          <div className="font-mono text-xs tabular-nums text-muted-foreground">
                             {interpolate(t.common.binPrefix, {
                               bin: supplier.bin,
                             })}
                           </div>
                         </TableCell>
 
-                        <TableCell className="py-3.5 align-top text-right tabular-nums">
+                        <TableCell className="py-2.5 align-top text-right tabular-nums">
                           {formatIntegerForLang(supplier.accounts_count, lang)}
                         </TableCell>
 
-                        <TableCell className="py-3.5 align-top text-right tabular-nums">
+                        <TableCell className="py-2.5 align-top text-right tabular-nums">
                           {formatIntegerForLang(supplier.payments_count, lang)}
                         </TableCell>
 
-                        <TableCell className="py-3.5 align-top text-right font-semibold tabular-nums whitespace-nowrap">
+                        <TableCell className="py-2.5 align-top text-right font-medium tabular-nums whitespace-nowrap">
                           {formatMoney(supplier.total_paid_kzt)}
                         </TableCell>
 
-                        <TableCell className="py-3.5 align-top text-xs text-muted-foreground whitespace-nowrap">
+                        <TableCell className="py-2.5 align-top text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                           {supplier.last_payment_at
                             ? formatDate(supplier.last_payment_at)
                             : "—"}
                         </TableCell>
 
-                        <TableCell className="py-3.5 align-top whitespace-normal">
+                        <TableCell className="py-2.5 align-top whitespace-normal">
                           <SupplierBadge
                             requisitesChangedDaysAgo={
                               supplier.requisites_changed_days_ago
@@ -536,7 +462,7 @@ export default function ProdSuppliersPage() {
                           />
                         </TableCell>
 
-                        <TableCell className="pr-3 lg:pr-4 py-3.5 align-middle text-right">
+                        <TableCell className="pr-4 py-2.5 align-middle text-right">
                           <ChevronRight className="ml-auto size-4 text-muted-foreground" />
                         </TableCell>
                       </TableRow>

@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Copy, Lock } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/prod/StatusBadge";
 import { SupplierBadge } from "@/components/prod/SupplierBadge";
 import { VerdictBadge } from "@/components/VerdictBadge";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -28,8 +27,8 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
 
   return (
     <>
-      {/* Mobile cards (< md) */}
-      <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
+      {/* Mobile flat list (< md) */}
+      <div className="divide-y divide-border md:hidden">
         {payments.map((payment) => {
           const isBudget =
             payment.check.verdict === "green" &&
@@ -41,15 +40,15 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
             <Link
               key={payment.id}
               href={`/payments/${payment.id}`}
-              className="block w-full min-h-11 rounded-xl border border-border bg-card p-3.5 text-left shadow-xs transition-all hover:bg-muted/50 active:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              className="block w-full min-h-11 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40 active:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <div className="flex items-start justify-between gap-2.5">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="text-base font-semibold leading-snug text-foreground break-words">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="text-sm font-semibold leading-snug text-foreground break-words">
                     {payment.request.recipient_name}
                   </div>
                   {(payment.doc_number || payment.doc_date) && (
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground tabular-nums">
                       {payment.doc_number
                         ? interpolate(t.prod.payments.docNumberPrefix, {
                             num: payment.doc_number,
@@ -68,7 +67,7 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
               </div>
 
               <div className="mt-2 flex items-center justify-between gap-2">
-                <div className="text-xl font-bold tabular-nums whitespace-nowrap text-foreground">
+                <div className="text-base font-semibold tabular-nums whitespace-nowrap text-foreground">
                   {formatMoney(payment.request.amount_kzt)}
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -77,7 +76,7 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                 </div>
               </div>
 
-              <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs text-muted-foreground">
+              <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs tabular-nums text-muted-foreground">
                 <span>
                   {interpolate(t.common.binPrefix, {
                     bin: payment.request.recipient_bin,
@@ -87,11 +86,13 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                 <span className="break-all">{payment.request.recipient_iik}</span>
               </div>
 
-              <p className="mt-2 line-clamp-2 text-sm text-muted-foreground break-words">
-                {payment.request.purpose}
-              </p>
+              {payment.request.purpose && (
+                <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground break-words">
+                  {payment.request.purpose}
+                </p>
+              )}
 
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <SupplierBadge
                   requisitesChangedDaysAgo={
                     payment.supplier.requisites_changed_days_ago
@@ -100,23 +101,20 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                   isNewSupplier={!payment.supplier.known}
                 />
                 {payment.duplicate_of && (
-                  <Badge
-                    variant="outline"
-                    className="h-auto gap-1 border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900"
-                  >
-                    <Copy className="size-3 shrink-0" />
-                    <span>{t.prod.payments.possibleDuplicate}</span>
-                  </Badge>
+                  <span className="ui-tag">
+                    {t.prod.payments.possibleDuplicate}
+                  </span>
                 )}
                 {payment.permissions.sign_block_code ===
                   "threshold_requires_approval" && (
-                  <Badge
-                    variant="outline"
-                    className="h-auto gap-1 border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900"
-                  >
-                    <Lock className="size-3 shrink-0" />
-                    <span>{t.prod.payments.thresholdApprovalBadge}</span>
-                  </Badge>
+                  <span className="ui-tag">
+                    {t.prod.payments.thresholdApprovalBadge}
+                  </span>
+                )}
+                {payment.source !== "manual" && (
+                  <span className="ui-tag">
+                    {t.prod.sources[payment.source]}
+                  </span>
                 )}
               </div>
             </Link>
@@ -128,8 +126,8 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
       <div className="hidden md:block overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="w-[175px] pl-4 lg:pl-5">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[170px] pl-4">
                 {t.queue.colCheckResult}
               </TableHead>
               <TableHead>{t.queue.colRecipient}</TableHead>
@@ -140,7 +138,7 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
               <TableHead className="w-[140px]">
                 {t.prod.payments.colStatus}
               </TableHead>
-              <TableHead className="w-9 pr-3 lg:pr-4" />
+              <TableHead className="w-8 pr-4" />
             </TableRow>
           </TableHeader>
 
@@ -164,42 +162,34 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                       router.push(`/payments/${payment.id}`);
                     }
                   }}
-                  className="cursor-pointer transition-colors hover:bg-muted/45 focus-visible:bg-accent/50 focus-visible:outline-none"
+                  className="cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none"
                 >
-                  <TableCell className="pl-4 lg:pl-5 py-3.5 align-top">
+                  <TableCell className="pl-4 py-2.5 align-top">
                     <VerdictBadge
                       verdict={payment.check.verdict}
                       label={isBudget ? t.signalRules.budget_payment : undefined}
                     />
                   </TableCell>
 
-                  <TableCell className="min-w-0 max-w-[380px] py-3.5 align-top whitespace-normal">
+                  <TableCell className="min-w-0 max-w-[380px] py-2.5 align-top whitespace-normal">
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-semibold text-foreground break-words">
+                        <span className="font-medium text-foreground break-words">
                           {payment.request.recipient_name}
                         </span>
                         {payment.duplicate_of && (
-                          <Badge
-                            variant="outline"
-                            className="h-auto gap-1 border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900"
-                          >
-                            <Copy className="size-3 shrink-0" />
-                            <span>{t.prod.payments.possibleDuplicate}</span>
-                          </Badge>
+                          <span className="ui-tag">
+                            {t.prod.payments.possibleDuplicate}
+                          </span>
                         )}
                         {payment.permissions.sign_block_code ===
                           "threshold_requires_approval" && (
-                          <Badge
-                            variant="outline"
-                            className="h-auto gap-1 border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900"
-                          >
-                            <Lock className="size-3 shrink-0" />
-                            <span>{t.prod.payments.thresholdApprovalBadge}</span>
-                          </Badge>
+                          <span className="ui-tag">
+                            {t.prod.payments.thresholdApprovalBadge}
+                          </span>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs tabular-nums text-muted-foreground">
                         <span>
                           {interpolate(t.common.binPrefix, {
                             bin: payment.request.recipient_bin,
@@ -226,12 +216,12 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                     </div>
                   </TableCell>
 
-                  <TableCell className="py-3.5 align-top text-right font-semibold tabular-nums whitespace-nowrap text-foreground">
+                  <TableCell className="py-2.5 align-top text-right font-medium tabular-nums whitespace-nowrap text-foreground">
                     {formatMoney(payment.request.amount_kzt)}
                   </TableCell>
 
-                  <TableCell className="py-3.5 align-top whitespace-normal">
-                    <div className="space-y-0.5 text-xs">
+                  <TableCell className="py-2.5 align-top whitespace-normal">
+                    <div className="space-y-0.5 text-xs tabular-nums">
                       <div className="font-medium text-foreground">
                         {payment.doc_number
                           ? interpolate(t.prod.payments.docNumberPrefix, {
@@ -245,21 +235,18 @@ export function PaymentsTable({ payments }: PaymentsTableProps) {
                           : formatDate(payment.created_at)}
                       </div>
                       {payment.source !== "manual" && (
-                        <Badge
-                          variant="secondary"
-                          className="h-auto px-1.5 py-0 text-[10px] font-medium"
-                        >
+                        <span className="ui-tag">
                           {t.prod.sources[payment.source]}
-                        </Badge>
+                        </span>
                       )}
                     </div>
                   </TableCell>
 
-                  <TableCell className="py-3.5 align-top">
+                  <TableCell className="py-2.5 align-top">
                     <StatusBadge status={payment.status} />
                   </TableCell>
 
-                  <TableCell className="pr-3 lg:pr-4 py-3.5 align-middle text-right">
+                  <TableCell className="pr-4 py-2.5 align-middle text-right">
                     <ChevronRight className="ml-auto size-4 text-muted-foreground" />
                   </TableCell>
                 </TableRow>

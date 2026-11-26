@@ -1,7 +1,5 @@
 "use client";
 
-import { AlertTriangle, History, ShieldCheck, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { useT } from "@/i18n";
 import { REQUISITES_CHANGED_BADGE_DAYS } from "@/lib/prod/types";
 import { cn } from "cn";
@@ -48,49 +46,37 @@ export function SupplierBadge({
         });
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+    <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1", className)}>
       {showChangedBadge && (
-        <Badge
-          variant="outline"
-          className="h-auto gap-1 border-amber-300/90 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900"
-        >
-          <History className="size-3 shrink-0 text-amber-700" />
+        <span className="ui-status text-[var(--status-warn-text)]">
+          <span aria-hidden="true" className="ui-status-dot ui-dot-warn" />
           <span>{changedLabel}</span>
-        </Badge>
+        </span>
       )}
 
       {hasPendingChange && (
-        <Badge
-          variant="outline"
-          className="h-auto gap-1 border-orange-300 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-900"
-        >
-          <AlertTriangle className="size-3 shrink-0 text-orange-700" />
+        <span className="ui-status text-[var(--status-warn-text)]">
+          <span aria-hidden="true" className="ui-status-dot ui-dot-warn" />
           <span>{t.prod.supplier.pendingChangeBadge}</span>
-        </Badge>
+        </span>
       )}
 
       {isNewSupplier && !hasPendingChange && (
-        <Badge
-          variant="outline"
-          className="h-auto gap-1 border-slate-300 bg-slate-100/80 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-        >
-          <Sparkles className="size-3 shrink-0 text-slate-500" />
+        <span className="ui-status text-muted-foreground">
+          <span aria-hidden="true" className="ui-status-dot ui-dot-neutral" />
           <span>{t.prod.supplier.newSupplierBadge}</span>
-        </Badge>
+        </span>
       )}
 
       {showTrustedCount && (
-        <Badge
-          variant="outline"
-          className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] px-2 py-0.5 text-[11px] font-medium text-[#006B49]"
-        >
-          <ShieldCheck className="size-3 shrink-0" />
+        <span className="ui-status text-[var(--status-ok-text)]">
+          <span aria-hidden="true" className="ui-status-dot ui-dot-ok" />
           <span>
             {interpolate(t.prod.supplier.trustedCountBadge, {
               count: trustedAccountsCount,
             })}
           </span>
-        </Badge>
+        </span>
       )}
     </div>
   );

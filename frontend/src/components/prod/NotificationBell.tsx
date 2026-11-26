@@ -3,18 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Bell,
-  CheckCheck,
-  CheckCircle2,
-  ClipboardCheck,
-  Loader2,
-  Settings,
-  ShieldAlert,
-  XCircle,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Bell, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n";
 import { formatDateForLang } from "@/lib/format";
@@ -48,33 +37,17 @@ function formatTime(iso: string, lang: "ru" | "kk" | "en"): string {
   return `${datePart} ${hh}:${mm}`;
 }
 
-function kindIcon(kind: NotificationItem["kind"]) {
+function kindDotClass(kind: NotificationItem["kind"]): string {
   switch (kind) {
     case "approval_pending":
-      return {
-        Icon: ClipboardCheck,
-        cls: "bg-amber-50 text-amber-700 border-amber-200",
-      };
+      return "ui-dot-warn";
     case "approval_approved":
-      return {
-        Icon: CheckCircle2,
-        cls: "bg-[#E8F8F2] text-[#006B49] border-[#00AB75]/30",
-      };
+      return "ui-dot-ok";
     case "approval_rejected":
-      return {
-        Icon: XCircle,
-        cls: "bg-red-50 text-red-700 border-red-200",
-      };
     case "sign_denied":
-      return {
-        Icon: ShieldAlert,
-        cls: "bg-red-50 text-red-700 border-red-200",
-      };
+      return "ui-dot-danger";
     default:
-      return {
-        Icon: AlertTriangle,
-        cls: "bg-muted text-muted-foreground border-border",
-      };
+      return "ui-dot-neutral";
   }
 }
 
@@ -217,8 +190,8 @@ export function NotificationBell({ role }: NotificationBellProps) {
         aria-label={t.prod.notifications.ariaLabel}
         title={t.prod.notifications.title}
         className={cn(
-          "relative size-11 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:size-9",
-          open && "border-primary/50 bg-accent/60 text-foreground"
+          "relative size-11 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:size-8",
+          open && "border-foreground bg-muted text-foreground"
         )}
       >
         <Bell className="size-4" />
@@ -227,7 +200,7 @@ export function NotificationBell({ role }: NotificationBellProps) {
             aria-label={interpolate(t.prod.notifications.unreadBadge, {
               count: unreadCount,
             })}
-            className="absolute -top-1 -right-1 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white tabular-nums shadow-xs ring-2 ring-card"
+            className="absolute -top-1 -right-1 flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[var(--status-danger)] px-1 text-[10px] font-semibold leading-none text-white tabular-nums ring-2 ring-card"
           >
             {badgeLabel}
           </span>
@@ -238,20 +211,15 @@ export function NotificationBell({ role }: NotificationBellProps) {
         <div
           role="dialog"
           aria-label={t.prod.notifications.title}
-          className="absolute -right-[50px] top-full z-50 mt-2 w-[calc(100vw-2rem)] max-w-[370px] overflow-hidden rounded-2xl border border-border bg-card shadow-xl sm:right-0 sm:w-[370px]"
+          className="absolute -right-[50px] top-full z-50 mt-2 w-[calc(100vw-2rem)] max-w-[370px] overflow-hidden rounded-[8px] border border-border bg-card shadow-[var(--shadow-overlay)] sm:right-0 sm:w-[370px]"
         >
-          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/35 px-4 py-3">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-2.5">
             <div className="flex min-w-0 items-center gap-2">
               <span className="text-sm font-semibold text-foreground">
                 {t.prod.notifications.title}
               </span>
               {unreadCount > 0 && (
-                <Badge
-                  variant="secondary"
-                  className="h-auto px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
-                >
-                  {unreadCount}
-                </Badge>
+                <span className="ui-tag tabular-nums">{unreadCount}</span>
               )}
             </div>
 
@@ -260,13 +228,9 @@ export function NotificationBell({ role }: NotificationBellProps) {
                 type="button"
                 onClick={() => void handleMarkAllRead()}
                 disabled={isMarkingAll}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand-text)] transition-colors hover:bg-accent disabled:opacity-60"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-[4px] px-2 py-1 text-xs font-medium text-[var(--brand-text)] transition-colors hover:bg-muted disabled:opacity-60"
               >
-                {isMarkingAll ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <CheckCheck className="size-3.5" />
-                )}
+                {isMarkingAll && <Loader2 className="size-3.5 animate-spin" />}
                 <span>
                   {isMarkingAll
                     ? t.prod.notifications.markingRead
@@ -278,76 +242,68 @@ export function NotificationBell({ role }: NotificationBellProps) {
 
           <div className="max-h-[380px] overflow-y-auto divide-y divide-border">
             {isLoading && items.length === 0 ? (
-              <div className="flex items-center justify-center py-10 text-muted-foreground">
-                <Loader2 className="size-5 animate-spin" />
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
               </div>
             ) : items.length === 0 ? (
-              <div className="px-4 py-10 text-center space-y-1.5">
-                <div className="mx-auto flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                  <Bell className="size-5" />
-                </div>
-                <div className="text-sm font-semibold text-foreground">
+              <div className="ui-empty">
+                <div className="ui-empty-title">
                   {t.prod.notifications.emptyTitle}
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
+                <p className="ui-empty-desc">
                   {t.prod.notifications.emptyDescription}
                 </p>
               </div>
             ) : (
-              items.map((item) => {
-                const { Icon, cls } = kindIcon(item.kind);
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => void handleOpenItem(item)}
+              items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => void handleOpenItem(item)}
+                  className={cn(
+                    "flex w-full cursor-pointer items-start gap-2.5 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/70 focus-visible:outline-none",
+                    !item.read && "bg-muted/50"
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
                     className={cn(
-                      "flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/55 focus-visible:bg-accent/50 focus-visible:outline-none",
-                      !item.read && "bg-accent/35"
+                      "ui-status-dot mt-1.5",
+                      kindDotClass(item.kind)
                     )}
-                  >
-                    <div
-                      className={cn(
-                        "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border",
-                        cls
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-semibold text-foreground leading-snug">
+                        {item.title}
+                      </span>
+                      {!item.read && (
+                        <span
+                          aria-hidden="true"
+                          className="mt-1 size-1.5 shrink-0 rounded-full bg-primary"
+                        />
                       )}
-                    >
-                      <Icon className="size-4" />
                     </div>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-xs font-semibold text-foreground leading-snug">
-                          {item.title}
-                        </span>
-                        {!item.read && (
-                          <span
-                            aria-hidden="true"
-                            className="mt-1 size-2 shrink-0 rounded-full bg-primary"
-                          />
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground leading-snug break-words">
-                        {item.message}
-                      </p>
-                      <div className="text-[11px] text-muted-foreground/80 tabular-nums">
-                        {formatTime(item.created_at, lang)}
-                      </div>
+                    <p className="text-xs text-muted-foreground leading-snug break-words">
+                      {item.message}
+                    </p>
+                    <div className="text-[11px] text-muted-foreground tabular-nums">
+                      {formatTime(item.created_at, lang)}
                     </div>
-                  </button>
-                );
-              })
+                  </div>
+                </button>
+              ))
             )}
           </div>
 
           {role === "director" && (
-            <div className="border-t border-border bg-muted/25 px-4 py-2.5">
+            <div className="border-t border-border bg-muted/30 px-4 py-2.5">
               <Link
                 href="/settings"
                 onClick={() => setOpen(false)}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--brand-text)] hover:underline"
+                className="text-xs font-medium text-[var(--brand-text)] hover:underline"
               >
-                <Settings className="size-3.5" />
-                <span>{t.prod.notifications.settingsLink}</span>
+                {t.prod.notifications.settingsLink}
               </Link>
             </div>
           )}

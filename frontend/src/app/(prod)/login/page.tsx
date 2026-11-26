@@ -2,14 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertCircle,
-  BadgeCheck,
-  Eye,
-  EyeOff,
-  Loader2,
-  LogIn,
-} from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,24 +80,24 @@ export default function ProdLoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="border-b border-border bg-card/90">
-        <div className="mx-auto flex w-full max-w-[1248px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_2px_8px_rgba(0,171,117,0.28)]">
-              <BadgeCheck className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold leading-tight tracking-tight text-foreground sm:text-base">
-                {t.brand.name}
-              </div>
-              <div className="hidden text-xs leading-snug text-muted-foreground sm:block">
-                {t.brand.subtitle}
-              </div>
-            </div>
+      <header className="border-b border-border bg-card">
+        <div className="mx-auto flex w-full max-w-[1248px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.svg"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7 shrink-0"
+            />
+            <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">
+              {t.brand.name}
+            </span>
           </div>
 
           <div
-            className="inline-flex items-center rounded-xl border border-border bg-background p-0.5"
+            className="inline-flex items-center rounded-[6px] border border-border bg-muted p-0.5"
             role="group"
             aria-label={t.nav.langAriaLabel}
           >
@@ -117,10 +110,10 @@ export default function ProdLoginPage() {
                   aria-pressed={isSelected}
                   onClick={() => setLang(option.code)}
                   className={cn(
-                    "inline-flex min-h-9 w-[42px] cursor-pointer items-center justify-center rounded-[10px] text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
+                    "inline-flex min-h-9 w-[40px] cursor-pointer items-center justify-center rounded-[4px] border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-7",
                     isSelected
-                      ? "bg-card text-[var(--brand-text)] shadow-xs ring-1 ring-border/70"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "border-border bg-card text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
                   {option.label}
@@ -132,9 +125,9 @@ export default function ProdLoginPage() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
-        <Card className="w-full max-w-md shadow-sm">
-          <CardHeader className="space-y-1.5 pb-4">
-            <CardTitle className="text-xl font-semibold tracking-tight">
+        <Card className="w-full max-w-sm rounded-[8px] shadow-none">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-lg font-semibold tracking-tight">
               {t.prod.login.title}
             </CardTitle>
             <CardDescription>{t.prod.login.subtitle}</CardDescription>
@@ -143,10 +136,7 @@ export default function ProdLoginPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <Alert
-                  variant="destructive"
-                  className="border-red-300 bg-red-50/90"
-                >
+                <Alert variant="destructive">
                   <AlertCircle className="size-4" />
                   <AlertDescription className="break-words">
                     {error}
@@ -171,7 +161,7 @@ export default function ProdLoginPage() {
                     if (error) setError(null);
                   }}
                   disabled={isSubmitting}
-                  className="h-11 rounded-xl sm:h-10"
+                  className="h-10 rounded-[6px] sm:h-9"
                 />
               </div>
 
@@ -192,7 +182,7 @@ export default function ProdLoginPage() {
                       if (error) setError(null);
                     }}
                     disabled={isSubmitting}
-                    className="h-11 rounded-xl pr-11 sm:h-10"
+                    className="h-10 rounded-[6px] pr-10 sm:h-9"
                   />
                   <button
                     type="button"
@@ -202,7 +192,7 @@ export default function ProdLoginPage() {
                         ? t.prod.login.hidePassword
                         : t.prod.login.showPassword
                     }
-                    className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {showPassword ? (
                       <EyeOff className="size-4" />
@@ -215,9 +205,8 @@ export default function ProdLoginPage() {
 
               <Button
                 type="submit"
-                size="lg"
                 disabled={isSubmitting}
-                className="min-h-11 w-full gap-2 rounded-xl font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)]"
+                className="min-h-11 w-full sm:min-h-9"
               >
                 {isSubmitting ? (
                   <>
@@ -225,10 +214,7 @@ export default function ProdLoginPage() {
                     <span>{t.prod.login.submitting}</span>
                   </>
                 ) : (
-                  <>
-                    <LogIn className="size-4" />
-                    <span>{t.prod.login.submit}</span>
-                  </>
+                  <span>{t.prod.login.submit}</span>
                 )}
               </Button>
             </form>

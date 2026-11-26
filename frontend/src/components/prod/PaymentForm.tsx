@@ -2,7 +2,7 @@
 
 import { useId, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, Loader2, SearchCheck } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { InvoiceUpload } from "@/components/InvoiceUpload";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -338,8 +338,7 @@ export function PaymentForm({
   const docNumErr = getFieldError("doc_number");
   const docDateErr = getFieldError("doc_date");
 
-  const errInputClass =
-    "border-rose-500 bg-rose-50/60 text-rose-950 focus-visible:border-rose-600 focus-visible:ring-rose-500/25";
+  const errInputClass = "border-destructive";
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -350,7 +349,7 @@ export function PaymentForm({
         />
 
         <DialogHeader>
-          <DialogTitle className="text-lg">
+          <DialogTitle>
             {isEditMode
               ? t.prod.payments.form.editTitle
               : t.prod.payments.form.createTitle}
@@ -364,7 +363,7 @@ export function PaymentForm({
 
         <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
           {formError && (
-            <Alert variant="destructive" className="border-red-300 bg-red-50/90">
+            <Alert variant="destructive">
               <AlertCircle className="size-4" />
               <AlertDescription className="break-words">
                 {formError}
@@ -384,107 +383,90 @@ export function PaymentForm({
 
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="prod_recipient_name"
-                className={cn(nameErr && "text-rose-900")}
-              >
+              <Label htmlFor="prod_recipient_name">
                 {t.queue.labelRecipientName}
               </Label>
               <Input
                 id="prod_recipient_name"
                 aria-invalid={Boolean(nameErr)}
                 placeholder={t.queue.placeholderRecipientName}
-                className={cn("h-11 sm:h-10", nameErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card sm:h-9",
+                  nameErr && errInputClass
+                )}
                 value={form.recipient_name}
                 onChange={(e) => updateField("recipient_name", e.target.value)}
               />
               {nameErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {nameErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="prod_recipient_bin"
-                className={cn(binErr && "text-rose-900")}
-              >
-                {t.queue.labelBin}
-              </Label>
+              <Label htmlFor="prod_recipient_bin">{t.queue.labelBin}</Label>
               <Input
                 id="prod_recipient_bin"
                 inputMode="numeric"
                 aria-invalid={Boolean(binErr)}
                 placeholder={t.queue.placeholderBin}
-                className={cn("h-11 font-mono sm:h-10", binErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card font-mono tabular-nums sm:h-9",
+                  binErr && errInputClass
+                )}
                 value={form.recipient_bin}
                 onChange={(e) => updateField("recipient_bin", e.target.value)}
               />
               {binErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {binErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="prod_recipient_bik"
-                className={cn(bikErr && "text-rose-900")}
-              >
-                {t.queue.labelBik}
-              </Label>
+              <Label htmlFor="prod_recipient_bik">{t.queue.labelBik}</Label>
               <Input
                 id="prod_recipient_bik"
                 aria-invalid={Boolean(bikErr)}
                 placeholder={t.queue.placeholderBik}
                 className={cn(
-                  "h-11 font-mono uppercase sm:h-10",
+                  "h-10 rounded-[6px] bg-card font-mono uppercase sm:h-9",
                   bikErr && errInputClass
                 )}
                 value={form.recipient_bik}
                 onChange={(e) => updateField("recipient_bik", e.target.value)}
               />
               {bikErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {bikErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="prod_recipient_iik"
-                className={cn(iikErr && "text-rose-900")}
-              >
-                {t.queue.labelIik}
-              </Label>
+              <Label htmlFor="prod_recipient_iik">{t.queue.labelIik}</Label>
               <Input
                 id="prod_recipient_iik"
                 aria-invalid={Boolean(iikErr)}
                 placeholder={t.queue.placeholderIik}
                 className={cn(
-                  "h-11 font-mono uppercase sm:h-10",
+                  "h-10 rounded-[6px] bg-card font-mono uppercase tabular-nums sm:h-9",
                   iikErr && errInputClass
                 )}
                 value={form.recipient_iik}
                 onChange={(e) => updateField("recipient_iik", e.target.value)}
               />
               {iikErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {iikErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="prod_amount_kzt"
-                className={cn(amountErr && "text-rose-900")}
-              >
-                {t.queue.labelAmount}
-              </Label>
+              <Label htmlFor="prod_amount_kzt">{t.queue.labelAmount}</Label>
               <Input
                 id="prod_amount_kzt"
                 type="number"
@@ -493,128 +475,122 @@ export function PaymentForm({
                 aria-invalid={Boolean(amountErr)}
                 placeholder={t.queue.placeholderAmount}
                 className={cn(
-                  "h-11 tabular-nums sm:h-10",
+                  "h-10 rounded-[6px] bg-card tabular-nums sm:h-9",
                   amountErr && errInputClass
                 )}
                 value={form.amount_kzt}
                 onChange={(e) => updateField("amount_kzt", e.target.value)}
               />
               {amountErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {amountErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="prod_kbe"
-                className={cn(kbeErr && "text-rose-900")}
-              >
-                {t.queue.labelKbe}
-              </Label>
+              <Label htmlFor="prod_kbe">{t.queue.labelKbe}</Label>
               <Input
                 id="prod_kbe"
                 inputMode="numeric"
                 maxLength={2}
                 aria-invalid={Boolean(kbeErr)}
                 placeholder={t.queue.placeholderKbe}
-                className={cn("h-11 font-mono sm:h-10", kbeErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card font-mono tabular-nums sm:h-9",
+                  kbeErr && errInputClass
+                )}
                 value={form.kbe}
                 onChange={(e) => updateField("kbe", e.target.value)}
               />
               {kbeErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {kbeErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="prod_knp"
-                className={cn(knpErr && "text-rose-900")}
-              >
-                {t.queue.labelKnp}
-              </Label>
+              <Label htmlFor="prod_knp">{t.queue.labelKnp}</Label>
               <Input
                 id="prod_knp"
                 inputMode="numeric"
                 maxLength={3}
                 aria-invalid={Boolean(knpErr)}
                 placeholder={t.queue.placeholderKnp}
-                className={cn("h-11 font-mono sm:h-10", knpErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card font-mono tabular-nums sm:h-9",
+                  knpErr && errInputClass
+                )}
                 value={form.knp}
                 onChange={(e) => updateField("knp", e.target.value)}
               />
               {knpErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {knpErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="prod_doc_number"
-                className={cn(docNumErr && "text-rose-900")}
-              >
+              <Label htmlFor="prod_doc_number">
                 {t.prod.payments.form.docNumberLabel}
               </Label>
               <Input
                 id="prod_doc_number"
                 aria-invalid={Boolean(docNumErr)}
                 placeholder={t.prod.payments.form.docNumberPlaceholder}
-                className={cn("h-11 sm:h-10", docNumErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card sm:h-9",
+                  docNumErr && errInputClass
+                )}
                 value={form.doc_number}
                 onChange={(e) => updateField("doc_number", e.target.value)}
               />
               {docNumErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {docNumErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5">
-              <Label
-                htmlFor="prod_doc_date"
-                className={cn(docDateErr && "text-rose-900")}
-              >
+              <Label htmlFor="prod_doc_date">
                 {t.prod.payments.form.docDateLabel}
               </Label>
               <Input
                 id="prod_doc_date"
                 type="date"
                 aria-invalid={Boolean(docDateErr)}
-                className={cn("h-11 sm:h-10", docDateErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card tabular-nums sm:h-9",
+                  docDateErr && errInputClass
+                )}
                 value={form.doc_date}
                 onChange={(e) => updateField("doc_date", e.target.value)}
               />
               {docDateErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {docDateErr}
                 </p>
               )}
             </div>
 
             <div className="min-w-0 space-y-1.5 sm:col-span-2">
-              <Label
-                htmlFor="prod_purpose"
-                className={cn(purposeErr && "text-rose-900")}
-              >
-                {t.queue.labelPurpose}
-              </Label>
+              <Label htmlFor="prod_purpose">{t.queue.labelPurpose}</Label>
               <Input
                 id="prod_purpose"
                 aria-invalid={Boolean(purposeErr)}
                 placeholder={t.queue.placeholderPurpose}
-                className={cn("h-11 sm:h-10", purposeErr && errInputClass)}
+                className={cn(
+                  "h-10 rounded-[6px] bg-card sm:h-9",
+                  purposeErr && errInputClass
+                )}
                 value={form.purpose}
                 onChange={(e) => updateField("purpose", e.target.value)}
               />
               {purposeErr && (
-                <p className="text-xs font-medium text-rose-800 break-words">
+                <p className="text-xs text-[var(--status-danger-text)] break-words">
                   {purposeErr}
                 </p>
               )}
@@ -625,15 +601,9 @@ export function PaymentForm({
             <p
               id={confirmHintId}
               role="status"
-              className="flex items-start gap-2 rounded-xl border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-xs font-medium text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100"
+              className="ui-notice ui-notice-warn text-xs leading-relaxed break-words"
             >
-              <AlertTriangle
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
-              />
-              <span className="min-w-0 flex-1 break-words">
-                {t.invoice.submitBlockedHint}
-              </span>
+              {t.invoice.submitBlockedHint}
             </p>
           )}
 
@@ -643,7 +613,7 @@ export function PaymentForm({
               variant="outline"
               onClick={() => handleOpenChange(false)}
               disabled={isSubmitting}
-              className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {t.common.cancel}
             </Button>
@@ -655,7 +625,7 @@ export function PaymentForm({
               aria-describedby={
                 isConfirmationBlocked ? confirmHintId : undefined
               }
-              className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {isSubmitting ? (
                 <>
@@ -667,14 +637,11 @@ export function PaymentForm({
                   </span>
                 </>
               ) : (
-                <>
-                  <SearchCheck className="size-4" />
-                  <span>
-                    {isEditMode
-                      ? t.prod.payments.form.submitSave
-                      : t.prod.payments.form.submitCreate}
-                  </span>
-                </>
+                <span>
+                  {isEditMode
+                    ? t.prod.payments.form.submitSave
+                    : t.prod.payments.form.submitCreate}
+                </span>
               )}
             </Button>
           </DialogFooter>

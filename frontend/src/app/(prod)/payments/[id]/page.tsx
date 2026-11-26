@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Inbox, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { PaymentDetail } from "@/components/prod/PaymentDetail";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useT } from "@/i18n";
 import { ApiError, getPayment, getProdErrorMessage } from "@/lib/prod/api";
@@ -98,16 +97,16 @@ export default function ProdPaymentDetailPage() {
 
   if (isLoading && !payment) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <Skeleton className="h-9 w-36 rounded-lg" />
-          <Skeleton className="h-9 w-32 rounded-lg" />
+          <Skeleton className="h-8 w-36 rounded-[6px]" />
+          <Skeleton className="h-8 w-32 rounded-[6px]" />
         </div>
-        <Skeleton className="h-36 w-full rounded-xl" />
-        <Skeleton className="h-20 w-full rounded-xl" />
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <Skeleton className="h-72 w-full rounded-xl" />
-          <Skeleton className="h-56 w-full rounded-xl" />
+        <Skeleton className="h-36 w-full rounded-[8px]" />
+        <Skeleton className="h-16 w-full rounded-[8px]" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <Skeleton className="h-72 w-full rounded-[8px]" />
+          <Skeleton className="h-56 w-full rounded-[8px]" />
         </div>
       </div>
     );
@@ -115,65 +114,55 @@ export default function ProdPaymentDetailPage() {
 
   if (notFoundError) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <Link
           href="/payments"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
           )}
         >
           <ArrowLeft className="size-4" />
           <span>{t.prod.detail.backToPayments}</span>
         </Link>
 
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <Inbox className="size-6" />
-            </div>
-            <div className="space-y-1">
-              <div className="text-base font-semibold text-foreground">
-                {t.prod.detail.notFoundTitle}
-              </div>
-              <p className="max-w-md text-sm text-muted-foreground">
-                {t.prod.detail.notFoundDescription}
-              </p>
-            </div>
+        <div className="ui-panel">
+          <div className="ui-empty">
+            <div className="ui-empty-title">{t.prod.detail.notFoundTitle}</div>
+            <p className="ui-empty-desc">
+              {t.prod.detail.notFoundDescription}
+            </p>
             <Link
               href="/payments"
               className={cn(
-                buttonVariants({ variant: "outline" }),
-                "mt-1 min-h-11 gap-2 rounded-xl sm:min-h-9"
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "mt-2 min-h-10 gap-1.5 sm:min-h-8"
               )}
             >
-              <ArrowLeft className="size-4" />
+              <ArrowLeft className="size-3.5" />
               <span>{t.prod.detail.backToPayments}</span>
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error && !payment) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <Link
           href="/payments"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
           )}
         >
           <ArrowLeft className="size-4" />
           <span>{t.prod.detail.backToPayments}</span>
         </Link>
 
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertTriangle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words">
@@ -183,7 +172,7 @@ export default function ProdPaymentDetailPage() {
               variant="outline"
               size="sm"
               onClick={() => void reloadPayment()}
-              className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+              className="min-h-10 gap-1.5 sm:min-h-8"
             >
               <RefreshCw className="size-3.5" />
               <span>{t.common.retry}</span>

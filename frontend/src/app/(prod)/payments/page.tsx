@@ -1,19 +1,15 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertTriangle,
-  Download,
-  FileSpreadsheet,
-  FileText,
-  Inbox,
-  Loader2,
-  RefreshCw,
-  Search,
-  SearchX,
-  X,
-} from "lucide-react";
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { BatchToolbar } from "@/components/prod/BatchToolbar";
 import { ImportDialog } from "@/components/prod/ImportDialog";
 import { PaymentForm } from "@/components/prod/PaymentForm";
@@ -386,15 +382,11 @@ function PaymentsPageContent() {
   const role = session?.user.role ?? "analyst";
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.prod.payments.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.prod.payments.subtitle}
-          </p>
+          <h1 className="ui-page-title">{t.prod.payments.title}</h1>
+          <p className="ui-page-subtitle">{t.prod.payments.subtitle}</p>
         </div>
 
         <BatchToolbar
@@ -410,32 +402,27 @@ function PaymentsPageContent() {
       </div>
 
       {batchId && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-primary/30 bg-accent/55 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-[var(--brand-text)]">
-              <FileSpreadsheet className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-foreground break-all">
-                {activeBatch
-                  ? interpolate(t.prod.payments.batchFilterTitle, {
-                      filename: activeBatch.filename,
-                    })
-                  : interpolate(t.prod.payments.batchFilterFallback, {
-                      id: batchId,
-                    })}
-              </div>
-              {activeBatch && (
-                <div className="text-xs text-muted-foreground">
-                  {interpolate(t.prod.payments.batchFilterMeta, {
-                    source: activeBatch.source.toUpperCase(),
-                    date: formatDate(activeBatch.created_at),
-                    created: activeBatch.created_count,
-                    total: activeBatch.total,
+        <div className="ui-notice ui-notice-neutral flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-foreground break-all">
+              {activeBatch
+                ? interpolate(t.prod.payments.batchFilterTitle, {
+                    filename: activeBatch.filename,
+                  })
+                : interpolate(t.prod.payments.batchFilterFallback, {
+                    id: batchId,
                   })}
-                </div>
-              )}
             </div>
+            {activeBatch && (
+              <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                {interpolate(t.prod.payments.batchFilterMeta, {
+                  source: activeBatch.source.toUpperCase(),
+                  date: formatDate(activeBatch.created_at),
+                  created: activeBatch.created_count,
+                  total: activeBatch.total,
+                })}
+              </div>
+            )}
           </div>
 
           <Button
@@ -443,19 +430,15 @@ function PaymentsPageContent() {
             variant="outline"
             size="sm"
             onClick={() => router.push("/payments")}
-            className="min-h-10 shrink-0 gap-1.5 rounded-xl bg-card sm:min-h-8"
+            className="min-h-10 shrink-0 sm:min-h-8"
           >
-            <X className="size-3.5" />
-            <span>{t.prod.payments.clearBatchFilter}</span>
+            {t.prod.payments.clearBatchFilter}
           </Button>
         </div>
       )}
 
       {error && (
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertTriangle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words">
@@ -465,7 +448,7 @@ function PaymentsPageContent() {
               variant="outline"
               size="sm"
               onClick={handleRefresh}
-              className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+              className="min-h-10 gap-1.5 sm:min-h-8"
             >
               <RefreshCw className="size-3.5" />
               <span>{t.common.retry}</span>
@@ -478,7 +461,7 @@ function PaymentsPageContent() {
       <div
         role="tablist"
         aria-label={t.prod.payments.title}
-        className="no-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:flex-wrap sm:px-0"
+        className="ui-tabs no-scrollbar"
       >
         {tabs.map((tab) => {
           const isSelected = activeTab === tab.key;
@@ -492,24 +475,10 @@ function PaymentsPageContent() {
                 setActiveTab(tab.key);
                 setVerdictFilter("all");
               }}
-              className={cn(
-                "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:py-1.5",
-                isSelected
-                  ? "border-primary bg-primary text-primary-foreground font-semibold shadow-xs"
-                  : "border-border bg-card text-foreground font-medium hover:bg-muted/70"
-              )}
+              className="ui-tab min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10"
             >
               <span>{tab.label}</span>
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums leading-none",
-                  isSelected
-                    ? "bg-white/20 text-white"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                {tab.count}
-              </span>
+              <span className="ui-tab-count">{tab.count}</span>
             </button>
           );
         })}
@@ -517,7 +486,7 @@ function PaymentsPageContent() {
 
       {/* Main queue card */}
       <Card className="min-w-0 py-0">
-        <div className="border-b border-border p-4 space-y-3 sm:px-5">
+        <div className="border-b border-border p-4 space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative flex-1 sm:max-w-md">
               <Search
@@ -542,7 +511,7 @@ function PaymentsPageContent() {
                 }}
                 placeholder={t.prod.payments.searchPlaceholder}
                 aria-label={t.prod.payments.searchAriaLabel}
-                className="h-11 rounded-xl bg-background/70 pl-9 pr-10 sm:h-10 [&::-webkit-search-cancel-button]:hidden"
+                className="h-10 rounded-[6px] bg-card pl-9 pr-10 sm:h-9 [&::-webkit-search-cancel-button]:hidden"
               />
               {searchInput ? (
                 <button
@@ -553,14 +522,14 @@ function PaymentsPageContent() {
                     searchInputRef.current?.focus();
                   }}
                   aria-label={t.queue.clearSearch}
-                  className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:size-7"
                 >
                   <X className="size-4" />
                 </button>
               ) : (
                 <kbd
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 items-center justify-center rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
+                  className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 items-center justify-center rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline-flex"
                 >
                   /
                 </kbd>
@@ -579,7 +548,7 @@ function PaymentsPageContent() {
                   title={t.prod.export.fromLabel}
                   value={exportFrom}
                   onChange={(e) => setExportFrom(e.target.value)}
-                  className="h-9 w-[138px] rounded-xl bg-background/70 px-2.5 text-xs"
+                  className="h-10 w-[138px] rounded-[6px] bg-card px-2.5 text-base sm:h-8 sm:text-xs"
                 />
                 <Input
                   type="date"
@@ -587,7 +556,7 @@ function PaymentsPageContent() {
                   title={t.prod.export.toLabel}
                   value={exportTo}
                   onChange={(e) => setExportTo(e.target.value)}
-                  className="h-9 w-[138px] rounded-xl bg-background/70 px-2.5 text-xs"
+                  className="h-10 w-[138px] rounded-[6px] bg-card px-2.5 text-base sm:h-8 sm:text-xs"
                 />
                 {(exportFrom || exportTo) && (
                   <Button
@@ -600,7 +569,7 @@ function PaymentsPageContent() {
                     }}
                     aria-label={t.prod.export.clearDates}
                     title={t.prod.export.clearDates}
-                    className="size-9 rounded-xl text-muted-foreground hover:text-foreground"
+                    className="size-10 rounded-[6px] text-muted-foreground hover:text-foreground sm:size-8"
                   >
                     <X className="size-3.5" />
                   </Button>
@@ -613,12 +582,10 @@ function PaymentsPageContent() {
                   onClick={() => void handleExport("csv")}
                   disabled={exportingFormat !== null}
                   title={t.prod.export.csvTooltip}
-                  className="min-h-9 gap-1.5 rounded-xl"
+                  className="min-h-10 rounded-[6px] bg-card sm:h-8 sm:min-h-8"
                 >
-                  {exportingFormat === "csv" ? (
+                  {exportingFormat === "csv" && (
                     <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Download className="size-3.5" />
                   )}
                   <span>{t.prod.export.csvButton}</span>
                 </Button>
@@ -630,12 +597,10 @@ function PaymentsPageContent() {
                   onClick={() => void handleExport("pdf")}
                   disabled={exportingFormat !== null}
                   title={t.prod.export.pdfTooltip}
-                  className="min-h-9 gap-1.5 rounded-xl"
+                  className="min-h-10 rounded-[6px] bg-card sm:h-8 sm:min-h-8"
                 >
-                  {exportingFormat === "pdf" ? (
+                  {exportingFormat === "pdf" && (
                     <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <FileText className="size-3.5" />
                   )}
                   <span>{t.prod.export.pdfButton}</span>
                 </Button>
@@ -646,7 +611,7 @@ function PaymentsPageContent() {
                   size="sm"
                   onClick={handleRefresh}
                   disabled={isLoading}
-                  className="min-h-9 gap-1.5 rounded-xl"
+                  className="min-h-10 gap-1.5 rounded-[6px] bg-card sm:h-8 sm:min-h-8"
                 >
                   <RefreshCw
                     className={cn("size-3.5", isLoading && "animate-spin")}
@@ -667,22 +632,10 @@ function PaymentsPageContent() {
               type="button"
               aria-pressed={verdictFilter === "all"}
               onClick={() => setVerdictFilter("all")}
-              className={cn(
-                "inline-flex min-h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
-                verdictFilter === "all"
-                  ? "border-primary bg-primary text-primary-foreground shadow-xs"
-                  : "border-border bg-card text-foreground hover:bg-muted/70"
-              )}
+              className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span>{t.queue.filterAll}</span>
-              <span
-                className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
-                  verdictFilter === "all"
-                    ? "bg-white/20 text-white"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
+              <span className="tabular-nums text-muted-foreground">
                 {verdictTotalInScope}
               </span>
             </button>
@@ -701,29 +654,14 @@ function PaymentsPageContent() {
                       prev === verdict ? "all" : verdict
                     )
                   }
-                  className={cn(
-                    "inline-flex min-h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
-                    isSelected
-                      ? cn(
-                          style.badgeClass,
-                          "font-semibold shadow-xs ring-1 ring-current/25"
-                        )
-                      : "border-border bg-card text-foreground hover:bg-muted/70"
-                  )}
+                  className="ui-filter-chip focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span
                     aria-hidden="true"
-                    className={cn("size-2 shrink-0 rounded-full", style.dotClass)}
+                    className={cn("ui-status-dot", style.dotClass)}
                   />
                   <span>{t.verdicts[verdict]}</span>
-                  <span
-                    className={cn(
-                      "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
-                      isSelected
-                        ? "bg-white/70 text-current"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
+                  <span className="tabular-nums text-muted-foreground">
                     {count}
                   </span>
                 </button>
@@ -736,47 +674,38 @@ function PaymentsPageContent() {
           {isLoading ? (
             <div className="space-y-3 p-4">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                <Skeleton key={i} className="h-14 w-full rounded-[6px]" />
               ))}
             </div>
           ) : items.length === 0 ? (
             hasActiveFilters ? (
-              <div className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                  <SearchX className="size-6" />
+              <div className="ui-empty">
+                <div className="ui-empty-title">
+                  {t.queue.emptyFilteredTitle}
                 </div>
-                <div className="space-y-1">
-                  <div className="text-base font-semibold text-foreground">
-                    {t.queue.emptyFilteredTitle}
-                  </div>
-                  <p className="max-w-md text-sm text-muted-foreground">
-                    {t.queue.emptyFilteredDescription}
-                  </p>
-                </div>
+                <p className="ui-empty-desc">
+                  {t.queue.emptyFilteredDescription}
+                </p>
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={resetFilters}
-                  className="mt-1 min-h-11 rounded-xl sm:min-h-9"
+                  className="mt-2 min-h-10 sm:min-h-8"
                 >
                   {t.queue.resetFilters}
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                  <Inbox className="size-6" />
+              <div className="ui-empty">
+                <div className="ui-empty-title">
+                  {t.prod.payments.emptyTabTitle}
                 </div>
-                <div className="space-y-1">
-                  <div className="text-base font-semibold text-foreground">
-                    {t.prod.payments.emptyTabTitle}
-                  </div>
-                  <p className="max-w-md text-sm text-muted-foreground">
-                    {role === "accountant"
-                      ? t.prod.payments.emptyTabDescription
-                      : t.prod.payments.emptyReadOnlyDescription}
-                  </p>
-                </div>
+                <p className="ui-empty-desc">
+                  {role === "accountant"
+                    ? t.prod.payments.emptyTabDescription
+                    : t.prod.payments.emptyReadOnlyDescription}
+                </p>
               </div>
             )
           ) : (
@@ -809,9 +738,9 @@ export default function ProdPaymentsPage() {
     <Suspense
       fallback={
         <div className="space-y-4">
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-12 w-full rounded-xl" />
-          <Skeleton className="h-72 w-full rounded-xl" />
+          <Skeleton className="h-7 w-56 rounded-[6px]" />
+          <Skeleton className="h-10 w-full rounded-[6px]" />
+          <Skeleton className="h-72 w-full rounded-[8px]" />
         </div>
       }
     >

@@ -3,14 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowUpRight,
-  CheckCircle2,
-  Loader2,
-  MessageSquare,
-  ShieldCheck,
-  XCircle,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
 import { ComparisonTable } from "@/components/ComparisonTable";
 import { ReasonsList } from "@/components/ReasonsList";
@@ -18,7 +11,6 @@ import { VerdictBadge } from "@/components/VerdictBadge";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { DecisionDialog } from "@/components/prod/DecisionDialog";
 import { ApprovalStatusBadge } from "@/components/prod/StatusBadge";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -98,9 +90,9 @@ export function ApprovalsList({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {pendingApprovals.length > 0 && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {pendingApprovals.map((approval) => {
             const isBudget =
               approval.check.verdict === "green" &&
@@ -113,21 +105,20 @@ export function ApprovalsList({
                 <CardHeader className="border-b border-border pb-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
                     <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <CardTitle className="text-lg font-semibold break-words">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <CardTitle className="break-words">
                           {approval.request.recipient_name}
                         </CardTitle>
                         <Link
                           href={`/payments/${approval.payment_id}`}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-text)] hover:underline"
+                          className="text-xs font-medium text-[var(--brand-text)] hover:underline"
                         >
-                          <span>{t.prod.approvals.openPayment}</span>
-                          <ArrowUpRight className="size-3.5" />
+                          {t.prod.approvals.openPayment}
                         </Link>
                       </div>
 
                       <CardDescription className="space-y-1">
-                        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs">
+                        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs tabular-nums">
                           <span>
                             {interpolate(t.common.binPrefix, {
                               bin: approval.request.recipient_bin,
@@ -139,11 +130,11 @@ export function ApprovalsList({
                           </span>
                         </div>
                         {approval.request.purpose && (
-                          <div className="text-sm text-muted-foreground break-words">
+                          <div className="text-sm text-[var(--text-secondary)] break-words">
                             {approval.request.purpose}
                           </div>
                         )}
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground tabular-nums">
                           {interpolate(t.prod.approvals.sentBy, {
                             user: approval.created_by.full_name,
                           })}{" "}
@@ -153,7 +144,7 @@ export function ApprovalsList({
                     </div>
 
                     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right sm:space-y-1">
-                      <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground">
+                      <div className="text-[22px] leading-7 font-semibold tabular-nums whitespace-nowrap text-foreground">
                         {formatMoney(approval.request.amount_kzt)}
                       </div>
                       <VerdictBadge
@@ -166,7 +157,7 @@ export function ApprovalsList({
                   </div>
                 </CardHeader>
 
-                <CardContent className="space-y-5 pt-5">
+                <CardContent className="space-y-4">
                   <VerdictBanner
                     verdict={approval.check.verdict}
                     headline={pickHeadline(approval.check, lang)}
@@ -192,10 +183,9 @@ export function ApprovalsList({
                     />
                   )}
 
-                  <div className="space-y-1.5 rounded-xl border border-border bg-background/80 p-4">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      <MessageSquare className="size-3.5 shrink-0" />
-                      <span>{t.director.accountantNoteTitle}</span>
+                  <div className="ui-subpanel space-y-1">
+                    <div className="ui-label-meta">
+                      {t.director.accountantNoteTitle}
                     </div>
                     <p className="text-sm text-foreground break-words">
                       {approval.accountant_note?.trim()
@@ -207,10 +197,9 @@ export function ApprovalsList({
                   {isDirector && (
                     <>
                       <Separator />
-                      <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                         <Button
                           type="button"
-                          size="lg"
                           disabled={approval.check.verdict === "invalid"}
                           onClick={() =>
                             setActiveDecision({
@@ -218,26 +207,23 @@ export function ApprovalsList({
                               decision: "approved",
                             })
                           }
-                          className="min-h-11 w-full gap-2 rounded-xl sm:w-auto"
+                          className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                         >
-                          <CheckCircle2 className="size-4" />
-                          <span>{t.director.approve}</span>
+                          {t.director.approve}
                         </Button>
 
                         <Button
                           type="button"
                           variant="destructive"
-                          size="lg"
                           onClick={() =>
                             setActiveDecision({
                               approval,
                               decision: "rejected",
                             })
                           }
-                          className="min-h-11 w-full gap-2 rounded-xl sm:w-auto"
+                          className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                         >
-                          <XCircle className="size-4" />
-                          <span>{t.director.reject}</span>
+                          {t.director.reject}
                         </Button>
                       </div>
                     </>
@@ -250,11 +236,9 @@ export function ApprovalsList({
       )}
 
       {resolvedApprovals.length > 0 && (
-        <Card className="min-w-0">
-          <CardHeader className="border-b border-border pb-3.5">
-            <CardTitle className="text-base font-semibold">
-              {t.director.resolvedTitle}
-            </CardTitle>
+        <Card className="min-w-0 py-0">
+          <CardHeader className="border-b border-border py-3.5">
+            <CardTitle>{t.director.resolvedTitle}</CardTitle>
           </CardHeader>
           <CardContent className="divide-y divide-border p-0">
             {resolvedApprovals.map((approval) => {
@@ -262,16 +246,13 @@ export function ApprovalsList({
               const alreadySigned = signedPaymentIds.has(approval.payment_id);
 
               return (
-                <div
-                  key={approval.id}
-                  className="space-y-3 px-4 py-3.5 sm:px-5"
-                >
+                <div key={approval.id} className="space-y-3 px-4 py-3">
                   <div className="flex flex-col gap-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
                           href={`/payments/${approval.payment_id}`}
-                          className="font-semibold text-foreground hover:text-[var(--brand-text)] hover:underline break-words"
+                          className="font-medium text-foreground hover:text-[var(--brand-text)] hover:underline break-words"
                         >
                           {approval.request.recipient_name}
                         </Link>
@@ -287,7 +268,7 @@ export function ApprovalsList({
                         </p>
                       )}
                       {approval.decided_by && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-muted-foreground tabular-nums">
                           {interpolate(t.prod.approvals.decidedBy, {
                             user: approval.decided_by.full_name,
                           })}
@@ -298,15 +279,9 @@ export function ApprovalsList({
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       {approval.trust_account && (
-                        <Badge
-                          variant="outline"
-                          className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
-                        >
-                          <ShieldCheck className="size-3" />
-                          <span>{t.director.trustedBadge}</span>
-                        </Badge>
+                        <span className="ui-tag">{t.director.trustedBadge}</span>
                       )}
 
                       <ApprovalStatusBadge status={approval.status} />
@@ -314,12 +289,13 @@ export function ApprovalsList({
                       {isDirector && isApproved && !alreadySigned && (
                         <Button
                           type="button"
+                          variant="outline"
                           size="sm"
                           disabled={signingPaymentId !== null}
                           onClick={() =>
                             void handleSignApproved(approval.payment_id)
                           }
-                          className="min-h-9 gap-1.5 rounded-xl"
+                          className="min-h-10 sm:min-h-8"
                         >
                           {signingPaymentId === approval.payment_id ? (
                             <>
@@ -327,32 +303,29 @@ export function ApprovalsList({
                               <span>{t.prod.approvals.signingApproved}</span>
                             </>
                           ) : (
-                            <>
-                              <ShieldCheck className="size-3.5" />
-                              <span>{t.prod.approvals.signApprovedButton}</span>
-                            </>
+                            <span>{t.prod.approvals.signApprovedButton}</span>
                           )}
                         </Button>
                       )}
 
                       {alreadySigned && (
-                        <Badge
-                          variant="outline"
-                          className="h-auto border-[#00AB75]/45 bg-[#00AB75]/15 py-0.5 text-[#064A34]"
-                        >
-                          {t.prod.approvals.signedBadge}
-                        </Badge>
+                        <span className="ui-status text-[var(--status-ok-text)]">
+                          <span
+                            aria-hidden="true"
+                            className="ui-status-dot ui-dot-ok"
+                          />
+                          <span>{t.prod.approvals.signedBadge}</span>
+                        </span>
                       )}
 
                       <Link
                         href={`/payments/${approval.payment_id}`}
                         className={cn(
                           buttonVariants({ variant: "outline", size: "sm" }),
-                          "min-h-9 gap-1 rounded-xl"
+                          "min-h-10 sm:min-h-8"
                         )}
                       >
-                        <span>{t.prod.approvals.openPayment}</span>
-                        <ArrowUpRight className="size-3.5" />
+                        {t.prod.approvals.openPayment}
                       </Link>
                     </div>
                   </div>

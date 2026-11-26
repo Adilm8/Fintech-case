@@ -2,20 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  ClipboardCheck,
-  Inbox,
-  Info,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { ApprovalsList } from "@/components/prod/ApprovalsList";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useT } from "@/i18n";
 import { getApprovals, getProdErrorMessage } from "@/lib/prod/api";
@@ -100,15 +90,11 @@ export default function ProdDirectorPage() {
   ];
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.prod.approvals.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.prod.approvals.subtitle}
-          </p>
+          <h1 className="ui-page-title">{t.prod.approvals.title}</h1>
+          <p className="ui-page-subtitle">{t.prod.approvals.subtitle}</p>
         </div>
 
         <Button
@@ -117,7 +103,7 @@ export default function ProdDirectorPage() {
           size="sm"
           onClick={handleRefresh}
           disabled={isLoading}
-          className="min-h-11 w-full gap-1.5 rounded-xl sm:min-h-9 sm:w-auto"
+          className="min-h-10 w-full gap-1.5 sm:min-h-8 sm:w-auto"
         >
           <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
           <span>{t.common.refresh}</span>
@@ -125,17 +111,16 @@ export default function ProdDirectorPage() {
       </div>
 
       {role !== "director" && (
-        <Alert className="rounded-xl border-border bg-muted/60">
-          <Info className="size-4" />
-          <AlertDescription>{t.prod.approvals.readOnlyBanner}</AlertDescription>
-        </Alert>
+        <div
+          role="status"
+          className="ui-notice ui-notice-neutral text-sm text-foreground"
+        >
+          {t.prod.approvals.readOnlyBanner}
+        </div>
       )}
 
       {error && (
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertTriangle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words">
@@ -145,7 +130,7 @@ export default function ProdDirectorPage() {
               variant="outline"
               size="sm"
               onClick={handleRefresh}
-              className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+              className="min-h-10 gap-1.5 sm:min-h-8"
             >
               <RefreshCw className="size-3.5" />
               <span>{t.common.retry}</span>
@@ -154,97 +139,41 @@ export default function ProdDirectorPage() {
         </Alert>
       )}
 
-      {/* Summary tiles */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.director.tiles.pendingLabel}
-              </span>
-              <div
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                  stats.pendingCount > 0
-                    ? "bg-amber-50 text-amber-700"
-                    : "bg-accent text-[var(--brand-text)]"
-                )}
-              >
-                <ClipboardCheck className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-              {stats.pendingCount}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Summary KPI strip */}
+      <div className="ui-kpi-strip">
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">{t.director.tiles.pendingLabel}</span>
+          <span className="ui-kpi-value">{stats.pendingCount}</span>
+        </div>
 
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.director.tiles.highRiskLabel}
-              </span>
-              <div
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-xl",
-                  stats.highRiskCount > 0
-                    ? "bg-red-50 text-red-600"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                <AlertTriangle className="size-4" />
-              </div>
-            </div>
-            <div
-              className={cn(
-                "text-2xl font-bold tabular-nums sm:text-3xl",
-                stats.highRiskCount > 0 ? "text-red-700" : "text-foreground"
-              )}
-            >
-              {stats.highRiskCount}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">{t.director.tiles.highRiskLabel}</span>
+          <span
+            className={cn(
+              "ui-kpi-value",
+              stats.highRiskCount > 0 && "text-[var(--status-danger-text)]"
+            )}
+          >
+            {stats.highRiskCount}
+          </span>
+        </div>
 
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.director.tiles.resolvedLabel}
-              </span>
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/75">
-                <CheckCircle2 className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-              {stats.resolvedCount}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">{t.director.tiles.resolvedLabel}</span>
+          <span className="ui-kpi-value">{stats.resolvedCount}</span>
+        </div>
 
-        <Card className="py-4">
-          <CardContent className="flex flex-col justify-between gap-2">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {t.director.tiles.trustedLabel}
-              </span>
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                <ShieldCheck className="size-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-              {stats.trustedCount}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="ui-kpi-cell">
+          <span className="ui-kpi-label">{t.director.tiles.trustedLabel}</span>
+          <span className="ui-kpi-value">{stats.trustedCount}</span>
+        </div>
       </div>
 
-      {/* Status filter pills */}
+      {/* Status filter tabs */}
       <div
-        role="group"
+        role="tablist"
         aria-label={t.prod.approvals.title}
-        className="no-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:flex-wrap sm:px-0"
+        className="ui-tabs no-scrollbar"
       >
         {filterOptions.map((opt) => {
           const isSelected = statusFilter === opt.value;
@@ -252,14 +181,10 @@ export default function ProdDirectorPage() {
             <button
               key={opt.value}
               type="button"
-              aria-pressed={isSelected}
+              role="tab"
+              aria-selected={isSelected}
               onClick={() => setStatusFilter(opt.value)}
-              className={cn(
-                "inline-flex min-h-10 shrink-0 cursor-pointer items-center rounded-full border px-3.5 py-1 text-xs font-medium transition-all sm:min-h-8",
-                isSelected
-                  ? "border-primary bg-primary text-primary-foreground font-semibold shadow-xs"
-                  : "border-border bg-card text-foreground hover:bg-muted/70"
-              )}
+              className="ui-tab min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10"
             >
               {opt.label}
             </button>
@@ -269,39 +194,34 @@ export default function ProdDirectorPage() {
 
       {isLoading ? (
         <div className="space-y-4">
-          <Skeleton className="h-64 w-full rounded-xl" />
-          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-[8px]" />
+          <Skeleton className="h-32 w-full rounded-[8px]" />
         </div>
       ) : approvals.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <Inbox className="size-6" />
+        <div className="ui-panel">
+          <div className="ui-empty">
+            <div className="ui-empty-title">
+              {statusFilter === "all"
+                ? t.director.emptyTitle
+                : t.prod.approvals.emptyFilteredTitle}
             </div>
-            <div className="space-y-1">
-              <div className="text-base font-semibold text-foreground">
-                {statusFilter === "all"
-                  ? t.director.emptyTitle
-                  : t.prod.approvals.emptyFilteredTitle}
-              </div>
-              <p className="max-w-md text-sm text-muted-foreground">
-                {statusFilter === "all"
-                  ? t.director.emptyDescription
-                  : t.prod.approvals.emptyFilteredDescription}
-              </p>
-            </div>
+            <p className="ui-empty-desc">
+              {statusFilter === "all"
+                ? t.director.emptyDescription
+                : t.prod.approvals.emptyFilteredDescription}
+            </p>
             <Link
               href="/payments"
               className={cn(
-                buttonVariants({ variant: "outline" }),
-                "mt-1 min-h-11 gap-2 rounded-xl sm:min-h-9"
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "mt-2 min-h-10 gap-1.5 sm:min-h-8"
               )}
             >
-              <ArrowLeft className="size-4" />
+              <ArrowLeft className="size-3.5" />
               <span>{t.director.backToPayments}</span>
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         <ApprovalsList
           approvals={approvals}

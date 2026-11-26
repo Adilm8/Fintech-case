@@ -120,8 +120,8 @@ function ProdShellInner({ children }: { children: ReactNode }) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <div className="w-full max-w-md space-y-3">
-          <Skeleton className="h-8 w-48 mx-auto rounded-lg" />
-          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-8 w-48 mx-auto rounded-[6px]" />
+          <Skeleton className="h-24 w-full rounded-[8px]" />
         </div>
       </div>
     );
@@ -131,7 +131,7 @@ function ProdShellInner({ children }: { children: ReactNode }) {
     if (session) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-6">
-          <Skeleton className="h-24 w-64 rounded-xl" />
+          <Skeleton className="h-24 w-64 rounded-[8px]" />
         </div>
       );
     }
@@ -142,22 +142,18 @@ function ProdShellInner({ children }: { children: ReactNode }) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <div className="border-b border-border bg-card">
-          <div className="mx-auto flex w-full max-w-[1248px] items-center justify-between px-4 py-3.5 sm:px-6">
-            <div className="flex items-center gap-3">
-              <Skeleton className="size-9 rounded-xl" />
-              <Skeleton className="h-5 w-36" />
+          <div className="mx-auto flex w-full max-w-[1248px] items-center justify-between px-4 py-2.5 sm:px-6">
+            <div className="flex items-center gap-2.5">
+              <Skeleton className="size-7 rounded-[6px]" />
+              <Skeleton className="h-5 w-32 rounded-[6px]" />
             </div>
-            <Skeleton className="h-9 w-40 rounded-xl" />
+            <Skeleton className="h-8 w-36 rounded-[6px]" />
           </div>
         </div>
-        <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-6 space-y-5 sm:px-6">
-          <Skeleton className="h-8 w-56" />
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full rounded-xl" />
-            ))}
-          </div>
-          <Skeleton className="h-64 w-full rounded-xl" />
+        <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-4 sm:px-6 sm:py-5 sm:space-y-5">
+          <Skeleton className="h-7 w-56 rounded-[6px]" />
+          <Skeleton className="h-20 w-full rounded-[8px]" />
+          <Skeleton className="h-64 w-full rounded-[8px]" />
         </main>
       </div>
     );
@@ -169,20 +165,20 @@ function ProdShellInner({ children }: { children: ReactNode }) {
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <Alert
             variant="destructive"
-            className="max-w-lg rounded-2xl border-red-300 bg-red-50/90 px-4 py-4"
+            className="ui-notice ui-notice-danger max-w-lg px-3.5 py-3"
           >
             <AlertTriangle className="size-4" />
             <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
             <AlertDescription className="break-words">
               {networkError}
             </AlertDescription>
-            <AlertAction className="static col-span-full mt-3">
+            <AlertAction className="static col-span-full mt-2.5">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => void refreshSession()}
-                className="min-h-11 w-full gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50 sm:min-h-8 sm:w-auto"
+                className="min-h-11 w-full gap-1.5 sm:min-h-8 sm:w-auto"
               >
                 <RefreshCw className="size-3.5" />
                 <span>{t.common.retry}</span>
@@ -203,7 +199,7 @@ function ProdShellInner({ children }: { children: ReactNode }) {
         onLogout={logout}
       />
 
-      <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-5 sm:px-6 sm:py-6 sm:space-y-6">
+      <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-4 sm:px-6 sm:py-5 sm:space-y-5">
         {children}
       </main>
     </div>

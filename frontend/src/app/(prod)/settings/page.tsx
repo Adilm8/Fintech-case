@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  AlertCircle,
-  Bell,
-  Loader2,
-  Save,
-  Settings,
-  ShieldAlert,
-} from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { notifyProdNotificationsUpdated } from "@/components/prod/NotificationBell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -130,26 +123,14 @@ function SettingsPageContent() {
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <div className="min-w-0">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-            <Settings className="size-5" />
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-            {t.prod.settings.title}
-          </h1>
-        </div>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {t.prod.settings.subtitle}
-        </p>
+        <h1 className="ui-page-title">{t.prod.settings.title}</h1>
+        <p className="ui-page-subtitle">{t.prod.settings.subtitle}</p>
       </div>
 
       {loadError && (
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertCircle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="break-words">{loadError}</AlertDescription>
@@ -157,17 +138,14 @@ function SettingsPageContent() {
       )}
 
       {isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-56 w-full rounded-2xl" />
-          <Skeleton className="h-56 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Skeleton className="h-56 w-full rounded-[8px]" />
+          <Skeleton className="h-56 w-full rounded-[8px]" />
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
           {saveError && (
-            <Alert
-              variant="destructive"
-              className="rounded-2xl border-red-300 bg-red-50/90"
-            >
+            <Alert variant="destructive" className="ui-notice ui-notice-danger">
               <AlertCircle className="size-4" />
               <AlertDescription className="break-words">
                 {saveError}
@@ -175,26 +153,23 @@ function SettingsPageContent() {
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-start gap-4 sm:gap-5 lg:grid-cols-2">
             {/* Notification mode card */}
             <Card className="min-w-0">
-              <CardHeader className="border-b border-border pb-4">
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <Bell className="size-4 text-muted-foreground" />
-                  <span>{t.prod.settings.notifyCardTitle}</span>
-                </CardTitle>
+              <CardHeader className="border-b border-border pb-3.5">
+                <CardTitle>{t.prod.settings.notifyCardTitle}</CardTitle>
                 <CardDescription>
                   {t.prod.settings.notifyCardDescription}
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="space-y-3 pt-5">
+              <CardContent className="space-y-2.5 pt-4">
                 <label
                   className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all",
+                    "flex cursor-pointer items-start gap-3 rounded-[6px] border p-3.5 transition-colors",
                     notifyOn === "red_yellow"
-                      ? "border-primary bg-accent/55 ring-1 ring-primary/25"
-                      : "border-border bg-card hover:bg-muted/50"
+                      ? "border-foreground bg-muted/40"
+                      : "border-border bg-card hover:bg-muted/30"
                   )}
                 >
                   <input
@@ -206,8 +181,8 @@ function SettingsPageContent() {
                     disabled={isSaving}
                     className="mt-1 size-4 accent-[var(--brand)]"
                   />
-                  <div className="min-w-0 space-y-1">
-                    <div className="text-sm font-semibold text-foreground">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-sm font-medium text-foreground">
                       {t.prod.settings.notifyRedYellowTitle}
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
@@ -218,10 +193,10 @@ function SettingsPageContent() {
 
                 <label
                   className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all",
+                    "flex cursor-pointer items-start gap-3 rounded-[6px] border p-3.5 transition-colors",
                     notifyOn === "red"
-                      ? "border-primary bg-accent/55 ring-1 ring-primary/25"
-                      : "border-border bg-card hover:bg-muted/50"
+                      ? "border-foreground bg-muted/40"
+                      : "border-border bg-card hover:bg-muted/30"
                   )}
                 >
                   <input
@@ -233,8 +208,8 @@ function SettingsPageContent() {
                     disabled={isSaving}
                     className="mt-1 size-4 accent-[var(--brand)]"
                   />
-                  <div className="min-w-0 space-y-1">
-                    <div className="text-sm font-semibold text-foreground">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-sm font-medium text-foreground">
                       {t.prod.settings.notifyRedTitle}
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
@@ -247,18 +222,15 @@ function SettingsPageContent() {
 
             {/* Approval threshold card */}
             <Card className="min-w-0">
-              <CardHeader className="border-b border-border pb-4">
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <ShieldAlert className="size-4 text-muted-foreground" />
-                  <span>{t.prod.settings.thresholdCardTitle}</span>
-                </CardTitle>
+              <CardHeader className="border-b border-border pb-3.5">
+                <CardTitle>{t.prod.settings.thresholdCardTitle}</CardTitle>
                 <CardDescription>
                   {t.prod.settings.thresholdCardDescription}
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="space-y-4 pt-5">
-                <div className="flex min-h-11 items-start gap-2.5 rounded-xl border border-border bg-background/70 px-3.5 py-2.5">
+              <CardContent className="space-y-4 pt-4">
+                <div className="ui-subpanel flex min-h-11 items-start gap-2.5">
                   <Checkbox
                     id="settings-threshold-enabled"
                     checked={thresholdEnabled}
@@ -281,7 +253,7 @@ function SettingsPageContent() {
                 </div>
 
                 {thresholdEnabled ? (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <Label htmlFor="settings-threshold-input">
                       {t.prod.settings.thresholdInputLabel}
                     </Label>
@@ -296,7 +268,7 @@ function SettingsPageContent() {
                       }}
                       placeholder={t.prod.settings.thresholdPlaceholder}
                       disabled={isSaving}
-                      className="h-11 rounded-xl font-mono text-base sm:h-10"
+                      className="h-10 rounded-[6px] bg-card font-mono tabular-nums sm:h-9"
                     />
                     {parsedThreshold !== null &&
                       !Number.isNaN(parsedThreshold) && (
@@ -308,7 +280,7 @@ function SettingsPageContent() {
                       )}
                   </div>
                 ) : (
-                  <p className="rounded-xl border border-dashed border-border bg-muted/35 p-3 text-xs text-muted-foreground leading-relaxed">
+                  <p className="ui-subpanel text-xs text-muted-foreground leading-relaxed">
                     {t.prod.settings.thresholdDisabledHint}
                   </p>
                 )}
@@ -319,9 +291,8 @@ function SettingsPageContent() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Button
               type="submit"
-              size="lg"
               disabled={isSaving}
-              className="min-h-11 w-full gap-2 rounded-xl px-6 font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)] sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {isSaving ? (
                 <>
@@ -329,15 +300,12 @@ function SettingsPageContent() {
                   <span>{t.prod.settings.savingButton}</span>
                 </>
               ) : (
-                <>
-                  <Save className="size-4" />
-                  <span>{t.prod.settings.saveButton}</span>
-                </>
+                <span>{t.prod.settings.saveButton}</span>
               )}
             </Button>
 
             {updatedAt && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground tabular-nums">
                 {interpolate(t.prod.settings.updatedAtLine, {
                   date: formatDate(updatedAt),
                 })}

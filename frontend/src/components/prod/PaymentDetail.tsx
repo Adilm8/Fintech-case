@@ -2,16 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Building2,
-  Copy,
-  MessageSquare,
-  RefreshCw,
-  ScrollText,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
 import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
 import { ComparisonTable } from "@/components/ComparisonTable";
@@ -25,8 +16,6 @@ import {
   StatusBadge,
 } from "@/components/prod/StatusBadge";
 import { SupplierBadge } from "@/components/prod/SupplierBadge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useT } from "@/i18n";
@@ -111,14 +100,14 @@ export function PaymentDetail({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Top navigation & utility links */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         <Link
           href="/payments"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
           )}
         >
           <ArrowLeft className="size-4" />
@@ -131,11 +120,10 @@ export function PaymentDetail({
               href={`/suppliers/${supplier.id}`}
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "min-h-10 gap-1.5 rounded-xl sm:min-h-9"
+                "min-h-10 sm:min-h-8"
               )}
             >
-              <Building2 className="size-3.5" />
-              <span>{t.prod.detail.openSupplier}</span>
+              {t.prod.detail.openSupplier}
             </Link>
           )}
 
@@ -144,11 +132,10 @@ export function PaymentDetail({
               href={`/audit?payment_id=${encodeURIComponent(payment.id)}`}
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "min-h-10 gap-1.5 rounded-xl sm:min-h-9"
+                "min-h-10 sm:min-h-8"
               )}
             >
-              <ScrollText className="size-3.5" />
-              <span>{t.prod.detail.openAudit}</span>
+              {t.prod.detail.openAudit}
             </Link>
           )}
 
@@ -159,11 +146,9 @@ export function PaymentDetail({
               size="sm"
               onClick={() => void handleRecheck()}
               disabled={isRechecking}
-              className="min-h-10 gap-1.5 rounded-xl sm:min-h-9"
+              className="min-h-10 sm:min-h-8"
             >
-              <RefreshCw
-                className={cn("size-3.5", isRechecking && "animate-spin")}
-              />
+              {isRechecking && <Loader2 className="size-3.5 animate-spin" />}
               <span>
                 {isRechecking ? t.check.rechecking : t.check.recheck}
               </span>
@@ -172,37 +157,28 @@ export function PaymentDetail({
         </div>
       </div>
 
-      {/* Payment summary card */}
-      <Card className="min-w-0">
-        <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+      {/* Payment summary header */}
+      <div className="ui-panel min-w-0 p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <span className="ui-label-meta tabular-nums">
                 {payment.doc_number
                   ? interpolate(t.prod.detail.docMeta, {
                       num: payment.doc_number,
                     })
                   : t.check.paymentOrderEyebrow}
+                {payment.doc_date ? ` · ${formatDate(payment.doc_date)}` : ""}
               </span>
-              {payment.doc_date && (
-                <span className="text-xs text-muted-foreground">
-                  · {formatDate(payment.doc_date)}
-                </span>
-              )}
               <StatusBadge status={payment.status} />
-              <Badge
-                variant="secondary"
-                className="h-auto px-2 py-0.5 text-[11px] font-medium"
-              >
-                {t.prod.sources[payment.source]}
-              </Badge>
+              <span className="ui-tag">{t.prod.sources[payment.source]}</span>
             </div>
 
-            <div className="text-lg font-semibold text-foreground break-words sm:text-xl">
+            <h1 className="ui-page-title break-words">
               {request.recipient_name}
-            </div>
+            </h1>
 
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-xs text-muted-foreground tabular-nums">
               <span>
                 {interpolate(t.common.binPrefix, { bin: request.recipient_bin })}
               </span>
@@ -223,7 +199,7 @@ export function PaymentDetail({
               )}
             </div>
 
-            <div className="text-sm text-muted-foreground break-words">
+            <div className="text-sm text-[var(--text-secondary)] break-words">
               {request.purpose}
             </div>
 
@@ -234,13 +210,14 @@ export function PaymentDetail({
             />
 
             {showSecondaryTrustedNote && (
-              <div className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground break-words">
-                <ShieldCheck className="size-3.5 shrink-0 text-muted-foreground" />
-                <span>{formatTrustedBanner(check.trusted_info)}</span>
+              <div className="text-xs text-muted-foreground break-words">
+                <span className="ui-tag">
+                  {formatTrustedBanner(check.trusted_info)}
+                </span>
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-xs text-muted-foreground tabular-nums">
               <span>
                 {interpolate(t.prod.detail.createdByLine, {
                   user: payment.created_by.full_name,
@@ -260,10 +237,10 @@ export function PaymentDetail({
           </div>
 
           <div className="min-w-0 shrink-0 space-y-1 text-left sm:text-right">
-            <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground sm:text-3xl">
+            <div className="text-[22px] leading-7 font-semibold tabular-nums whitespace-nowrap text-foreground sm:text-2xl sm:leading-[30px]">
               {formatMoney(request.amount_kzt)}
             </div>
-            <div className="space-y-1 text-xs text-muted-foreground">
+            <div className="space-y-1 text-xs text-muted-foreground tabular-nums">
               <div>
                 {(check.history?.payments_count ?? 0) > 0
                   ? interpolate(t.check.historySummary, {
@@ -273,49 +250,50 @@ export function PaymentDetail({
                   : t.check.noPriorPayments}
               </div>
               {check.history?.compared_with && (
-                <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
-                  {interpolate(t.check.comparedWith, {
-                    supplier: check.history.compared_with,
-                  })}
+                <div>
+                  <span className="ui-tag break-words">
+                    {interpolate(t.check.comparedWith, {
+                      supplier: check.history.compared_with,
+                    })}
+                  </span>
                 </div>
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Possible duplicate warning */}
       {payment.duplicate_of && (
-        <Alert className="rounded-xl border-amber-300 bg-amber-50/95 text-amber-950">
-          <Copy className="size-4 text-amber-700" />
-          <AlertTitle>{t.prod.detail.duplicateAlertTitle}</AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-amber-900">
+        <div role="alert" className="ui-notice ui-notice-warn space-y-1">
+          <div className="text-sm font-medium text-foreground">
+            {t.prod.detail.duplicateAlertTitle}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{t.prod.detail.duplicateAlertDescription}</span>
             <Link
               href={`/payments/${payment.duplicate_of}`}
-              className="font-semibold underline underline-offset-2 hover:text-amber-950"
+              className="font-medium text-[var(--brand-text)] hover:underline"
             >
               {t.prod.detail.openOriginalPayment}
             </Link>
-          </AlertDescription>
-        </Alert>
+          </div>
+        </div>
       )}
 
       {/* Verdict changed during sign */}
       {verdictChangedDetail && (
-        <Alert
-          variant="destructive"
-          className="rounded-xl border-amber-400 bg-amber-50 text-amber-950"
-        >
-          <AlertTriangle className="size-4 text-amber-700" />
-          <AlertTitle>{t.prod.detail.verdictChangedTitle}</AlertTitle>
-          <AlertDescription className="space-y-1 text-amber-900 break-words">
-            <p>{verdictChangedDetail}</p>
-            <p className="text-xs opacity-90">
-              {t.prod.detail.verdictChangedDescription}
-            </p>
-          </AlertDescription>
-        </Alert>
+        <div role="alert" className="ui-notice ui-notice-warn space-y-1">
+          <div className="text-sm font-medium text-foreground">
+            {t.prod.detail.verdictChangedTitle}
+          </div>
+          <p className="text-xs text-foreground break-words">
+            {verdictChangedDetail}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t.prod.detail.verdictChangedDescription}
+          </p>
+        </div>
       )}
 
       {/* Verdict banner */}
@@ -325,13 +303,14 @@ export function PaymentDetail({
       />
 
       {showProminentTrustedBanner && (
-        <Alert className="rounded-xl border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]">
-          <ShieldCheck className="size-4 text-[var(--brand-text)]" />
-          <AlertTitle>{t.check.trustedBannerTitle}</AlertTitle>
-          <AlertDescription className="font-medium text-[#064A34]/90 break-words">
+        <div role="status" className="ui-notice ui-notice-ok space-y-0.5">
+          <div className="text-sm font-medium text-foreground">
+            {t.check.trustedBannerTitle}
+          </div>
+          <p className="text-xs text-muted-foreground break-words">
             {formatTrustedBanner(check.trusted_info)}
-          </AlertDescription>
-        </Alert>
+          </p>
+        </div>
       )}
 
       {/* Approval details block */}
@@ -339,27 +318,18 @@ export function PaymentDetail({
         <Card className="min-w-0">
           <CardHeader className="border-b border-border pb-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <MessageSquare className="size-4 text-muted-foreground" />
-                <span>{t.prod.detail.approvalCardTitle}</span>
-              </CardTitle>
-              <div className="flex flex-wrap items-center gap-1.5">
+              <CardTitle>{t.prod.detail.approvalCardTitle}</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
                 {approval.trust_account && (
-                  <Badge
-                    variant="outline"
-                    className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] px-2 py-0.5 text-xs text-[#006B49]"
-                  >
-                    <ShieldCheck className="size-3" />
-                    <span>{t.director.trustedBadge}</span>
-                  </Badge>
+                  <span className="ui-tag">{t.director.trustedBadge}</span>
                 )}
                 <ApprovalStatusBadge status={approval.status} />
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3 pt-4 text-sm">
+          <CardContent className="space-y-3 text-sm">
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">
+              <div className="ui-label-meta tabular-nums">
                 {interpolate(t.prod.detail.sentByLine, {
                   user: approval.created_by.full_name,
                   date: formatDate(approval.created_at),
@@ -373,15 +343,15 @@ export function PaymentDetail({
             </div>
 
             {approval.decided_by && approval.decided_at && (
-              <div className="rounded-xl border border-border bg-background/80 p-3 space-y-1">
-                <div className="text-xs font-medium text-muted-foreground">
+              <div className="ui-subpanel space-y-1">
+                <div className="ui-label-meta tabular-nums">
                   {interpolate(t.prod.detail.decidedByLine, {
                     user: approval.decided_by.full_name,
                     date: formatDate(approval.decided_at),
                   })}
                 </div>
                 {approval.director_comment && (
-                  <p className="text-foreground break-words">
+                  <p className="text-sm text-foreground break-words">
                     {approval.director_comment}
                   </p>
                 )}
@@ -398,8 +368,8 @@ export function PaymentDetail({
       )}
 
       {/* Main two-column breakdown + sign panel */}
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_370px]">
-        <div className="min-w-0 space-y-5">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_370px]">
+        <div className="min-w-0 space-y-4">
           <ComparisonTable
             comparison={check.comparison}
             trusted={isTrusted}
@@ -414,7 +384,7 @@ export function PaymentDetail({
           )}
 
           {check.ruleset_version && (
-            <div className="text-right font-mono text-[11px] text-muted-foreground/75">
+            <div className="text-right font-mono text-[11px] text-muted-foreground">
               {interpolate(t.check.rulesetVersion, {
                 version: check.ruleset_version,
               })}

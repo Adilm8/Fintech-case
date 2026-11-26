@@ -1,24 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import {
-  AlertCircle,
-  Ban,
-  CheckCircle2,
-  ClipboardCheck,
-  FileEdit,
-  Loader2,
-  Lock,
-  PauseCircle,
-  RotateCcw,
-  Send,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { notifyProdNotificationsUpdated } from "@/components/prod/NotificationBell";
 import { notifyProdApprovalsUpdated } from "@/components/prod/ProdShell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -103,40 +90,34 @@ export function SignPanel({
   // Terminal status banners when no actions remain.
   if (payment.status === "signed" && !hasAnyAction) {
     return (
-      <Card className="border-[#00AB75]/35 bg-[#E8F8F2]/60 py-0">
-        <CardContent className="p-4 space-y-2 text-sm text-[#064A34]">
-          <div className="flex items-center gap-2 font-semibold">
-            <CheckCircle2 className="size-4 shrink-0 text-[var(--brand-text)]" />
-            <span>{t.prod.detail.signedBannerTitle}</span>
-          </div>
-          {payment.signed_by && payment.signed_at && (
-            <p className="text-xs text-[#064A34]/85">
-              {interpolate(t.prod.detail.signedByLine, {
-                user: payment.signed_by.full_name,
-                date: formatDate(payment.signed_at),
-              })}
-            </p>
-          )}
-          {payment.accountant_ack && (
-            <p className="text-xs text-[#064A34]/85">
-              {t.prod.detail.signedBannerWithAck}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <div role="status" className="ui-notice ui-notice-ok space-y-1">
+        <div className="text-sm font-semibold text-foreground">
+          {t.prod.detail.signedBannerTitle}
+        </div>
+        {payment.signed_by && payment.signed_at && (
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {interpolate(t.prod.detail.signedByLine, {
+              user: payment.signed_by.full_name,
+              date: formatDate(payment.signed_at),
+            })}
+          </p>
+        )}
+        {payment.accountant_ack && (
+          <p className="text-xs text-muted-foreground">
+            {t.prod.detail.signedBannerWithAck}
+          </p>
+        )}
+      </div>
     );
   }
 
   if (payment.status === "cancelled" && !hasAnyAction) {
     return (
-      <Card className="bg-muted/50 py-0">
-        <CardContent className="p-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2 font-semibold text-foreground">
-            <Ban className="size-4 shrink-0" />
-            <span>{t.prod.detail.cancelledBannerTitle}</span>
-          </div>
-        </CardContent>
-      </Card>
+      <div role="status" className="ui-notice ui-notice-neutral">
+        <div className="text-sm font-semibold text-foreground">
+          {t.prod.detail.cancelledBannerTitle}
+        </div>
+      </div>
     );
   }
 
@@ -251,179 +232,166 @@ export function SignPanel({
 
   const isSignDisabled =
     busyAction !== null || (permissions.sign_requires_ack && !accountantAck);
+  const decideIsPrimary = Boolean(
+    permissions.can_decide && onOpenDecide && !permissions.can_sign
+  );
+  const sendIsPrimary =
+    permissions.can_send_to_director &&
+    !permissions.can_sign &&
+    !(permissions.can_decide && onOpenDecide);
+  const resumeIsPrimary =
+    permissions.can_resume &&
+    !permissions.can_sign &&
+    !(permissions.can_decide && onOpenDecide) &&
+    !permissions.can_send_to_director;
 
   return (
     <>
-      <Card className="min-w-0 py-0">
-        <CardContent className="p-4 space-y-3.5">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t.check.actionsEyebrow}
+      <div className="ui-panel min-w-0 p-4 space-y-3">
+        <div className="ui-label-meta">{t.check.actionsEyebrow}</div>
+
+        {actionError && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertTitle>{t.check.actionErrorTitle}</AlertTitle>
+            <AlertDescription className="break-words">
+              {actionError}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {blockReasonText && (
+          <div className="ui-notice ui-notice-warn text-xs leading-relaxed break-words">
+            {blockReasonText}
           </div>
+        )}
 
-          {actionError && (
-            <Alert
-              variant="destructive"
-              className="rounded-xl border-red-300 bg-red-50/90"
-            >
-              <AlertCircle className="size-4" />
-              <AlertTitle>{t.check.actionErrorTitle}</AlertTitle>
-              <AlertDescription className="break-words">
-                {actionError}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {blockReasonText && (
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/90 bg-amber-50/90 p-3 text-xs leading-relaxed text-amber-950">
-              <Lock className="mt-0.5 size-4 shrink-0 text-amber-700" />
-              <span className="break-words">{blockReasonText}</span>
-            </div>
-          )}
-
-          {permissions.can_sign && (
-            <div className="space-y-2.5">
-              {permissions.sign_requires_ack && (
-                <div className="flex min-h-11 items-start gap-2.5 rounded-xl border border-border bg-background/80 px-3 py-2.5">
-                  <Checkbox
-                    id={`prod-ack-${payment.id}`}
-                    checked={accountantAck}
-                    onCheckedChange={(checked) =>
-                      setAccountantAck(Boolean(checked))
-                    }
-                    disabled={busyAction !== null}
-                    className="mt-0.5"
-                  />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <Label
-                      htmlFor={`prod-ack-${payment.id}`}
-                      className="cursor-pointer text-xs font-medium leading-snug text-foreground"
-                    >
-                      {t.check.accountantAckLabel}
-                    </Label>
-                    {!accountantAck && (
-                      <p className="text-[11px] leading-snug text-muted-foreground">
-                        {t.check.accountantAckRequiredHint}
-                      </p>
-                    )}
-                  </div>
+        {permissions.can_sign && (
+          <div className="space-y-2.5">
+            {permissions.sign_requires_ack && (
+              <div className="ui-subpanel flex min-h-11 items-start gap-2.5">
+                <Checkbox
+                  id={`prod-ack-${payment.id}`}
+                  checked={accountantAck}
+                  onCheckedChange={(checked) =>
+                    setAccountantAck(Boolean(checked))
+                  }
+                  disabled={busyAction !== null}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <Label
+                    htmlFor={`prod-ack-${payment.id}`}
+                    className="cursor-pointer text-xs font-medium leading-snug text-foreground"
+                  >
+                    {t.check.accountantAckLabel}
+                  </Label>
+                  {!accountantAck && (
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      {t.check.accountantAckRequiredHint}
+                    </p>
+                  )}
                 </div>
-              )}
+              </div>
+            )}
 
-              <Button
-                type="button"
-                size="lg"
-                disabled={isSignDisabled}
-                onClick={() => void handleSign()}
-                className="min-h-11 w-full gap-2 rounded-xl font-semibold shadow-[0_2px_8px_rgba(0,171,117,0.22)]"
-              >
-                {busyAction === "sign" ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>{t.prod.detail.actions.signing}</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="size-4" />
-                    <span>{t.check.actionSign}</span>
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-
-          {permissions.can_decide && onOpenDecide && (
             <Button
               type="button"
-              size="lg"
-              disabled={busyAction !== null}
-              onClick={onOpenDecide}
-              className="min-h-11 w-full gap-2 rounded-xl font-semibold"
+              disabled={isSignDisabled}
+              onClick={() => void handleSign()}
+              className="min-h-11 w-full sm:min-h-9"
             >
-              <ClipboardCheck className="size-4" />
-              <span>{t.prod.detail.actions.decide}</span>
-            </Button>
-          )}
-
-          {permissions.can_send_to_director && (
-            <Button
-              type="button"
-              variant={permissions.can_sign ? "outline" : "default"}
-              size="lg"
-              disabled={busyAction !== null}
-              onClick={() => openNoteDialog("send")}
-              className="min-h-11 w-full gap-2 rounded-xl"
-            >
-              <Send className="size-4" />
-              <span>{t.check.actionSendToDirector}</span>
-            </Button>
-          )}
-
-          {permissions.can_edit && (
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              disabled={busyAction !== null}
-              onClick={onOpenEdit}
-              className="min-h-11 w-full gap-2 rounded-xl"
-            >
-              <FileEdit className="size-4" />
-              <span>{t.prod.detail.actions.edit}</span>
-            </Button>
-          )}
-
-          {permissions.can_resume && (
-            <Button
-              type="button"
-              variant="default"
-              size="lg"
-              disabled={busyAction !== null}
-              onClick={() => void handleResume()}
-              className="min-h-11 w-full gap-2 rounded-xl"
-            >
-              {busyAction === "resume" ? (
+              {busyAction === "sign" ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>{t.prod.detail.actions.resuming}</span>
+                  <span>{t.prod.detail.actions.signing}</span>
                 </>
               ) : (
-                <>
-                  <RotateCcw className="size-4" />
-                  <span>{t.prod.detail.actions.resume}</span>
-                </>
+                <span>{t.check.actionSign}</span>
               )}
             </Button>
-          )}
+          </div>
+        )}
 
-          {permissions.can_postpone && (
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              disabled={busyAction !== null}
-              onClick={() => openNoteDialog("postpone")}
-              className="min-h-11 w-full gap-2 rounded-xl"
-            >
-              <PauseCircle className="size-4" />
-              <span>{t.prod.detail.actions.postpone}</span>
-            </Button>
-          )}
+        {permissions.can_decide && onOpenDecide && (
+          <Button
+            type="button"
+            variant={decideIsPrimary ? "default" : "outline"}
+            disabled={busyAction !== null}
+            onClick={onOpenDecide}
+            className="min-h-11 w-full sm:min-h-9"
+          >
+            {t.prod.detail.actions.decide}
+          </Button>
+        )}
 
-          {permissions.can_cancel && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="lg"
-              disabled={busyAction !== null}
-              onClick={() => openNoteDialog("cancel")}
-              className="min-h-11 w-full gap-2 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Ban className="size-4" />
-              <span>{t.prod.detail.actions.cancelPayment}</span>
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+        {permissions.can_send_to_director && (
+          <Button
+            type="button"
+            variant={sendIsPrimary ? "default" : "outline"}
+            disabled={busyAction !== null}
+            onClick={() => openNoteDialog("send")}
+            className="min-h-11 w-full sm:min-h-9"
+          >
+            {t.check.actionSendToDirector}
+          </Button>
+        )}
+
+        {permissions.can_edit && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busyAction !== null}
+            onClick={onOpenEdit}
+            className="min-h-11 w-full sm:min-h-9"
+          >
+            {t.prod.detail.actions.edit}
+          </Button>
+        )}
+
+        {permissions.can_resume && (
+          <Button
+            type="button"
+            variant={resumeIsPrimary ? "default" : "outline"}
+            disabled={busyAction !== null}
+            onClick={() => void handleResume()}
+            className="min-h-11 w-full sm:min-h-9"
+          >
+            {busyAction === "resume" ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                <span>{t.prod.detail.actions.resuming}</span>
+              </>
+            ) : (
+              <span>{t.prod.detail.actions.resume}</span>
+            )}
+          </Button>
+        )}
+
+        {permissions.can_postpone && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busyAction !== null}
+            onClick={() => openNoteDialog("postpone")}
+            className="min-h-11 w-full sm:min-h-9"
+          >
+            {t.prod.detail.actions.postpone}
+          </Button>
+        )}
+
+        {permissions.can_cancel && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busyAction !== null}
+            onClick={() => openNoteDialog("cancel")}
+            className="min-h-11 w-full text-[var(--status-danger-text)] hover:bg-[#FEF2F2] hover:text-[var(--status-danger-text)] sm:min-h-9"
+          >
+            {t.prod.detail.actions.cancelPayment}
+          </Button>
+        )}
+      </div>
 
       <Dialog open={noteDialog !== null} onOpenChange={closeNoteDialog}>
         <DialogContent mobileSheet className="sm:max-w-md">
@@ -446,10 +414,7 @@ export function SignPanel({
 
           <div className="space-y-3">
             {dialogError && (
-              <Alert
-                variant="destructive"
-                className="border-red-300 bg-red-50/90"
-              >
+              <Alert variant="destructive">
                 <AlertCircle className="size-4" />
                 <AlertDescription className="break-words">
                   {dialogError}
@@ -486,7 +451,7 @@ export function SignPanel({
               variant="outline"
               onClick={() => closeNoteDialog(false)}
               disabled={busyAction !== null}
-              className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {t.common.cancel}
             </Button>
@@ -495,7 +460,7 @@ export function SignPanel({
               variant={noteDialog === "cancel" ? "destructive" : "default"}
               onClick={() => void handleConfirmNoteDialog()}
               disabled={busyAction !== null}
-              className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {busyAction !== null ? (
                 <>
@@ -509,10 +474,7 @@ export function SignPanel({
                   </span>
                 </>
               ) : noteDialog === "send" ? (
-                <>
-                  <Send className="size-4" />
-                  <span>{t.check.send}</span>
-                </>
+                <span>{t.check.send}</span>
               ) : noteDialog === "postpone" ? (
                 <span>{t.prod.detail.postponeConfirm}</span>
               ) : (

@@ -3,24 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUpRight,
-  Building2,
-  History,
-  Inbox,
-  Loader2,
-  RefreshCw,
-  ShieldCheck,
-  ShieldOff,
-} from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
 import { PaymentsTable } from "@/components/prod/PaymentsTable";
 import { SupplierBadge } from "@/components/prod/SupplierBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -188,66 +174,58 @@ export default function ProdSupplierDetailPage() {
 
   if (isLoading && !supplier) {
     return (
-      <div className="space-y-5">
-        <Skeleton className="h-9 w-40 rounded-lg" />
-        <Skeleton className="h-36 w-full rounded-xl" />
-        <Skeleton className="h-52 w-full rounded-xl" />
-        <Skeleton className="h-44 w-full rounded-xl" />
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-40 rounded-[6px]" />
+        <Skeleton className="h-36 w-full rounded-[8px]" />
+        <Skeleton className="h-52 w-full rounded-[8px]" />
+        <Skeleton className="h-44 w-full rounded-[8px]" />
       </div>
     );
   }
 
   if (notFoundError) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <Link
           href="/suppliers"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
           )}
         >
           <ArrowLeft className="size-4" />
           <span>{t.prod.supplier.backToSuppliers}</span>
         </Link>
 
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 px-4 text-center">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <Inbox className="size-6" />
+        <div className="ui-panel">
+          <div className="ui-empty">
+            <div className="ui-empty-title">
+              {t.prod.supplier.notFoundTitle}
             </div>
-            <div className="space-y-1">
-              <div className="text-base font-semibold text-foreground">
-                {t.prod.supplier.notFoundTitle}
-              </div>
-              <p className="max-w-md text-sm text-muted-foreground">
-                {t.prod.supplier.notFoundDescription}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+            <p className="ui-empty-desc">
+              {t.prod.supplier.notFoundDescription}
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error && !supplier) {
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <Link
           href="/suppliers"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
           )}
         >
           <ArrowLeft className="size-4" />
           <span>{t.prod.supplier.backToSuppliers}</span>
         </Link>
 
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertTriangle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words">
@@ -257,10 +235,9 @@ export default function ProdSupplierDetailPage() {
               variant="outline"
               size="sm"
               onClick={() => void reloadSupplier()}
-              className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+              className="min-h-10 sm:min-h-8"
             >
-              <RefreshCw className="size-3.5" />
-              <span>{t.common.retry}</span>
+              {t.common.retry}
             </Button>
           </AlertDescription>
         </Alert>
@@ -271,13 +248,13 @@ export default function ProdSupplierDetailPage() {
   if (!supplier) return null;
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <Link
           href="/suppliers"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
+            "min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-8"
           )}
         >
           <ArrowLeft className="size-4" />
@@ -290,97 +267,83 @@ export default function ProdSupplierDetailPage() {
           size="sm"
           onClick={() => void reloadSupplier()}
           disabled={isLoading}
-          className="min-h-10 gap-1.5 rounded-xl sm:min-h-9"
+          className="min-h-10 sm:min-h-8"
         >
-          <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
+          {isLoading && <Loader2 className="size-3.5 animate-spin" />}
           <span>{t.common.refresh}</span>
         </Button>
       </div>
 
       {/* Supplier overview */}
-      <Card className="min-w-0">
-        <CardContent className="space-y-4 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center gap-2.5">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-                  <Building2 className="size-4" />
-                </div>
-                <h1 className="text-xl font-semibold tracking-tight text-foreground break-words sm:text-2xl">
-                  {supplier.name}
-                </h1>
-              </div>
-              <div className="font-mono text-xs text-muted-foreground">
-                {interpolate(t.common.binPrefix, { bin: supplier.bin })}
-              </div>
-              <SupplierBadge
-                requisitesChangedDaysAgo={supplier.requisites_changed_days_ago}
-                hasPendingChange={supplier.has_pending_change}
-                trustedAccountsCount={supplier.trusted_accounts_count}
-              />
-            </div>
-
-            <div className="text-left sm:text-right">
-              <div className="text-xs text-muted-foreground">
-                {t.prod.supplier.detail.totalPaid}
-              </div>
-              <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground">
-                {formatMoney(supplier.total_paid_kzt)}
-              </div>
-            </div>
+      <div className="ui-panel min-w-0 p-4 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <h1 className="ui-page-title break-words">{supplier.name}</h1>
+            <SupplierBadge
+              requisitesChangedDaysAgo={supplier.requisites_changed_days_ago}
+              hasPendingChange={supplier.has_pending_change}
+              trustedAccountsCount={supplier.trusted_accounts_count}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs sm:grid-cols-3">
-            <div>
-              <div className="text-muted-foreground">
-                {t.prod.supplier.detail.paymentsCount}
-              </div>
-              <div className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-                {formatIntegerForLang(supplier.payments_count, lang)}
-              </div>
+          <div className="shrink-0 text-left sm:text-right">
+            <div className="ui-label-meta">
+              {t.prod.supplier.detail.totalPaid}
             </div>
-            <div>
-              <div className="text-muted-foreground">
-                {t.prod.supplier.detail.firstSeen}
-              </div>
-              <div className="mt-0.5 text-sm font-semibold text-foreground">
-                {formatDate(supplier.first_seen_at)}
-              </div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">
-                {t.prod.supplier.detail.lastPayment}
-              </div>
-              <div className="mt-0.5 text-sm font-semibold text-foreground">
-                {supplier.last_payment_at
-                  ? formatDate(supplier.last_payment_at)
-                  : "—"}
-              </div>
+            <div className="mt-0.5 text-[22px] leading-7 font-semibold tabular-nums whitespace-nowrap text-foreground">
+              {formatMoney(supplier.total_paid_kzt)}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        <dl className="ui-dl">
+          <div className="ui-dl-row">
+            <dt className="ui-dt">{t.prod.company.binLabel}</dt>
+            <dd className="ui-dd font-mono tabular-nums">{supplier.bin}</dd>
+          </div>
+          <div className="ui-dl-row">
+            <dt className="ui-dt">{t.prod.supplier.detail.paymentsCount}</dt>
+            <dd className="ui-dd font-medium tabular-nums">
+              {formatIntegerForLang(supplier.payments_count, lang)}
+            </dd>
+          </div>
+          <div className="ui-dl-row">
+            <dt className="ui-dt">{t.prod.supplier.detail.firstSeen}</dt>
+            <dd className="ui-dd tabular-nums">
+              {formatDate(supplier.first_seen_at)}
+            </dd>
+          </div>
+          <div className="ui-dl-row">
+            <dt className="ui-dt">{t.prod.supplier.detail.lastPayment}</dt>
+            <dd className="ui-dd tabular-nums">
+              {supplier.last_payment_at
+                ? formatDate(supplier.last_payment_at)
+                : "—"}
+            </dd>
+          </div>
+        </dl>
+      </div>
 
       {/* Accounts section */}
       <Card className="min-w-0 py-0">
-        <CardHeader className="border-b border-border py-4">
-          <CardTitle className="text-base font-semibold">
-            {t.prod.supplier.detail.accountsTitle}
-          </CardTitle>
+        <CardHeader className="border-b border-border py-3.5">
+          <CardTitle>{t.prod.supplier.detail.accountsTitle}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {supplier.accounts.length === 0 ? (
-            <div className="px-5 py-8 text-sm text-muted-foreground">
-              {t.prod.supplier.detail.accountsEmpty}
+            <div className="ui-empty">
+              <p className="ui-empty-desc">
+                {t.prod.supplier.detail.accountsEmpty}
+              </p>
             </div>
           ) : (
             <>
-              {/* Mobile cards */}
+              {/* Mobile list */}
               <div className="divide-y divide-border md:hidden">
                 {supplier.accounts.map((acc) => (
                   <div key={acc.id} className="space-y-2.5 p-4">
                     <div className="space-y-0.5">
-                      <div className="font-mono text-sm font-semibold break-all text-foreground">
+                      <div className="font-mono text-sm font-medium break-all tabular-nums text-foreground">
                         {acc.iik}
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -389,14 +352,14 @@ export default function ProdSupplierDetailPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
                       <span>
                         {interpolate(t.prod.supplier.detail.periodRange, {
                           first: formatDate(acc.first_seen_at),
                           last: formatDate(acc.last_used_at),
                         })}
                       </span>
-                      <span className="tabular-nums">
+                      <span>
                         {interpolate(t.prod.supplier.detail.paymentsCountShort, {
                           count: formatIntegerForLang(acc.payments_count, lang),
                         })}
@@ -406,15 +369,15 @@ export default function ProdSupplierDetailPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       {acc.trusted ? (
                         <div className="space-y-1">
-                          <Badge
-                            variant="outline"
-                            className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
-                          >
-                            <ShieldCheck className="size-3" />
+                          <span className="ui-status text-[var(--status-ok-text)]">
+                            <span
+                              aria-hidden="true"
+                              className="ui-status-dot ui-dot-ok"
+                            />
                             <span>{t.prod.supplier.detail.trustedStatus}</span>
-                          </Badge>
+                          </span>
                           {acc.trusted_at && (
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground tabular-nums">
                               {interpolate(t.prod.supplier.detail.trustedSince, {
                                 date: formatDate(acc.trusted_at),
                               })}
@@ -427,28 +390,28 @@ export default function ProdSupplierDetailPage() {
                           )}
                         </div>
                       ) : (
-                        <Badge
-                          variant="secondary"
-                          className="h-auto py-0.5 text-xs"
-                        >
-                          {t.prod.supplier.detail.notTrustedStatus}
-                        </Badge>
+                        <span className="ui-status text-muted-foreground">
+                          <span
+                            aria-hidden="true"
+                            className="ui-status-dot ui-dot-neutral"
+                          />
+                          <span>{t.prod.supplier.detail.notTrustedStatus}</span>
+                        </span>
                       )}
 
                       {isDirector && acc.trusted && (
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
                           onClick={() => {
                             setUntrustTarget(acc);
                             setUntrustComment("");
                             setUntrustError(null);
                           }}
-                          className="min-h-10 gap-1.5 rounded-xl border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                          className="min-h-10 sm:min-h-8"
                         >
-                          <ShieldOff className="size-3.5" />
-                          <span>{t.prod.supplier.detail.untrustButton}</span>
+                          {t.prod.supplier.detail.untrustButton}
                         </Button>
                       )}
                     </div>
@@ -460,13 +423,13 @@ export default function ProdSupplierDetailPage() {
               <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-4">
                         {t.prod.supplier.detail.colIik}
                       </TableHead>
                       <TableHead>{t.prod.supplier.detail.colBank}</TableHead>
                       <TableHead>{t.prod.supplier.detail.colPeriod}</TableHead>
-                      <TableHead className="pr-5">
+                      <TableHead className="pr-4">
                         {t.prod.supplier.detail.colTrust}
                       </TableHead>
                     </TableRow>
@@ -474,25 +437,25 @@ export default function ProdSupplierDetailPage() {
                   <TableBody>
                     {supplier.accounts.map((acc) => (
                       <TableRow key={acc.id}>
-                        <TableCell className="pl-5 py-3.5 align-top whitespace-normal">
-                          <div className="font-mono text-sm font-semibold break-all">
+                        <TableCell className="pl-4 align-top whitespace-normal">
+                          <div className="font-mono text-sm font-medium break-all tabular-nums">
                             {acc.iik}
                           </div>
                           <div className="font-mono text-xs text-muted-foreground">
                             {acc.bik}
                           </div>
                         </TableCell>
-                        <TableCell className="py-3.5 align-top text-sm whitespace-normal">
+                        <TableCell className="align-top text-sm whitespace-normal">
                           {acc.bank_name || "—"}
                         </TableCell>
-                        <TableCell className="py-3.5 align-top text-xs text-muted-foreground whitespace-normal">
+                        <TableCell className="align-top text-xs text-muted-foreground tabular-nums whitespace-normal">
                           <div>
                             {interpolate(t.prod.supplier.detail.periodRange, {
                               first: formatDate(acc.first_seen_at),
                               last: formatDate(acc.last_used_at),
                             })}
                           </div>
-                          <div className="mt-0.5 tabular-nums">
+                          <div className="mt-0.5">
                             {interpolate(
                               t.prod.supplier.detail.paymentsCountShort,
                               {
@@ -504,22 +467,22 @@ export default function ProdSupplierDetailPage() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="pr-5 py-3.5 align-top whitespace-normal">
+                        <TableCell className="pr-4 align-top whitespace-normal">
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="space-y-1">
                               {acc.trusted ? (
                                 <>
-                                  <Badge
-                                    variant="outline"
-                                    className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
-                                  >
-                                    <ShieldCheck className="size-3" />
+                                  <span className="ui-status text-[var(--status-ok-text)]">
+                                    <span
+                                      aria-hidden="true"
+                                      className="ui-status-dot ui-dot-ok"
+                                    />
                                     <span>
                                       {t.prod.supplier.detail.trustedStatus}
                                     </span>
-                                  </Badge>
+                                  </span>
                                   {acc.trusted_at && (
-                                    <div className="text-xs text-muted-foreground">
+                                    <div className="text-xs text-muted-foreground tabular-nums">
                                       {interpolate(
                                         t.prod.supplier.detail.trustedSince,
                                         { date: formatDate(acc.trusted_at) }
@@ -533,31 +496,31 @@ export default function ProdSupplierDetailPage() {
                                   )}
                                 </>
                               ) : (
-                                <Badge
-                                  variant="secondary"
-                                  className="h-auto py-0.5 text-xs"
-                                >
-                                  {t.prod.supplier.detail.notTrustedStatus}
-                                </Badge>
+                                <span className="ui-status text-muted-foreground">
+                                  <span
+                                    aria-hidden="true"
+                                    className="ui-status-dot ui-dot-neutral"
+                                  />
+                                  <span>
+                                    {t.prod.supplier.detail.notTrustedStatus}
+                                  </span>
+                                </span>
                               )}
                             </div>
 
                             {isDirector && acc.trusted && (
                               <Button
                                 type="button"
-                                variant="outline"
+                                variant="destructive"
                                 size="sm"
                                 onClick={() => {
                                   setUntrustTarget(acc);
                                   setUntrustComment("");
                                   setUntrustError(null);
                                 }}
-                                className="min-h-8 gap-1.5 rounded-xl border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                className="min-h-8"
                               >
-                                <ShieldOff className="size-3.5" />
-                                <span>
-                                  {t.prod.supplier.detail.untrustButton}
-                                </span>
+                                {t.prod.supplier.detail.untrustButton}
                               </Button>
                             )}
                           </div>
@@ -574,89 +537,136 @@ export default function ProdSupplierDetailPage() {
 
       {/* Requisites change timeline */}
       <Card className="min-w-0 py-0">
-        <CardHeader className="border-b border-border py-4">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <History className="size-4 text-muted-foreground" />
-            <span>{t.prod.supplier.detail.changesTitle}</span>
-          </CardTitle>
+        <CardHeader className="border-b border-border py-3.5">
+          <CardTitle>{t.prod.supplier.detail.changesTitle}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {supplier.changes.length === 0 ? (
-            <div className="px-5 py-8 text-sm text-muted-foreground">
-              {t.prod.supplier.detail.changesEmpty}
+            <div className="ui-empty">
+              <p className="ui-empty-desc">
+                {t.prod.supplier.detail.changesEmpty}
+              </p>
             </div>
           ) : (
-            <div className="divide-y divide-border">
-              {supplier.changes.map((change) => (
-                <div
-                  key={change.id}
-                  className="flex flex-col gap-2 px-4 py-3.5 sm:px-5"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className="h-auto border-amber-300/90 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-950"
-                      >
-                        {t.prod.supplier.changeKinds[change.kind]}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
+            <>
+              {/* Mobile list (< md) */}
+              <div className="divide-y divide-border md:hidden">
+                {supplier.changes.map((change) => (
+                  <div key={change.id} className="space-y-1.5 px-4 py-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="ui-status">
+                        <span
+                          aria-hidden="true"
+                          className="ui-status-dot ui-dot-warn"
+                        />
+                        <span>{t.prod.supplier.changeKinds[change.kind]}</span>
+                      </span>
+                      <span className="text-muted-foreground tabular-nums">
                         {formatDate(change.occurred_at)}
                       </span>
                     </div>
-
-                    {change.payment_id && (
-                      <Link
-                        href={`/payments/${change.payment_id}`}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-text)] hover:underline"
-                      >
-                        <span>{t.prod.supplier.detail.openPayment}</span>
-                        <ArrowUpRight className="size-3.5" />
-                      </Link>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-background/80 p-3 text-xs sm:flex-row sm:items-center sm:gap-3">
                     {change.old_value && (
-                      <>
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            {t.prod.supplier.detail.wasLabel}
-                          </div>
-                          <div className="font-mono text-foreground break-all">
-                            {change.old_value}
-                          </div>
-                        </div>
-                        <ArrowRight className="size-4 shrink-0 rotate-90 text-muted-foreground sm:rotate-0" />
-                      </>
+                      <div className="text-muted-foreground break-all">
+                        <span>{t.prod.supplier.detail.wasLabel}: </span>
+                        <span className="font-mono text-foreground">
+                          {change.old_value}
+                        </span>
+                      </div>
                     )}
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {t.prod.supplier.detail.becameLabel}
-                      </div>
-                      <div className="font-mono font-semibold text-foreground break-all">
+                    <div className="text-muted-foreground break-all">
+                      <span>{t.prod.supplier.detail.becameLabel}: </span>
+                      <span className="font-mono font-medium text-foreground">
                         {change.new_value}
-                      </div>
+                      </span>
                     </div>
+                    {change.payment_id && (
+                      <div>
+                        <Link
+                          href={`/payments/${change.payment_id}`}
+                          className="font-medium text-[var(--brand-text)] hover:underline"
+                        >
+                          {t.prod.supplier.detail.openPayment}
+                        </Link>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+
+              {/* Dense desktop table (>= md) */}
+              <div className="hidden overflow-x-auto md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[120px] pl-4">
+                        {t.prod.audit.colTime}
+                      </TableHead>
+                      <TableHead className="w-[210px]">
+                        {t.prod.audit.colAction}
+                      </TableHead>
+                      <TableHead>{t.prod.supplier.detail.wasLabel}</TableHead>
+                      <TableHead>{t.prod.supplier.detail.becameLabel}</TableHead>
+                      <TableHead className="w-[110px] pr-4 text-right">
+                        {t.prod.supplier.detail.openPayment}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {supplier.changes.map((change) => (
+                      <TableRow key={change.id}>
+                        <TableCell className="pl-4 align-top text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                          {formatDate(change.occurred_at)}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-normal">
+                          <span className="ui-status">
+                            <span
+                              aria-hidden="true"
+                              className="ui-status-dot ui-dot-warn"
+                            />
+                            <span>
+                              {t.prod.supplier.changeKinds[change.kind]}
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="align-top font-mono text-xs text-muted-foreground whitespace-normal break-all">
+                          {change.old_value || "—"}
+                        </TableCell>
+                        <TableCell className="align-top font-mono text-xs font-medium text-foreground whitespace-normal break-all">
+                          {change.new_value}
+                        </TableCell>
+                        <TableCell className="pr-4 align-top text-right text-xs whitespace-nowrap">
+                          {change.payment_id ? (
+                            <Link
+                              href={`/payments/${change.payment_id}`}
+                              className="font-medium text-[var(--brand-text)] hover:underline"
+                            >
+                              {t.prod.supplier.detail.openPayment}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
       {/* Recent payments */}
       <Card className="min-w-0 py-0">
-        <CardHeader className="border-b border-border py-4">
-          <CardTitle className="text-base font-semibold">
-            {t.prod.supplier.detail.paymentsTitle}
-          </CardTitle>
+        <CardHeader className="border-b border-border py-3.5">
+          <CardTitle>{t.prod.supplier.detail.paymentsTitle}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {supplier.payments.length === 0 ? (
-            <div className="px-5 py-8 text-sm text-muted-foreground">
-              {t.prod.supplier.detail.paymentsEmpty}
+            <div className="ui-empty">
+              <p className="ui-empty-desc">
+                {t.prod.supplier.detail.paymentsEmpty}
+              </p>
             </div>
           ) : (
             <PaymentsTable payments={supplier.payments} />
@@ -690,10 +700,7 @@ export default function ProdSupplierDetailPage() {
 
           <div className="space-y-3">
             {untrustError && (
-              <Alert
-                variant="destructive"
-                className="border-red-300 bg-red-50/90"
-              >
+              <Alert variant="destructive">
                 <AlertCircle className="size-4" />
                 <AlertDescription className="break-words">
                   {untrustError}
@@ -705,12 +712,16 @@ export default function ProdSupplierDetailPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label htmlFor="untrust-comment-input">
                   {t.prod.supplier.detail.untrustCommentLabel}
-                  <span className="ml-1 font-semibold text-red-600">*</span>
+                  <span className="ml-1 font-semibold text-[var(--status-danger-text)]">
+                    *
+                  </span>
                 </Label>
                 <span
                   className={cn(
                     "text-xs font-medium tabular-nums",
-                    untrustTooShort ? "text-red-700" : "text-[#006B49]"
+                    untrustTooShort
+                      ? "text-[var(--status-danger-text)]"
+                      : "text-[var(--status-ok-text)]"
                   )}
                 >
                   {interpolate(t.prod.supplier.detail.untrustCommentRequired, {
@@ -744,7 +755,7 @@ export default function ProdSupplierDetailPage() {
               variant="outline"
               onClick={() => setUntrustTarget(null)}
               disabled={isUntrusting}
-              className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {t.common.cancel}
             </Button>
@@ -753,7 +764,7 @@ export default function ProdSupplierDetailPage() {
               variant="destructive"
               disabled={untrustTooShort || isUntrusting}
               onClick={() => void handleUntrustSubmit()}
-              className="min-h-11 w-full gap-2 sm:min-h-10 sm:w-auto"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               {isUntrusting ? (
                 <>
@@ -761,10 +772,7 @@ export default function ProdSupplierDetailPage() {
                   <span>{t.prod.supplier.detail.untrusting}</span>
                 </>
               ) : (
-                <>
-                  <ShieldOff className="size-4" />
-                  <span>{t.prod.supplier.detail.untrustConfirm}</span>
-                </>
+                <span>{t.prod.supplier.detail.untrustConfirm}</span>
               )}
             </Button>
           </DialogFooter>

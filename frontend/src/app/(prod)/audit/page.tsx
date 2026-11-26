@@ -3,21 +3,9 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Inbox,
-  Loader2,
-  RefreshCw,
-  ScrollText,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -95,25 +83,28 @@ function summarizeDetails(details: Record<string, unknown>): string {
     .join(" · ");
 }
 
-function actionBadgeClass(action: string): string {
+function actionTone(action: string): { dotClass: string; textClass?: string } {
   if (
     action === "sign_denied" ||
     action === "login_failed" ||
     action === "password_change_failed"
   ) {
-    return "border-red-300 bg-red-50 text-red-800";
+    return {
+      dotClass: "ui-dot-danger",
+      textClass: "text-[var(--status-danger-text)]",
+    };
   }
   if (
     action === "sign" ||
     action === "decision:approved" ||
     action === "decision:approved_trusted"
   ) {
-    return "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]";
+    return { dotClass: "ui-dot-ok" };
   }
   if (action === "decision:rejected" || action === "trust_revoked") {
-    return "border-amber-300 bg-amber-50 text-amber-900";
+    return { dotClass: "ui-dot-warn" };
   }
-  return "border-border bg-muted/60 text-foreground";
+  return { dotClass: "ui-dot-neutral" };
 }
 
 function AuditPageContent() {
@@ -207,20 +198,11 @@ function AuditPageContent() {
   const actionLabels: Record<string, string> = t.prod.audit.actions;
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="ui-page-header">
         <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[var(--brand-text)]">
-              <ScrollText className="size-5" />
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              {t.prod.audit.title}
-            </h1>
-          </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {t.prod.audit.subtitle}
-          </p>
+          <h1 className="ui-page-title">{t.prod.audit.title}</h1>
+          <p className="ui-page-subtitle">{t.prod.audit.subtitle}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -231,7 +213,7 @@ function AuditPageContent() {
               size="sm"
               onClick={() => void handleVerify()}
               disabled={isVerifying}
-              className="min-h-11 gap-1.5 rounded-xl border-[#00AB75]/40 bg-[#E8F8F2]/60 text-[#006B49] hover:bg-[#E8F8F2] sm:min-h-9"
+              className="min-h-10 sm:min-h-8"
             >
               {isVerifying ? (
                 <>
@@ -239,10 +221,7 @@ function AuditPageContent() {
                   <span>{t.prod.audit.verifying}</span>
                 </>
               ) : (
-                <>
-                  <ShieldCheck className="size-3.5" />
-                  <span>{t.prod.audit.verifyButton}</span>
-                </>
+                <span>{t.prod.audit.verifyButton}</span>
               )}
             </Button>
           )}
@@ -253,7 +232,7 @@ function AuditPageContent() {
             size="sm"
             onClick={handleRefresh}
             disabled={isLoading}
-            className="min-h-11 gap-1.5 rounded-xl sm:min-h-9"
+            className="min-h-10 gap-1.5 sm:min-h-8"
           >
             <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
             <span>{t.common.refresh}</span>
@@ -262,26 +241,19 @@ function AuditPageContent() {
       </div>
 
       {verifyResult && (
-        <Alert
-          variant={verifyResult.ok ? "default" : "destructive"}
+        <div
+          role="status"
           className={cn(
-            "rounded-2xl",
-            verifyResult.ok
-              ? "border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]"
-              : "border-red-300 bg-red-50/90"
+            "ui-notice space-y-0.5",
+            verifyResult.ok ? "ui-notice-ok" : "ui-notice-danger"
           )}
         >
-          {verifyResult.ok ? (
-            <CheckCircle2 className="size-4 text-[var(--brand-text)]" />
-          ) : (
-            <ShieldAlert className="size-4 text-red-600" />
-          )}
-          <AlertTitle>
+          <div className="text-sm font-semibold text-foreground">
             {verifyResult.ok
               ? t.prod.audit.verifyOkTitle
               : t.prod.audit.verifyBrokenTitle}
-          </AlertTitle>
-          <AlertDescription className="break-words">
+          </div>
+          <p className="text-xs text-muted-foreground tabular-nums break-words">
             {verifyResult.ok
               ? interpolate(t.prod.audit.verifyOkDescription, {
                   checked: verifyResult.checked,
@@ -290,15 +262,12 @@ function AuditPageContent() {
                   id: verifyResult.broken_at ?? "?",
                   checked: verifyResult.checked,
                 })}
-          </AlertDescription>
-        </Alert>
+          </p>
+        </div>
       )}
 
       {error && (
-        <Alert
-          variant="destructive"
-          className="rounded-2xl border-red-300 bg-red-50/90"
-        >
+        <Alert variant="destructive" className="ui-notice ui-notice-danger">
           <AlertTriangle className="size-4" />
           <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words">
@@ -308,7 +277,7 @@ function AuditPageContent() {
               variant="outline"
               size="sm"
               onClick={handleRefresh}
-              className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+              className="min-h-10 gap-1.5 sm:min-h-8"
             >
               <RefreshCw className="size-3.5" />
               <span>{t.common.retry}</span>
@@ -319,7 +288,7 @@ function AuditPageContent() {
 
       <Card className="min-w-0 py-0">
         {/* Filter toolbar */}
-        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative flex-1 sm:max-w-xs">
             <Search
               aria-hidden="true"
@@ -330,7 +299,7 @@ function AuditPageContent() {
               value={paymentIdInput}
               onChange={(e) => setPaymentIdInput(e.target.value)}
               placeholder={t.prod.audit.paymentFilterPlaceholder}
-              className="h-11 rounded-xl bg-background/70 pl-9 pr-9 font-mono text-xs sm:h-10 [&::-webkit-search-cancel-button]:hidden"
+              className="h-10 rounded-[6px] bg-card pl-9 pr-9 font-mono text-base sm:h-9 sm:text-xs [&::-webkit-search-cancel-button]:hidden"
             />
             {paymentIdInput && (
               <button
@@ -340,7 +309,7 @@ function AuditPageContent() {
                   setDebouncedPaymentId("");
                 }}
                 aria-label={t.queue.clearSearch}
-                className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-muted hover:text-foreground sm:size-7"
               >
                 <X className="size-4" />
               </button>
@@ -351,7 +320,7 @@ function AuditPageContent() {
             aria-label={t.prod.audit.colAction}
             value={actionFilter}
             onChange={(e) => setActionFilter(e.target.value)}
-            className="h-11 rounded-xl border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-10"
+            className="ui-select"
           >
             <option value="">{t.prod.audit.actionFilterAll}</option>
             {AUDIT_ACTIONS.map((action) => (
@@ -365,7 +334,7 @@ function AuditPageContent() {
             aria-label={t.prod.audit.limitLabel}
             value={limit}
             onChange={(e) => setLimit(Number(e.target.value))}
-            className="h-11 rounded-xl border border-input bg-card px-3 text-sm tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-10"
+            className="ui-select tabular-nums"
           >
             {LIMIT_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
@@ -379,90 +348,86 @@ function AuditPageContent() {
           {isLoading ? (
             <div className="space-y-3 p-4">
               {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                <Skeleton key={i} className="h-12 w-full rounded-[6px]" />
               ))}
             </div>
           ) : entries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-14 px-4 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-                <Inbox className="size-6" />
-              </div>
-              <div className="space-y-1">
-                <div className="text-base font-semibold text-foreground">
-                  {t.prod.audit.emptyTitle}
-                </div>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {t.prod.audit.emptyDescription}
-                </p>
-              </div>
+            <div className="ui-empty">
+              <div className="ui-empty-title">{t.prod.audit.emptyTitle}</div>
+              <p className="ui-empty-desc">{t.prod.audit.emptyDescription}</p>
             </div>
           ) : (
             <>
-              {/* Mobile cards */}
+              {/* Mobile flat list */}
               <div className="divide-y divide-border md:hidden">
-                {entries.map((entry) => (
-                  <div key={entry.id} className="space-y-2 p-4 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "h-auto px-2 py-0.5 text-xs font-medium",
-                          actionBadgeClass(entry.action)
-                        )}
-                      >
-                        {actionLabels[entry.action] ?? entry.action}
-                      </Badge>
-                      <span className="font-mono text-muted-foreground tabular-nums">
-                        {formatTimestamp(entry.timestamp, lang)}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 text-foreground">
-                      <span className="font-medium">
-                        {entry.user
-                          ? `${entry.user.login} (${t.prod.roles[entry.user.role]})`
-                          : t.prod.audit.systemUser}
-                      </span>
-                      {entry.verdict && <VerdictBadge verdict={entry.verdict} />}
-                    </div>
-
-                    {entry.payment_id && (
-                      <div>
-                        <Link
-                          href={`/payments/${entry.payment_id}`}
-                          className="font-mono font-medium text-[var(--brand-text)] hover:underline"
-                        >
-                          {entry.payment_id}
-                        </Link>
+                {entries.map((entry) => {
+                  const tone = actionTone(entry.action);
+                  return (
+                    <div key={entry.id} className="space-y-2 p-4 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className={cn("ui-status", tone.textClass)}>
+                          <span
+                            aria-hidden="true"
+                            className={cn("ui-status-dot", tone.dotClass)}
+                          />
+                          <span>
+                            {actionLabels[entry.action] ?? entry.action}
+                          </span>
+                        </span>
+                        <span className="font-mono text-muted-foreground tabular-nums">
+                          {formatTimestamp(entry.timestamp, lang)}
+                        </span>
                       </div>
-                    )}
 
-                    <div className="text-muted-foreground break-words">
-                      {summarizeDetails(entry.details)}
-                    </div>
+                      <div className="flex flex-wrap items-center gap-2 text-foreground">
+                        <span className="font-medium">
+                          {entry.user
+                            ? `${entry.user.login} (${t.prod.roles[entry.user.role]})`
+                            : t.prod.audit.systemUser}
+                        </span>
+                        {entry.verdict && (
+                          <VerdictBadge verdict={entry.verdict} />
+                        )}
+                      </div>
 
-                    <div
-                      className="font-mono text-[11px] text-muted-foreground/80 truncate"
-                      title={entry.entry_hash}
-                    >
-                      #{entry.id} · {entry.entry_hash.slice(0, 16)}…
+                      {entry.payment_id && (
+                        <div>
+                          <Link
+                            href={`/payments/${entry.payment_id}`}
+                            className="font-mono font-medium text-[var(--brand-text)] hover:underline"
+                          >
+                            {entry.payment_id}
+                          </Link>
+                        </div>
+                      )}
+
+                      <div className="text-muted-foreground break-words">
+                        {summarizeDetails(entry.details)}
+                      </div>
+
+                      <div
+                        className="font-mono text-[11px] tabular-nums text-muted-foreground truncate"
+                        title={entry.entry_hash}
+                      >
+                        #{entry.id} · {entry.entry_hash.slice(0, 16)}…
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Desktop table */}
               <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="w-[155px] pl-4 lg:pl-5">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-[155px] pl-4">
                         {t.prod.audit.colTime}
                       </TableHead>
                       <TableHead className="w-[165px]">
                         {t.prod.audit.colUser}
                       </TableHead>
-                      <TableHead className="w-[195px]">
+                      <TableHead className="w-[210px]">
                         {t.prod.audit.colAction}
                       </TableHead>
                       <TableHead className="w-[130px]">
@@ -472,76 +437,79 @@ function AuditPageContent() {
                         {t.prod.audit.colVerdict}
                       </TableHead>
                       <TableHead>{t.prod.audit.colDetails}</TableHead>
-                      <TableHead className="w-[115px] pr-4 lg:pr-5">
+                      <TableHead className="w-[115px] pr-4">
                         {t.prod.audit.colHash}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {entries.map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell className="pl-4 lg:pl-5 py-3 align-top font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
-                          {formatTimestamp(entry.timestamp, lang)}
-                        </TableCell>
-                        <TableCell className="py-3 align-top text-xs whitespace-normal">
-                          {entry.user ? (
-                            <div className="space-y-0.5">
-                              <div className="font-medium text-foreground">
-                                {entry.user.login}
+                    {entries.map((entry) => {
+                      const tone = actionTone(entry.action);
+                      return (
+                        <TableRow key={entry.id}>
+                          <TableCell className="pl-4 py-2.5 align-top font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                            {formatTimestamp(entry.timestamp, lang)}
+                          </TableCell>
+                          <TableCell className="py-2.5 align-top text-xs whitespace-normal">
+                            {entry.user ? (
+                              <div className="space-y-0.5">
+                                <div className="font-medium text-foreground">
+                                  {entry.user.login}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {t.prod.roles[entry.user.role]}
+                                </div>
                               </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {t.prod.roles[entry.user.role]}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">
-                              {t.prod.audit.systemUser}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-3 align-top whitespace-normal">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "h-auto px-2 py-0.5 text-xs font-medium",
-                              actionBadgeClass(entry.action)
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {t.prod.audit.systemUser}
+                              </span>
                             )}
-                          >
-                            {actionLabels[entry.action] ?? entry.action}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-3 align-top font-mono text-xs whitespace-nowrap">
-                          {entry.payment_id ? (
-                            <Link
-                              href={`/payments/${entry.payment_id}`}
-                              className="font-medium text-[var(--brand-text)] hover:underline"
-                            >
-                              {entry.payment_id}
-                            </Link>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-3 align-top">
-                          {entry.verdict ? (
-                            <VerdictBadge verdict={entry.verdict} />
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              —
+                          </TableCell>
+                          <TableCell className="py-2.5 align-top whitespace-normal">
+                            <span className={cn("ui-status", tone.textClass)}>
+                              <span
+                                aria-hidden="true"
+                                className={cn("ui-status-dot", tone.dotClass)}
+                              />
+                              <span>
+                                {actionLabels[entry.action] ?? entry.action}
+                              </span>
                             </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="min-w-0 max-w-[300px] py-3 align-top text-xs text-muted-foreground whitespace-normal break-words">
-                          {summarizeDetails(entry.details)}
-                        </TableCell>
-                        <TableCell
-                          className="pr-4 lg:pr-5 py-3 align-top font-mono text-[11px] text-muted-foreground whitespace-nowrap"
-                          title={entry.entry_hash}
-                        >
-                          {entry.entry_hash.slice(0, 12)}…
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell className="py-2.5 align-top font-mono text-xs whitespace-nowrap">
+                            {entry.payment_id ? (
+                              <Link
+                                href={`/payments/${entry.payment_id}`}
+                                className="font-medium text-[var(--brand-text)] hover:underline"
+                              >
+                                {entry.payment_id}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2.5 align-top">
+                            {entry.verdict ? (
+                              <VerdictBadge verdict={entry.verdict} />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="min-w-0 max-w-[300px] py-2.5 align-top text-xs text-muted-foreground whitespace-normal break-words">
+                            {summarizeDetails(entry.details)}
+                          </TableCell>
+                          <TableCell
+                            className="pr-4 py-2.5 align-top font-mono text-[11px] tabular-nums text-muted-foreground whitespace-nowrap"
+                            title={entry.entry_hash}
+                          >
+                            {entry.entry_hash.slice(0, 12)}…
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -559,8 +527,8 @@ export default function ProdAuditPage() {
       <Suspense
         fallback={
           <div className="space-y-4">
-            <Skeleton className="h-9 w-56" />
-            <Skeleton className="h-72 w-full rounded-xl" />
+            <Skeleton className="h-7 w-56 rounded-[6px]" />
+            <Skeleton className="h-72 w-full rounded-[8px]" />
           </div>
         }
       >
