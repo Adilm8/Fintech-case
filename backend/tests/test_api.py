@@ -755,9 +755,7 @@ class TestI18nApiEndpoints:
         resp = client.request(method, path, params={"lang": "fr"})
         assert resp.status_code == 422
 
-    def test_unknown_lang_on_post_check_and_approvals_returns_422(
-        self, client: TestClient
-    ) -> None:
+    def test_unknown_lang_on_post_check_and_approvals_returns_422(self, client: TestClient) -> None:
         queue = client.get("/api/payments/queue").json()
         req = _queue_item_to_check_request(queue[0])
 
@@ -808,7 +806,9 @@ class TestBankingSecrecyAndAnalystRole:
                 assert "analyst_details" not in body
                 serialized = json.dumps(body, ensure_ascii=False)
                 for secret in forbidden:
-                    assert secret not in serialized, f"Leaked {secret!r} in check ({lang}, {headers})"
+                    assert secret not in serialized, (
+                        f"Leaked {secret!r} in check ({lang}, {headers})"
+                    )
 
                 other_sig = next(
                     s for s in body["signals"] if s["rule_id"] == "bcc_account_other_owner"
@@ -983,10 +983,10 @@ class TestBankingSecrecyAndAnalystRole:
         grey_req = _queue_item_to_check_request(next(q for q in store.queue if q["id"] == "Q-004"))
 
         # 1. Duplicate invoice across two POST /api/payments/check calls -> 2nd turns yellow
-        first = client.post("/api/payments/check", json=green_req).json()
+        first = client.post("/api/payments/check?commit=true", json=green_req).json()
         assert first["verdict"] == "green"
         second = client.post(
-            "/api/payments/check",
+            "/api/payments/check?commit=true",
             json={**green_req, "purpose": "Повтор сч. 214 за материалы"},
         ).json()
         assert second["verdict"] == "yellow"
@@ -998,24 +998,24 @@ class TestBankingSecrecyAndAnalystRole:
         # 2. Structuring: 3 payments of 40% median (540_000) in a row -> 3rd triggers structuring_72h
         for inv_no in (951, 952):
             res = client.post(
-                "/api/payments/check",
+                "/api/payments/check?commit=true",
                 json={**green_req, "amount_kzt": 540_000, "purpose": f"Оплата по счёту № {inv_no}"},
             ).json()
             assert res["verdict"] == "green"
             assert all(s["rule_id"] != "structuring_72h" for s in res["signals"])
         third = client.post(
-            "/api/payments/check",
+            "/api/payments/check?commit=true",
             json={**green_req, "amount_kzt": 540_000, "purpose": "Оплата по счёту № 953"},
         ).json()
         assert any(s["rule_id"] == "structuring_72h" for s in third["signals"])
 
         # 3. Accumulated amount to same new recipient across checks within 7 days -> amplifier
         client.post(
-            "/api/payments/check",
+            "/api/payments/check?commit=true",
             json={**grey_req, "amount_kzt": 1_000_000, "purpose": "Оплата сч. 701"},
         )
         acc_resp = client.post(
-            "/api/payments/check",
+            "/api/payments/check?commit=true",
             json={**grey_req, "amount_kzt": 1_000_000, "purpose": "Оплата сч. 702"},
         ).json()
         assert any(s["rule_id"] == "new_recipient_accumulated" for s in acc_resp["signals"])
@@ -1046,26 +1046,26 @@ class TestStep4DedupMetricsLocalizationAndAudit:
 
         # 1. Re-checking the exact same form across ru/kk/en must NOT trigger duplicate_invoice
         for lang in ("ru", "kk", "en", "ru"):
-            resp = client.post("/api/payments/check", params={"lang": lang}, json=green_req).json()
+            resp = client.post("/api/payments/check", params={"lang": lang, "commit": "true"}, json=green_req).json()
             assert resp["verdict"] == "green"
             assert all(s["rule_id"] != "duplicate_invoice" for s in resp["signals"])
 
         # 2. Re-checking identical 40% chunk 4 times must NOT trigger structuring_72h
         chunk = {**green_req, "amount_kzt": 540_000, "purpose": "Оплата по счёту № 981"}
         for lang in ("ru", "kk", "en", "ru"):
-            resp = client.post("/api/payments/check", params={"lang": lang}, json=chunk).json()
+            resp = client.post("/api/payments/check", params={"lang": lang, "commit": "true"}, json=chunk).json()
             assert resp["verdict"] == "green"
             assert all(s["rule_id"] != "structuring_72h" for s in resp["signals"])
 
         # 3. Re-checking identical new-recipient payment must NOT trigger new_recipient_accumulated
         big_new = {**grey_req, "amount_kzt": 1_200_000, "purpose": "Аванс по счёту № 811"}
         for lang in ("ru", "kk", "en"):
-            resp = client.post("/api/payments/check", params={"lang": lang}, json=big_new).json()
+            resp = client.post("/api/payments/check", params={"lang": lang, "commit": "true"}, json=big_new).json()
             assert all(s["rule_id"] != "new_recipient_accumulated" for s in resp["signals"])
 
         # 4. A genuinely different second payment to the same new recipient DOES trigger it
         second_new = {**grey_req, "amount_kzt": 1_200_000, "purpose": "Аванс по счёту № 812"}
-        resp2 = client.post("/api/payments/check", json=second_new).json()
+        resp2 = client.post("/api/payments/check?commit=true", json=second_new).json()
         assert any(s["rule_id"] == "new_recipient_accumulated" for s in resp2["signals"])
 
     def test_evidence_and_metrics_are_localized_with_stopped_escalated_and_history_replay(
@@ -1073,9 +1073,9 @@ class TestStep4DedupMetricsLocalizationAndAudit:
     ) -> None:
         # Localized evidence labels & expected/actual on POST /api/payments/check
         q2_req = _queue_item_to_check_request(next(q for q in store.queue if q["id"] == "Q-002"))
-        ev_ru = client.post("/api/payments/check", params={"lang": "ru"}, json=q2_req).json()
-        ev_kk = client.post("/api/payments/check", params={"lang": "kk"}, json=q2_req).json()
-        ev_en = client.post("/api/payments/check", params={"lang": "en"}, json=q2_req).json()
+        ev_ru = client.post("/api/payments/check", params={"lang": "ru", "commit": "true"}, json=q2_req).json()
+        ev_kk = client.post("/api/payments/check", params={"lang": "kk", "commit": "true"}, json=q2_req).json()
+        ev_en = client.post("/api/payments/check", params={"lang": "en", "commit": "true"}, json=q2_req).json()
 
         sig_ru = next(s for s in ev_ru["signals"] if s["rule_id"] == "iik_changed")
         sig_kk = next(s for s in ev_kk["signals"] if s["rule_id"] == "iik_changed")
@@ -1090,12 +1090,8 @@ class TestStep4DedupMetricsLocalizationAndAudit:
         q3_req = _queue_item_to_check_request(next(q for q in store.queue if q["id"] == "Q-003"))
         q3_en = client.post("/api/payments/check", params={"lang": "en"}, json=q3_req).json()
         q3_kk = client.post("/api/payments/check", params={"lang": "kk"}, json=q3_req).json()
-        bcc_sig_en = next(
-            s for s in q3_en["signals"] if s["rule_id"] == "bcc_account_other_owner"
-        )
-        bcc_sig_kk = next(
-            s for s in q3_kk["signals"] if s["rule_id"] == "bcc_account_other_owner"
-        )
+        bcc_sig_en = next(s for s in q3_en["signals"] if s["rule_id"] == "bcc_account_other_owner")
+        bcc_sig_kk = next(s for s in q3_kk["signals"] if s["rule_id"] == "bcc_account_other_owner")
         assert "does not match" in (bcc_sig_en["evidence"]["actual"] or "").lower()
         assert bcc_sig_kk["evidence"]["actual"] != bcc_sig_en["evidence"]["actual"]
         assert "Вектор Трейд" not in json.dumps(q3_en, ensure_ascii=False)
@@ -1144,9 +1140,7 @@ class TestStep4DedupMetricsLocalizationAndAudit:
         # Unsupported lang returns 422
         assert client.get("/api/metrics", params={"lang": "fr"}).status_code == 422
 
-    def test_append_only_audit_log_ruleset_version_and_privacy(
-        self, client: TestClient
-    ) -> None:
+    def test_append_only_audit_log_ruleset_version_and_privacy(self, client: TestClient) -> None:
         from pathlib import Path
 
         live_audit = Path(__file__).resolve().parents[1] / "data" / "audit.jsonl"
@@ -1241,3 +1235,31 @@ class TestStep4DedupMetricsLocalizationAndAudit:
 
         assert client.get("/api/audit", params={"limit": 0}).status_code == 422
         assert client.get("/api/audit", params={"limit": 1001}).status_code == 422
+
+
+def test_dry_run_checks_do_not_change_verdict_on_repeated_edits() -> None:
+    """Editing the same draft several times must not trigger memory rules (review K1)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app)
+    client.post("/api/demo/reset")
+    item = next(q for q in client.get("/api/payments/queue").json() if q["id"] == "Q-001")
+    req = {
+        k: item[k]
+        for k in (
+            "recipient_name",
+            "recipient_bin",
+            "recipient_iik",
+            "recipient_bik",
+            "amount_kzt",
+            "purpose",
+        )
+    }
+    verdicts = []
+    for delta in (0, 1, 2, 3):
+        body = {**req, "amount_kzt": req["amount_kzt"] + delta}
+        verdicts.append(client.post("/api/payments/check", json=body).json()["verdict"])
+    client.post("/api/demo/reset")
+    assert verdicts == ["green"] * 4

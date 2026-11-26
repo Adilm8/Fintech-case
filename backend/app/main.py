@@ -231,15 +231,21 @@ def post_check_payment(
     payload: CheckRequest,
     lang: LangQuery = DEFAULT_LANG,
     x_role: RoleHeader = None,
+    commit: Annotated[bool, Query()] = False,
 ) -> CheckResult:
-    """Verify supplier payment requisites before signing."""
+    """Verify supplier payment requisites before signing.
+
+    Checks are dry runs by default: drafts, edits and attack-console probes are
+    not remembered. Only `commit=true` (an intent to pay) feeds short-term memory
+    used by the duplicate-invoice, structuring and accumulation rules.
+    """
     resolved = _resolve_request_payer(payload, lang=lang)
     result = check_payment(
         resolved,
         store,
         lang=lang,
         include_analyst_details=_is_analyst_role(x_role),
-        record_in_memory=True,
+        record_in_memory=commit,
     )
     append_audit_entry(
         store.audit_log_path,
