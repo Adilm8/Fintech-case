@@ -127,7 +127,7 @@ export default function Home() {
   ).length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background overflow-x-clip">
       <AppHeader
         role={role}
         onRoleChange={handleRoleChange}
@@ -137,19 +137,22 @@ export default function Home() {
         onLogoClick={() => setSelectedPayment(null)}
       />
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-6 space-y-6">
+      <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-5 sm:px-6 sm:py-6 sm:space-y-6">
         {apiError && (
-          <Alert variant="destructive" className="bg-red-50/90 border-red-300">
+          <Alert
+            variant="destructive"
+            className="bg-red-50/90 border-red-300 px-3.5 py-3 pr-3.5 sm:pr-32"
+          >
             <AlertTriangle className="size-4" />
             <AlertTitle>Ошибка соединения с сервером</AlertTitle>
-            <AlertDescription>{apiError}</AlertDescription>
-            <AlertAction>
+            <AlertDescription className="break-words">{apiError}</AlertDescription>
+            <AlertAction className="static col-span-full mt-2.5 sm:absolute sm:top-2.5 sm:right-2.5 sm:mt-0">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => loadData(true)}
-                className="gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50"
+                className="min-h-11 w-full gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50 sm:min-h-8 sm:w-auto"
               >
                 <RefreshCw className="size-3.5" />
                 <span>Повторить</span>

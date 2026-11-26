@@ -145,35 +145,41 @@ function PendingApprovalCard({
   };
 
   return (
-    <Card className="border-border shadow-xs">
+    <Card className="min-w-0 border-border shadow-xs">
       <CardHeader className="border-b border-border pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <CardTitle className="text-lg font-semibold">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1 space-y-1">
+            <CardTitle className="text-lg font-semibold break-words">
               {summary.recipientName}
             </CardTitle>
-            <CardDescription className="space-y-0.5">
+            <CardDescription className="space-y-1">
               {(summary.recipientBin || summary.recipientIik) && (
-                <div className="font-mono text-xs">
-                  {summary.recipientBin ? `БИН ${summary.recipientBin}` : ""}
-                  {summary.recipientBin && summary.recipientIik ? " · " : ""}
-                  {summary.recipientIik}
+                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs">
+                  {summary.recipientBin && (
+                    <span>БИН {summary.recipientBin}</span>
+                  )}
+                  {summary.recipientBin && summary.recipientIik && (
+                    <span aria-hidden="true">·</span>
+                  )}
+                  {summary.recipientIik && (
+                    <span className="break-all">{summary.recipientIik}</span>
+                  )}
                 </div>
               )}
               {summary.purpose && (
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground break-words">
                   {summary.purpose}
                 </div>
               )}
               {approval.check.history?.compared_with && (
-                <div className="inline-block rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
                   Сравнение с похожим поставщиком:{" "}
                   {approval.check.history.compared_with}
                 </div>
               )}
             </CardDescription>
           </div>
-          <div className="text-left sm:text-right space-y-1">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right sm:space-y-1">
             <div className="text-2xl font-bold tabular-nums text-foreground">
               {summary.amountDisplay}
             </div>
@@ -200,10 +206,10 @@ function PendingApprovalCard({
 
         <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-1.5">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <MessageSquare className="size-3.5" />
+            <MessageSquare className="size-3.5 shrink-0" />
             <span>Комментарий бухгалтера</span>
           </div>
-          <p className="text-sm text-foreground">
+          <p className="text-sm text-foreground break-words">
             {approval.accountant_note?.trim()
               ? approval.accountant_note
               : "Бухгалтер не оставил дополнительный комментарий."}
@@ -217,7 +223,9 @@ function PendingApprovalCard({
             <Alert variant="destructive" className="bg-red-50/90 border-red-300">
               <AlertCircle className="size-4" />
               <AlertTitle>Не удалось сохранить решение</AlertTitle>
-              <AlertDescription>{cardError}</AlertDescription>
+              <AlertDescription className="break-words">
+                {cardError}
+              </AlertDescription>
             </Alert>
           )}
 
@@ -246,6 +254,7 @@ function PendingApprovalCard({
               id={`director-comment-${approval.id}`}
               rows={3}
               aria-required={commentRequiredForApprove}
+              className="w-full min-h-24"
               placeholder={
                 commentRequiredForApprove
                   ? `Укажите причину одобрения (не менее ${MIN_DIRECTOR_COMMENT_LENGTH} символов). Для отклонения комментарий не обязателен.`
@@ -265,7 +274,7 @@ function PendingApprovalCard({
           </div>
 
           {allowTrust && (
-            <div className="flex items-start gap-2.5 rounded-lg border border-border bg-background px-3.5 py-2.5">
+            <div className="flex min-h-11 items-start gap-3 rounded-lg border border-border bg-background px-3.5 py-2.5">
               <Checkbox
                 id={`trust-account-${approval.id}`}
                 checked={trustAccount}
@@ -273,9 +282,9 @@ function PendingApprovalCard({
                   setTrustAccount(Boolean(checked));
                   if (cardError) setCardError(null);
                 }}
-                className="mt-0.5"
+                className="mt-1"
               />
-              <div className="space-y-0.5">
+              <div className="min-w-0 flex-1 space-y-0.5">
                 <Label
                   htmlFor={`trust-account-${approval.id}`}
                   className="cursor-pointer font-medium text-foreground"
@@ -291,13 +300,13 @@ function PendingApprovalCard({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
+          <div className="flex flex-col gap-2.5 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             <Button
               type="button"
               size="lg"
               disabled={isApproveDisabled}
               onClick={() => handleDecision("approved")}
-              className="gap-2"
+              className="min-h-11 w-full gap-2 sm:w-auto"
             >
               {submittingDecision === "approved" ? (
                 <>
@@ -318,7 +327,7 @@ function PendingApprovalCard({
               size="lg"
               disabled={submittingDecision !== null}
               onClick={() => handleDecision("rejected")}
-              className="gap-2"
+              className="min-h-11 w-full gap-2 sm:w-auto"
             >
               {submittingDecision === "rejected" ? (
                 <>
@@ -371,8 +380,8 @@ export function DirectorScreen({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Кабинет директора — согласование платежей
           </h1>
@@ -388,7 +397,7 @@ export function DirectorScreen({
           size="sm"
           onClick={() => void onRefresh()}
           disabled={isLoading}
-          className="gap-1.5"
+          className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
         >
           <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
           <span>Обновить</span>
@@ -398,16 +407,18 @@ export function DirectorScreen({
       {screenError && (
         <Alert
           variant="destructive"
-          className="bg-red-50/90 border-red-300 pr-10"
+          className="bg-red-50/90 border-red-300 pr-12"
         >
           <AlertCircle className="size-4" />
           <AlertTitle>Заявка обновлена</AlertTitle>
-          <AlertDescription>{screenError}</AlertDescription>
+          <AlertDescription className="break-words">
+            {screenError}
+          </AlertDescription>
           <button
             type="button"
             aria-label="Закрыть уведомление"
             onClick={() => setScreenError(null)}
-            className="absolute top-2.5 right-2.5 rounded p-1 opacity-70 hover:opacity-100"
+            className="absolute top-1.5 right-1.5 flex size-11 items-center justify-center rounded opacity-70 hover:opacity-100 sm:top-2 sm:right-2 sm:size-8"
           >
             <X className="size-4" />
           </button>
@@ -417,7 +428,7 @@ export function DirectorScreen({
       {feedback && (
         <Alert
           className={cn(
-            "pr-10",
+            "pr-12",
             feedback.decision === "approved"
               ? "border-emerald-300 bg-emerald-50 text-emerald-950"
               : "border-slate-300 bg-slate-50 text-slate-950"
@@ -433,14 +444,14 @@ export function DirectorScreen({
               ? "Платёж одобрен"
               : "Платёж отклонён"}
           </AlertTitle>
-          <AlertDescription>
+          <AlertDescription className="break-words">
             Решение по платежу для {feedback.recipientName} сохранено.
           </AlertDescription>
           <button
             type="button"
             aria-label="Закрыть уведомление"
             onClick={() => setFeedback(null)}
-            className="absolute top-2.5 right-2.5 rounded p-1 opacity-70 hover:opacity-100"
+            className="absolute top-1.5 right-1.5 flex size-11 items-center justify-center rounded opacity-70 hover:opacity-100 sm:top-2 sm:right-2 sm:size-8"
           >
             <X className="size-4" />
           </button>
@@ -484,7 +495,7 @@ export function DirectorScreen({
       )}
 
       {resolvedApprovals.length > 0 && (
-        <Card className="border-border shadow-xs">
+        <Card className="min-w-0 border-border shadow-xs">
           <CardHeader className="border-b border-border pb-3.5">
             <CardTitle className="text-base font-semibold">Решённые</CardTitle>
           </CardHeader>
@@ -496,11 +507,11 @@ export function DirectorScreen({
               return (
                 <div
                   key={approval.id}
-                  className="flex flex-wrap items-center justify-between gap-4 px-5 py-3.5 text-sm"
+                  className="flex flex-col gap-2.5 px-4 py-3.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4 sm:px-5"
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-foreground">
+                      <span className="font-medium text-foreground break-words">
                         {summary.recipientName}
                       </span>
                       <span className="font-semibold tabular-nums text-foreground">
@@ -508,7 +519,7 @@ export function DirectorScreen({
                       </span>
                     </div>
                     {approval.director_comment && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground break-words">
                         Комментарий директора: {approval.director_comment}
                       </p>
                     )}
@@ -518,7 +529,7 @@ export function DirectorScreen({
                     {approval.trust_account && (
                       <Badge
                         variant="outline"
-                        className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-800"
+                        className="h-auto gap-1 border-emerald-200 bg-emerald-50 py-0.5 text-emerald-800"
                       >
                         <ShieldCheck className="size-3" />
                         <span>Доверенный счёт</span>
@@ -527,6 +538,7 @@ export function DirectorScreen({
                     <Badge
                       variant="outline"
                       className={cn(
+                        "h-auto py-0.5",
                         isApproved
                           ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                           : "border-red-200 bg-red-50 text-red-800"

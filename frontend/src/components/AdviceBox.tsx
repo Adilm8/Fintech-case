@@ -16,7 +16,7 @@ export function AdviceBox({ textRu, verdict, className }: AdviceBoxProps) {
   return (
     <div
       className={cn(
-        "flex items-start gap-3.5 rounded-xl border px-4 py-3.5 shadow-xs",
+        "flex min-w-0 items-start gap-3 rounded-xl border px-4 py-3.5 shadow-xs sm:gap-3.5",
         isHighRisk
           ? "border-amber-300 bg-amber-50/90 text-amber-950"
           : "border-sky-200 bg-sky-50/80 text-sky-950",
@@ -33,11 +33,13 @@ export function AdviceBox({ textRu, verdict, className }: AdviceBoxProps) {
       >
         <Phone className="size-4" />
       </div>
-      <div className="space-y-0.5">
+      <div className="min-w-0 flex-1 space-y-0.5">
         <div className="text-xs font-semibold uppercase tracking-wide opacity-75">
           Рекомендация перед подписанием
         </div>
-        <p className="text-sm font-medium leading-relaxed">{textRu}</p>
+        <p className="text-sm font-medium leading-relaxed break-words">
+          {textRu}
+        </p>
       </div>
     </div>
   );

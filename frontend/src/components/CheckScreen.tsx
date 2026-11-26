@@ -215,7 +215,7 @@ export function CheckScreen({
           onClick={() =>
             onFixRequisites ? onFixRequisites(request) : onBack()
           }
-          className="w-full gap-2 bg-orange-600 text-white hover:bg-orange-700"
+          className="min-h-11 w-full gap-2 bg-orange-600 text-white hover:bg-orange-700"
         >
           <FileEdit className="size-4" />
           <span>Исправить реквизиты</span>
@@ -231,7 +231,7 @@ export function CheckScreen({
             <span>Платёж отклонён директором</span>
           </div>
           {directorComment && (
-            <p className="text-xs text-red-900">
+            <p className="text-xs text-red-900 break-words">
               Комментарий директора: {directorComment}
             </p>
           )}
@@ -246,7 +246,7 @@ export function CheckScreen({
             type="button"
             size="lg"
             onClick={handleSignDemo}
-            className="w-full gap-2"
+            className="min-h-11 w-full gap-2"
           >
             <ShieldCheck className="size-4" />
             <span>Подписать</span>
@@ -266,7 +266,7 @@ export function CheckScreen({
               type="button"
               size="lg"
               onClick={handlePostponeDemo}
-              className="w-full gap-2 bg-red-600 text-white hover:bg-red-700"
+              className="min-h-11 w-full gap-2 bg-red-600 text-white hover:bg-red-700"
             >
               <PauseCircle className="size-4" />
               <span>Отложить и проверить</span>
@@ -276,7 +276,7 @@ export function CheckScreen({
               variant="outline"
               size="lg"
               disabled
-              className="w-full gap-2"
+              className="min-h-11 w-full gap-2"
             >
               <Clock className="size-4" />
               <span>Отправлено директору</span>
@@ -295,7 +295,7 @@ export function CheckScreen({
               type="button"
               size="lg"
               onClick={handleSignDemo}
-              className="w-full gap-2"
+              className="min-h-11 w-full gap-2"
             >
               <ShieldCheck className="size-4" />
               <span>Подписать</span>
@@ -305,7 +305,7 @@ export function CheckScreen({
               variant="outline"
               size="lg"
               disabled
-              className="w-full gap-2"
+              className="min-h-11 w-full gap-2"
             >
               <Clock className="size-4" />
               <span>Отправлено директору</span>
@@ -320,7 +320,7 @@ export function CheckScreen({
             type="button"
             size="lg"
             disabled
-            className="w-full gap-2"
+            className="min-h-11 w-full gap-2"
           >
             <Clock className="size-4" />
             <span>Отправлено директору</span>
@@ -330,7 +330,7 @@ export function CheckScreen({
             variant="outline"
             size="lg"
             onClick={handleSignDemo}
-            className="w-full gap-2"
+            className="min-h-11 w-full gap-2"
           >
             <ShieldCheck className="size-4" />
             <span>Подписать</span>
@@ -345,7 +345,7 @@ export function CheckScreen({
           type="button"
           size="lg"
           onClick={handleSignDemo}
-          className="w-full gap-2"
+          className="min-h-11 w-full gap-2"
         >
           <ShieldCheck className="size-4" />
           <span>Подписать</span>
@@ -360,7 +360,7 @@ export function CheckScreen({
             type="button"
             size="lg"
             onClick={handlePostponeDemo}
-            className="w-full gap-2 bg-red-600 text-white hover:bg-red-700"
+            className="min-h-11 w-full gap-2 bg-red-600 text-white hover:bg-red-700"
           >
             <PauseCircle className="size-4" />
             <span>Отложить и проверить</span>
@@ -370,7 +370,7 @@ export function CheckScreen({
             variant="outline"
             size="lg"
             onClick={openDirectorDialog}
-            className="w-full gap-2"
+            className="min-h-11 w-full gap-2"
           >
             <Send className="size-4" />
             <span>Отправить директору</span>
@@ -389,7 +389,7 @@ export function CheckScreen({
           type="button"
           size="lg"
           onClick={openDirectorDialog}
-          className="w-full gap-2"
+          className="min-h-11 w-full gap-2"
         >
           <Send className="size-4" />
           <span>Отправить директору</span>
@@ -399,7 +399,7 @@ export function CheckScreen({
           variant="outline"
           size="lg"
           onClick={handleSignDemo}
-          className="w-full gap-2"
+          className="min-h-11 w-full gap-2"
         >
           <ShieldCheck className="size-4" />
           <span>Подписать</span>
@@ -408,15 +408,99 @@ export function CheckScreen({
     );
   };
 
+  const renderPrimaryMobileAction = () => {
+    if (verdict === "invalid") {
+      return (
+        <Button
+          type="button"
+          size="lg"
+          onClick={() =>
+            onFixRequisites ? onFixRequisites(request) : onBack()
+          }
+          className="min-h-11 w-full gap-2 bg-orange-600 text-white hover:bg-orange-700"
+        >
+          <FileEdit className="size-4" />
+          <span>Исправить реквизиты</span>
+        </Button>
+      );
+    }
+
+    if (isRejectedByDirector) {
+      return null;
+    }
+
+    if (isApprovedByDirector || verdict === "green") {
+      return (
+        <Button
+          type="button"
+          size="lg"
+          onClick={handleSignDemo}
+          className="min-h-11 w-full gap-2"
+        >
+          <ShieldCheck className="size-4" />
+          <span>Подписать</span>
+        </Button>
+      );
+    }
+
+    if (verdict === "red") {
+      return (
+        <Button
+          type="button"
+          size="lg"
+          onClick={handlePostponeDemo}
+          className="min-h-11 w-full gap-2 bg-red-600 text-white hover:bg-red-700"
+        >
+          <PauseCircle className="size-4" />
+          <span>Отложить и проверить</span>
+        </Button>
+      );
+    }
+
+    if (isPendingApproval) {
+      return (
+        <Button
+          type="button"
+          size="lg"
+          disabled
+          className="min-h-11 w-full gap-2"
+        >
+          <Clock className="size-4" />
+          <span>Отправлено директору</span>
+        </Button>
+      );
+    }
+
+    return (
+      <Button
+        type="button"
+        size="lg"
+        onClick={openDirectorDialog}
+        className="min-h-11 w-full gap-2"
+      >
+        <Send className="size-4" />
+        <span>Отправить директору</span>
+      </Button>
+    );
+  };
+
+  const mobilePrimaryAction = renderPrimaryMobileAction();
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div
+      className={cn(
+        "space-y-5",
+        mobilePrimaryAction &&
+          "pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-0"
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onClick={onBack}
-          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          className="min-h-11 gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9"
         >
           <ArrowLeft className="size-4" />
           <span>Назад к списку</span>
@@ -428,7 +512,7 @@ export function CheckScreen({
           size="sm"
           onClick={handleRecheck}
           disabled={isRechecking}
-          className="gap-1.5"
+          className="min-h-11 gap-1.5 sm:min-h-9"
         >
           <RefreshCw
             className={cn("size-3.5", isRechecking && "animate-spin")}
@@ -440,7 +524,7 @@ export function CheckScreen({
       {toast && (
         <Alert
           className={cn(
-            "pr-10",
+            "pr-12",
             toast.tone === "success"
               ? "border-emerald-300 bg-emerald-50 text-emerald-950"
               : "border-amber-300 bg-amber-50 text-amber-950"
@@ -453,9 +537,10 @@ export function CheckScreen({
           )}
           <AlertTitle>{toast.title}</AlertTitle>
           <AlertDescription
-            className={
+            className={cn(
+              "break-words",
               toast.tone === "success" ? "text-emerald-900" : "text-amber-900"
-            }
+            )}
           >
             {toast.description}
           </AlertDescription>
@@ -463,7 +548,7 @@ export function CheckScreen({
             type="button"
             aria-label="Закрыть уведомление"
             onClick={() => setToast(null)}
-            className="absolute top-2.5 right-2.5 rounded p-1 opacity-70 hover:opacity-100"
+            className="absolute top-1.5 right-1.5 flex size-11 items-center justify-center rounded opacity-70 hover:opacity-100 sm:top-2 sm:right-2 sm:size-8"
           >
             <X className="size-4" />
           </button>
@@ -474,13 +559,15 @@ export function CheckScreen({
         <Alert variant="destructive" className="bg-red-50/90 border-red-300">
           <AlertCircle className="size-4" />
           <AlertTitle>Не удалось выполнить действие</AlertTitle>
-          <AlertDescription>{actionError}</AlertDescription>
+          <AlertDescription className="break-words">
+            {actionError}
+          </AlertDescription>
         </Alert>
       )}
 
-      <Card className="border-border shadow-xs">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
-          <div className="space-y-1.5">
+      <Card className="min-w-0 border-border shadow-xs">
+        <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Платёжное поручение на проверку
@@ -489,7 +576,7 @@ export function CheckScreen({
                 <Badge
                   variant="outline"
                   className={cn(
-                    "px-2 py-0.5 text-xs font-medium",
+                    "h-auto px-2 py-0.5 text-xs font-medium",
                     approvalMeta.badgeClass
                   )}
                 >
@@ -497,21 +584,21 @@ export function CheckScreen({
                 </Badge>
               )}
             </div>
-            <div className="text-lg font-semibold text-foreground">
+            <div className="text-lg font-semibold text-foreground break-words">
               {request.recipient_name}
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground break-words">
               {request.purpose}
             </div>
             {directorComment && (
-              <div className="rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs text-foreground">
+              <div className="rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs text-foreground break-words">
                 <span className="font-semibold">Комментарий директора: </span>
                 <span>{directorComment}</span>
               </div>
             )}
           </div>
 
-          <div className="text-left sm:text-right space-y-1">
+          <div className="min-w-0 shrink-0 space-y-1 text-left sm:text-right">
             <div className="text-2xl font-bold tabular-nums text-foreground">
               {formatKzt(request.amount_kzt)}
             </div>
@@ -524,7 +611,7 @@ export function CheckScreen({
                   : "Ранее платежей этому получателю не было"}
               </div>
               {currentResult.history?.compared_with && (
-                <div className="inline-block rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                <div className="inline-block max-w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 break-words">
                   Сравнение с похожим поставщиком:{" "}
                   {currentResult.history.compared_with}
                 </div>
@@ -543,7 +630,7 @@ export function CheckScreen({
         <Alert className="border-emerald-300 bg-emerald-50 text-emerald-950">
           <ShieldCheck className="size-4 text-emerald-600" />
           <AlertTitle>Счёт в списке доверенных</AlertTitle>
-          <AlertDescription className="text-emerald-900 font-medium">
+          <AlertDescription className="text-emerald-900 font-medium break-words">
             {formatTrustedBannerText(currentResult.trusted_info)}
           </AlertDescription>
         </Alert>
@@ -553,7 +640,7 @@ export function CheckScreen({
         <Alert className="border-red-300 bg-red-50 text-red-950">
           <XCircle className="size-4 text-red-600" />
           <AlertTitle>Платёж отклонён директором</AlertTitle>
-          <AlertDescription className="text-red-900">
+          <AlertDescription className="text-red-900 break-words">
             {directorComment
               ? `Комментарий директора: ${directorComment}`
               : "Подписание и повторная отправка этого платежа заблокированы."}
@@ -561,24 +648,26 @@ export function CheckScreen({
         </Alert>
       )}
 
-      <ComparisonTable
-        comparison={currentResult.comparison}
-        trusted={isTrusted}
-      />
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-5">
+          <ComparisonTable
+            comparison={currentResult.comparison}
+            trusted={isTrusted}
+          />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_380px] items-start">
-        <ReasonsList
-          signals={currentResult.signals}
-          score={currentResult.score}
-        />
+          <ReasonsList
+            signals={currentResult.signals}
+            score={currentResult.score}
+          />
+        </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-20">
           <AdviceBox
             textRu={currentResult.next_action.text_ru}
             verdict={verdict}
           />
 
-          <Card className="border-border shadow-xs">
+          <Card className="min-w-0 border-border shadow-xs">
             <CardContent className="pt-4 space-y-2.5">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Действия по платежу
@@ -588,6 +677,12 @@ export function CheckScreen({
           </Card>
         </div>
       </div>
+
+      {mobilePrimaryAction && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/90 md:hidden">
+          <div className="mx-auto max-w-[1248px]">{mobilePrimaryAction}</div>
+        </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -599,20 +694,28 @@ export function CheckScreen({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-1">
+          <div className="min-w-0 space-y-3 py-1">
             {dialogError && (
               <Alert variant="destructive">
                 <AlertCircle className="size-4" />
-                <AlertDescription>{dialogError}</AlertDescription>
+                <AlertDescription className="break-words">
+                  {dialogError}
+                </AlertDescription>
               </Alert>
             )}
 
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs space-y-0.5">
-              <div className="font-medium text-foreground">
+              <div className="font-medium text-foreground break-words">
                 {request.recipient_name}
               </div>
-              <div className="text-muted-foreground">
-                {formatKzt(request.amount_kzt)} · {request.recipient_iik}
+              <div className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
+                <span className="tabular-nums">
+                  {formatKzt(request.amount_kzt)}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono break-all">
+                  {request.recipient_iik}
+                </span>
               </div>
             </div>
 
@@ -634,6 +737,7 @@ export function CheckScreen({
               variant="outline"
               onClick={() => setDialogOpen(false)}
               disabled={isSendingApproval}
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
             >
               Отмена
             </Button>
@@ -645,7 +749,7 @@ export function CheckScreen({
                 isPendingApproval ||
                 sentApprovalId !== null
               }
-              className="gap-1.5"
+              className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
             >
               {isSendingApproval ? (
                 <>

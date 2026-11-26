@@ -55,7 +55,7 @@ export function VerdictBanner({
     <div
       role="status"
       className={cn(
-        "flex gap-4 rounded-xl border-2 px-5 py-4 shadow-xs",
+        "flex min-w-0 gap-3 rounded-xl border-2 px-4 py-3.5 shadow-xs sm:gap-4 sm:px-5 sm:py-4",
         resolvedSubtitle ? "items-start" : "items-center",
         meta.bannerClass,
         className
@@ -63,20 +63,20 @@ export function VerdictBanner({
     >
       <div
         className={cn(
-          "flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-xs",
+          "flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-xs sm:size-11",
           meta.iconColorClass
         )}
       >
-        <Icon className="size-6" />
+        <Icon className="size-5 sm:size-6" />
       </div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-lg font-bold tracking-tight sm:text-xl">
+          <span className="text-lg font-bold tracking-tight break-words sm:text-xl">
             {title}
           </span>
         </div>
         {resolvedSubtitle && (
-          <p className="text-sm font-medium leading-relaxed opacity-90 sm:text-base">
+          <p className="text-sm font-medium leading-relaxed break-words opacity-90 sm:text-base">
             {resolvedSubtitle}
           </p>
         )}

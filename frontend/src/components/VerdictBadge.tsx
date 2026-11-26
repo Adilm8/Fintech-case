@@ -17,7 +17,7 @@ export function VerdictBadge({ verdict, className }: VerdictBadgeProps) {
     <Badge
       variant="outline"
       className={cn(
-        "gap-1.5 px-2.5 py-1 text-xs font-medium",
+        "h-auto min-h-6 gap-1.5 px-2.5 py-0.5 text-xs font-medium",
         meta.badgeClass,
         className
       )}

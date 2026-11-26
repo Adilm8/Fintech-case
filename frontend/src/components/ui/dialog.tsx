@@ -53,7 +53,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[60] grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-900 shadow-xl outline-none sm:max-w-md",
+          "fixed top-1/2 left-1/2 z-[60] grid max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-xl outline-none sm:w-full sm:p-6",
           className
         )}
         {...props}
@@ -65,7 +65,7 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-3 right-3 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                className="absolute top-2 right-2 size-11 text-slate-500 hover:bg-slate-100 hover:text-slate-900 sm:top-3 sm:right-3 sm:size-7"
                 size="icon-sm"
               />
             }
@@ -83,7 +83,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-1.5 pr-6 text-left", className)}
+      className={cn("flex flex-col gap-1.5 pr-10 text-left sm:pr-6", className)}
       {...props}
     />
   )
@@ -101,7 +101,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-6 -mb-6 flex flex-col-reverse gap-2 rounded-b-xl border-t border-slate-200 bg-slate-50 px-6 py-4 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6 sm:py-4",
         className
       )}
       {...props}

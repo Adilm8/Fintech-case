@@ -185,13 +185,13 @@ export function PaymentQueueScreen({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_400px] items-start">
-      <Card className="border-border shadow-xs">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px] items-start">
+      <Card className="min-w-0 border-border shadow-xs">
         <CardHeader className="border-b border-border pb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
+            <div className="min-w-0">
               <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                <FileText className="size-5 text-[var(--brand)]" />
+                <FileText className="size-5 shrink-0 text-[var(--brand)]" />
                 <span>Платежи на подпись</span>
               </CardTitle>
               <CardDescription className="mt-1">
@@ -221,22 +221,13 @@ export function PaymentQueueScreen({
               сервером и нажмите «Повторить».
             </div>
           ) : queue.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
+            <div className="py-16 px-4 text-center text-sm text-muted-foreground">
               Очередь платежей пуста. Создайте новый платёж в форме справа или
               нажмите «Сбросить демо».
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="pl-5">Получатель</TableHead>
-                  <TableHead className="text-right">Сумма</TableHead>
-                  <TableHead>Назначение</TableHead>
-                  <TableHead>Результат проверки</TableHead>
-                  <TableHead className="w-10 pr-4" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <div className="flex flex-col gap-3 p-3 sm:p-4 md:hidden">
                 {queue.map((item) => {
                   const approval = findApprovalForPayment(
                     approvals,
@@ -248,44 +239,48 @@ export function PaymentQueueScreen({
                   const directorComment = approval?.director_comment?.trim();
 
                   return (
-                    <TableRow
+                    <button
                       key={item.id}
-                      tabIndex={0}
-                      role="button"
+                      type="button"
                       onClick={() => onSelectPayment(item.request, item.result)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelectPayment(item.request, item.result);
-                        }
-                      }}
-                      className="cursor-pointer transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+                      className="w-full min-h-11 rounded-xl border border-border bg-card p-3.5 text-left shadow-xs transition-colors hover:bg-muted/50 active:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <TableCell className="pl-5 py-3.5 whitespace-normal">
-                        <div className="font-medium text-foreground">
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="min-w-0 flex-1 text-base font-semibold leading-snug text-foreground break-words">
                           {item.request.recipient_name}
                         </div>
-                        <div className="mt-0.5 font-mono text-xs text-muted-foreground">
-                          БИН {item.request.recipient_bin} ·{" "}
-                          {item.request.recipient_iik}
+                        <VerdictBadge
+                          verdict={item.result.verdict}
+                          className="shrink-0"
+                        />
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="text-xl font-bold tabular-nums text-foreground">
+                          {formatKzt(item.request.amount_kzt)}
                         </div>
-                      </TableCell>
-                      <TableCell className="py-3.5 text-right font-semibold tabular-nums text-foreground">
-                        {formatKzt(item.request.amount_kzt)}
-                      </TableCell>
-                      <TableCell className="py-3.5 max-w-xs whitespace-normal text-muted-foreground">
-                        <span className="line-clamp-2">
-                          {item.request.purpose}
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      </div>
+
+                      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs text-muted-foreground">
+                        <span>БИН {item.request.recipient_bin}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="break-all">
+                          {item.request.recipient_iik}
                         </span>
-                      </TableCell>
-                      <TableCell className="py-3.5 whitespace-normal">
-                        <div className="flex flex-col items-start gap-1.5">
-                          <VerdictBadge verdict={item.result.verdict} />
+                      </div>
+
+                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground break-words">
+                        {item.request.purpose}
+                      </p>
+
+                      {(approvalMeta || directorComment) && (
+                        <div className="mt-2.5 flex flex-col items-start gap-1.5 border-t border-border/60 pt-2.5">
                           {approvalMeta && (
                             <Badge
                               variant="outline"
                               className={cn(
-                                "px-2 py-0.5 text-[11px] font-medium",
+                                "h-auto px-2 py-0.5 text-[11px] font-medium",
                                 approvalMeta.badgeClass
                               )}
                             >
@@ -293,28 +288,117 @@ export function PaymentQueueScreen({
                             </Badge>
                           )}
                           {directorComment && (
-                            <p className="max-w-[220px] line-clamp-2 text-xs text-muted-foreground">
+                            <p className="line-clamp-2 text-xs text-muted-foreground break-words">
                               Директор: {directorComment}
                             </p>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell className="pr-4 py-3.5 text-right text-muted-foreground">
-                        <ChevronRight className="ml-auto size-4" />
-                      </TableCell>
-                    </TableRow>
+                      )}
+                    </button>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </div>
+
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableHead className="pl-4 lg:pl-5">Получатель</TableHead>
+                      <TableHead className="text-right">Сумма</TableHead>
+                      <TableHead>Назначение</TableHead>
+                      <TableHead className="whitespace-normal">
+                        Результат проверки
+                      </TableHead>
+                      <TableHead className="w-9 pr-3 lg:pr-4" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {queue.map((item) => {
+                      const approval = findApprovalForPayment(
+                        approvals,
+                        item.request
+                      );
+                      const approvalMeta = approval
+                        ? APPROVAL_STATUS_META[approval.status]
+                        : null;
+                      const directorComment =
+                        approval?.director_comment?.trim();
+
+                      return (
+                        <TableRow
+                          key={item.id}
+                          tabIndex={0}
+                          role="button"
+                          onClick={() =>
+                            onSelectPayment(item.request, item.result)
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onSelectPayment(item.request, item.result);
+                            }
+                          }}
+                          className="cursor-pointer transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+                        >
+                          <TableCell className="pl-4 lg:pl-5 py-3.5 whitespace-normal">
+                            <div className="font-medium text-foreground break-words">
+                              {item.request.recipient_name}
+                            </div>
+                            <div className="mt-0.5 font-mono text-xs text-muted-foreground">
+                              <span>БИН {item.request.recipient_bin}</span>
+                              <span> · </span>
+                              <span className="break-all">
+                                {item.request.recipient_iik}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right font-semibold tabular-nums whitespace-nowrap text-foreground">
+                            {formatKzt(item.request.amount_kzt)}
+                          </TableCell>
+                          <TableCell className="py-3.5 max-w-[200px] lg:max-w-xs whitespace-normal text-muted-foreground">
+                            <span className="line-clamp-2 break-words">
+                              {item.request.purpose}
+                            </span>
+                          </TableCell>
+                          <TableCell className="py-3.5 whitespace-normal">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <VerdictBadge verdict={item.result.verdict} />
+                              {approvalMeta && (
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "h-auto px-2 py-0.5 text-[11px] font-medium",
+                                    approvalMeta.badgeClass
+                                  )}
+                                >
+                                  {approvalMeta.labelRu}
+                                </Badge>
+                              )}
+                              {directorComment && (
+                                <p className="max-w-[220px] line-clamp-2 text-xs text-muted-foreground break-words">
+                                  Директор: {directorComment}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="pr-3 lg:pr-4 py-3.5 text-right text-muted-foreground">
+                            <ChevronRight className="ml-auto size-4" />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-border shadow-xs">
+      <Card className="min-w-0 border-border shadow-xs">
         <CardHeader className="border-b border-border pb-4">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <PlusCircle className="size-4 text-[var(--brand)]" />
+            <PlusCircle className="size-4 shrink-0 text-[var(--brand)]" />
             <span>Новый платёж</span>
           </CardTitle>
           <CardDescription className="mt-1">
@@ -331,79 +415,83 @@ export function PaymentQueueScreen({
               </Alert>
             )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="recipient_name">Наименование получателя</Label>
-              <Input
-                id="recipient_name"
-                placeholder='ТОО "СтройСнаб Сервис"'
-                value={form.recipient_name}
-                onChange={(e) => updateField("recipient_name", e.target.value)}
-              />
-            </div>
+            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+              <div className="min-w-0 space-y-1.5 md:col-span-2">
+                <Label htmlFor="recipient_name">Наименование получателя</Label>
+                <Input
+                  id="recipient_name"
+                  placeholder='ТОО "СтройСнаб Сервис"'
+                  className="h-11 md:h-9"
+                  value={form.recipient_name}
+                  onChange={(e) =>
+                    updateField("recipient_name", e.target.value)
+                  }
+                />
+              </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+              <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="recipient_bin">БИН / ИИН</Label>
                 <Input
                   id="recipient_bin"
                   inputMode="numeric"
                   placeholder="180540012345"
-                  className="font-mono"
+                  className="h-11 font-mono md:h-9"
                   value={form.recipient_bin}
                   onChange={(e) => updateField("recipient_bin", e.target.value)}
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="min-w-0 space-y-1.5">
                 <Label htmlFor="recipient_bik">БИК банка</Label>
                 <Input
                   id="recipient_bik"
                   placeholder="KCJBKZKX"
-                  className="font-mono uppercase"
+                  className="h-11 font-mono uppercase md:h-9"
                   value={form.recipient_bik}
                   onChange={(e) => updateField("recipient_bik", e.target.value)}
                 />
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="recipient_iik">ИИК (счёт получателя)</Label>
-              <Input
-                id="recipient_iik"
-                placeholder="KZ86125KZT5004100100"
-                className="font-mono uppercase"
-                value={form.recipient_iik}
-                onChange={(e) => updateField("recipient_iik", e.target.value)}
-              />
-            </div>
+              <div className="min-w-0 space-y-1.5 xl:col-span-2">
+                <Label htmlFor="recipient_iik">ИИК (счёт получателя)</Label>
+                <Input
+                  id="recipient_iik"
+                  placeholder="KZ86125KZT5004100100"
+                  className="h-11 font-mono uppercase md:h-9"
+                  value={form.recipient_iik}
+                  onChange={(e) => updateField("recipient_iik", e.target.value)}
+                />
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="amount_kzt">Сумма, ₸</Label>
-              <Input
-                id="amount_kzt"
-                type="number"
-                min="1"
-                step="any"
-                placeholder="450000"
-                className="tabular-nums"
-                value={form.amount_kzt}
-                onChange={(e) => updateField("amount_kzt", e.target.value)}
-              />
-            </div>
+              <div className="min-w-0 space-y-1.5 xl:col-span-2">
+                <Label htmlFor="amount_kzt">Сумма, ₸</Label>
+                <Input
+                  id="amount_kzt"
+                  type="number"
+                  min="1"
+                  step="any"
+                  placeholder="450000"
+                  className="h-11 tabular-nums md:h-9"
+                  value={form.amount_kzt}
+                  onChange={(e) => updateField("amount_kzt", e.target.value)}
+                />
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="purpose">Назначение платежа</Label>
-              <Input
-                id="purpose"
-                placeholder="Оплата за строительные материалы по счёту №14"
-                value={form.purpose}
-                onChange={(e) => updateField("purpose", e.target.value)}
-              />
+              <div className="min-w-0 space-y-1.5 md:col-span-2">
+                <Label htmlFor="purpose">Назначение платежа</Label>
+                <Input
+                  id="purpose"
+                  placeholder="Оплата за строительные материалы по счёту №14"
+                  className="h-11 md:h-9"
+                  value={form.purpose}
+                  onChange={(e) => updateField("purpose", e.target.value)}
+                />
+              </div>
             </div>
 
             <Button
               type="submit"
-              className="w-full gap-2"
+              className="min-h-11 w-full gap-2 md:min-h-10"
               disabled={isSubmitting}
             >
               {isSubmitting ? (
