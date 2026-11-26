@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Building2,
   ChevronDown,
+  EyeOff,
   Inbox,
   Landmark,
   Languages,
@@ -13,6 +14,7 @@ import {
   Radar,
   RotateCcw,
   TrendingUp,
+  UserX,
   Zap,
 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
@@ -41,8 +43,10 @@ import {
 import {
   applyBccOtherCompanyAttack,
   applyHomoglyphAttack,
+  applyInvisibleCharAttack,
   applyMultiplyAmountAttack,
   applyOtherBankIikAttack,
+  applyOwnBinOwnAccountAttack,
   applyUrgentPurposeAttack,
 } from "@/lib/attacks";
 import { computeAlignedCharDiff } from "@/lib/diff";
@@ -58,7 +62,12 @@ interface AttackFormState {
   recipient_bik: string;
   amount_kzt: string;
   purpose: string;
+  kbe: string;
+  knp: string;
 }
+
+const DEFAULT_KBE = "17";
+const DEFAULT_KNP = "710";
 
 function requestToForm(req: CheckRequest): AttackFormState {
   return {
@@ -68,6 +77,8 @@ function requestToForm(req: CheckRequest): AttackFormState {
     recipient_bik: req.recipient_bik,
     amount_kzt: String(req.amount_kzt),
     purpose: req.purpose,
+    kbe: req.kbe?.trim() || DEFAULT_KBE,
+    knp: req.knp?.trim() || DEFAULT_KNP,
   };
 }
 
@@ -86,6 +97,8 @@ function formToRequest(
   const recipient_iik = form.recipient_iik.replace(/\s+/g, "").toUpperCase();
   const recipient_bik = form.recipient_bik.replace(/\s+/g, "").toUpperCase();
   const purpose = form.purpose.trim();
+  const kbe = form.kbe.replace(/\D+/g, "").slice(0, 2);
+  const knp = form.knp.replace(/\D+/g, "").slice(0, 3);
   const amount_kzt = parseAmount(form.amount_kzt);
 
   if (
@@ -108,6 +121,8 @@ function formToRequest(
     recipient_bik,
     amount_kzt,
     purpose,
+    ...(kbe ? { kbe } : {}),
+    ...(knp ? { knp } : {}),
   };
 }
 
@@ -118,7 +133,9 @@ function formsDiffer(a: AttackFormState, b: AttackFormState): boolean {
     a.recipient_iik !== b.recipient_iik ||
     a.recipient_bik !== b.recipient_bik ||
     a.amount_kzt !== b.amount_kzt ||
-    a.purpose !== b.purpose
+    a.purpose !== b.purpose ||
+    a.kbe !== b.kbe ||
+    a.knp !== b.knp
   );
 }
 
@@ -160,19 +177,25 @@ function CharDiffHighlight({
           );
         }
 
-        const tooltipText = token.originalCodePoint
-          ? interpolate(
-              token.isHomoglyphLookalike
-                ? t.attack.codePointHomoglyphTooltip
-                : t.attack.codePointSwapTooltip,
-              {
-                orig: token.originalCodePoint,
-                curr: token.codePoint,
-              }
-            )
-          : interpolate(t.attack.codePointAddedTooltip, {
+        const tooltipText = token.isInvisible
+          ? interpolate(t.attack.codePointInvisibleTooltip, {
               curr: token.codePoint,
-            });
+            })
+          : token.originalCodePoint
+            ? interpolate(
+                token.isHomoglyphLookalike
+                  ? t.attack.codePointHomoglyphTooltip
+                  : t.attack.codePointSwapTooltip,
+                {
+                  orig: token.originalCodePoint,
+                  curr: token.codePoint,
+                }
+              )
+            : interpolate(t.attack.codePointAddedTooltip, {
+                curr: token.codePoint,
+              });
+
+        const isAlertHighlight = token.isHomoglyphLookalike || token.isInvisible;
 
         return (
           <Fragment key={idx}>
@@ -181,23 +204,36 @@ function CharDiffHighlight({
               aria-label={tooltipText}
               className={cn(
                 "inline-flex items-baseline gap-0.5 rounded-[4px] px-[3px] py-[1px] mx-[0.5px] font-bold shadow-xs",
-                token.isHomoglyphLookalike
+                isAlertHighlight
                   ? "bg-red-600 text-white"
                   : "bg-amber-200 text-amber-950 ring-1 ring-amber-400"
               )}
             >
-              <span
-                className={cn(
-                  token.isHomoglyphLookalike &&
-                    "underline decoration-white decoration-2 underline-offset-2"
-                )}
-              >
-                {token.char === " " ? "\u00A0" : token.char}
-              </span>
-              {token.isHomoglyphLookalike && (
-                <span className="ml-0.5 inline-block -translate-y-0.5 rounded bg-amber-300 px-1 py-[1px] text-[10px] font-semibold leading-none tracking-normal text-red-950">
-                  {t.comparison.latinTag}
-                </span>
+              {token.isInvisible ? (
+                <>
+                  <span className="font-mono text-[11px] leading-none">
+                    {token.codePoint}
+                  </span>
+                  <span className="ml-0.5 inline-block -translate-y-0.5 rounded bg-amber-300 px-1 py-[1px] text-[10px] font-semibold leading-none tracking-normal text-red-950">
+                    {t.attack.invisibleTag}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span
+                    className={cn(
+                      token.isHomoglyphLookalike &&
+                        "underline decoration-white decoration-2 underline-offset-2"
+                    )}
+                  >
+                    {token.char === " " ? "\u00A0" : token.char}
+                  </span>
+                  {token.isHomoglyphLookalike && (
+                    <span className="ml-0.5 inline-block -translate-y-0.5 rounded bg-amber-300 px-1 py-[1px] text-[10px] font-semibold leading-none tracking-normal text-red-950">
+                      {t.comparison.latinTag}
+                    </span>
+                  )}
+                </>
               )}
             </mark>
             {allowBreak && <wbr />}
@@ -302,19 +338,25 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
   const attackedVerdict = effectiveResult.verdict;
   const verdictChanged = isDirty && attackedVerdict !== originalVerdict;
 
-  const buildAttackBaseRequest = (): CheckRequest => ({
-    ...(baseItem.request.payer_id !== undefined
-      ? { payer_id: baseItem.request.payer_id }
-      : {}),
-    recipient_name: attackedForm.recipient_name,
-    recipient_bin: attackedForm.recipient_bin,
-    recipient_iik: attackedForm.recipient_iik,
-    recipient_bik: attackedForm.recipient_bik,
-    amount_kzt: Number.isFinite(parseAmount(attackedForm.amount_kzt))
-      ? parseAmount(attackedForm.amount_kzt)
-      : baseItem.request.amount_kzt,
-    purpose: attackedForm.purpose,
-  });
+  const buildAttackBaseRequest = (): CheckRequest => {
+    const cleanKbe = attackedForm.kbe.replace(/\D+/g, "").slice(0, 2);
+    const cleanKnp = attackedForm.knp.replace(/\D+/g, "").slice(0, 3);
+    return {
+      ...(baseItem.request.payer_id !== undefined
+        ? { payer_id: baseItem.request.payer_id }
+        : {}),
+      recipient_name: attackedForm.recipient_name,
+      recipient_bin: attackedForm.recipient_bin,
+      recipient_iik: attackedForm.recipient_iik,
+      recipient_bik: attackedForm.recipient_bik,
+      amount_kzt: Number.isFinite(parseAmount(attackedForm.amount_kzt))
+        ? parseAmount(attackedForm.amount_kzt)
+        : baseItem.request.amount_kzt,
+      purpose: attackedForm.purpose,
+      ...(cleanKbe ? { kbe: cleanKbe } : {}),
+      ...(cleanKnp ? { knp: cleanKnp } : {}),
+    };
+  };
 
   const applyAttack = (fn: (req: CheckRequest) => CheckRequest) => {
     const currentReq = buildAttackBaseRequest();
@@ -334,6 +376,20 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
     setCheckError(null);
   };
 
+  const handleInvisibleCharClick = () => {
+    const currentReq = buildAttackBaseRequest();
+    const nextReq = applyInvisibleCharAttack(currentReq);
+    if (nextReq.recipient_name === currentReq.recipient_name) {
+      notify.info(
+        t.attack.btnInvisibleChar,
+        t.attack.invisibleCharAlreadyPresent
+      );
+      return;
+    }
+    setAttackedForm(requestToForm(nextReq));
+    setCheckError(null);
+  };
+
   const handleReset = () => {
     requestSeqRef.current += 1;
     setAttackedForm(originalForm);
@@ -342,7 +398,13 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
     setIsChecking(false);
   };
 
-  const updateField = (field: keyof AttackFormState, value: string) => {
+  const updateField = (field: keyof AttackFormState, rawValue: string) => {
+    let value = rawValue;
+    if (field === "kbe") {
+      value = rawValue.replace(/\D+/g, "").slice(0, 2);
+    } else if (field === "knp") {
+      value = rawValue.replace(/\D+/g, "").slice(0, 3);
+    }
     setAttackedForm((prev) => ({ ...prev, [field]: value }));
     if (checkError) setCheckError(null);
   };
@@ -388,6 +450,20 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
       attacked: Number.isFinite(parseAmount(attackedForm.amount_kzt))
         ? formatMoney(parseAmount(attackedForm.amount_kzt))
         : attackedForm.amount_kzt,
+    },
+    {
+      key: "kbe",
+      label: t.attack.kbeLabel,
+      original: originalForm.kbe,
+      attacked: attackedForm.kbe,
+      monospace: true,
+    },
+    {
+      key: "knp",
+      label: t.attack.knpLabel,
+      original: originalForm.knp,
+      attacked: attackedForm.knp,
+      monospace: true,
     },
     {
       key: "purpose",
@@ -443,11 +519,33 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
               type="button"
               variant="outline"
               size="sm"
+              onClick={handleInvisibleCharClick}
+              className="min-h-10 gap-1.5 rounded-xl border-border bg-background/70 hover:border-red-300 hover:bg-red-50/70 sm:min-h-9"
+            >
+              <EyeOff className="size-3.5 text-red-600" />
+              <span>{t.attack.btnInvisibleChar}</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={() => applyAttack(applyOtherBankIikAttack)}
               className="min-h-10 gap-1.5 rounded-xl border-border bg-background/70 hover:border-primary/50 hover:bg-accent/60 sm:min-h-9"
             >
               <Landmark className="size-3.5 text-amber-600" />
               <span>{t.attack.btnOtherBank}</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => applyAttack(applyOwnBinOwnAccountAttack)}
+              className="min-h-10 gap-1.5 rounded-xl border-border bg-background/70 hover:border-red-300 hover:bg-red-50/70 sm:min-h-9"
+            >
+              <UserX className="size-3.5 text-red-600" />
+              <span>{t.attack.btnOwnBinOwnAccount}</span>
             </Button>
 
             <Button
@@ -478,9 +576,7 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() =>
-                applyAttack((req) => applyUrgentPurposeAttack(req, lang))
-              }
+              onClick={() => applyAttack(applyUrgentPurposeAttack)}
               className="min-h-10 gap-1.5 rounded-xl border-border bg-background/70 hover:border-primary/50 hover:bg-accent/60 sm:min-h-9"
             >
               <Zap className="size-3.5 text-amber-600" />
@@ -632,6 +728,52 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
               )}
             </div>
 
+            <div className="min-w-0 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="attack_kbe">{t.queue.labelKbe}</Label>
+                {attackedForm.kbe !== originalForm.kbe && (
+                  <Badge
+                    variant="outline"
+                    className="h-auto border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
+                  >
+                    {t.attack.modifiedBadge}
+                  </Badge>
+                )}
+              </div>
+              <Input
+                id="attack_kbe"
+                inputMode="numeric"
+                maxLength={2}
+                placeholder={t.queue.placeholderKbe}
+                value={attackedForm.kbe}
+                onChange={(e) => updateField("kbe", e.target.value)}
+                className="h-11 font-mono sm:h-10"
+              />
+            </div>
+
+            <div className="min-w-0 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="attack_knp">{t.queue.labelKnp}</Label>
+                {attackedForm.knp !== originalForm.knp && (
+                  <Badge
+                    variant="outline"
+                    className="h-auto border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
+                  >
+                    {t.attack.modifiedBadge}
+                  </Badge>
+                )}
+              </div>
+              <Input
+                id="attack_knp"
+                inputMode="numeric"
+                maxLength={3}
+                placeholder={t.queue.placeholderKnp}
+                value={attackedForm.knp}
+                onChange={(e) => updateField("knp", e.target.value)}
+                className="h-11 font-mono sm:h-10"
+              />
+            </div>
+
             <div className="min-w-0 space-y-1.5 sm:col-span-2 lg:col-span-3">
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="attack_purpose">{t.queue.labelPurpose}</Label>
@@ -707,7 +849,7 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
             </div>
             <CardDescription className="mt-1 flex flex-wrap items-center justify-between gap-2">
               <span className="break-words">
-                {pickHeadline(baseItem.result)}
+                {pickHeadline(baseItem.result, lang)}
               </span>
               <span className="shrink-0 font-mono text-xs font-semibold text-foreground tabular-nums">
                 {interpolate(t.attack.scoreLabel, {
@@ -755,9 +897,27 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
                 <dt className="text-xs font-medium text-muted-foreground">
                   {t.fields.amount}
                 </dt>
-                <dd className="font-semibold tabular-nums text-foreground">
+                <dd className="font-semibold tabular-nums whitespace-nowrap text-foreground">
                   {formatMoney(baseItem.request.amount_kzt)}
                 </dd>
+              </div>
+              <div className="py-2.5 grid grid-cols-2 gap-3">
+                <div className="space-y-0.5">
+                  <dt className="text-xs font-medium text-muted-foreground">
+                    {t.attack.kbeLabel}
+                  </dt>
+                  <dd className="font-mono text-xs sm:text-sm text-foreground">
+                    {originalForm.kbe || "—"}
+                  </dd>
+                </div>
+                <div className="space-y-0.5">
+                  <dt className="text-xs font-medium text-muted-foreground">
+                    {t.attack.knpLabel}
+                  </dt>
+                  <dd className="font-mono text-xs sm:text-sm text-foreground">
+                    {originalForm.knp || "—"}
+                  </dd>
+                </div>
               </div>
               <div className="py-2.5 last:pb-0 space-y-0.5">
                 <dt className="text-xs font-medium text-muted-foreground">
@@ -803,7 +963,7 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
 
             <CardDescription className="mt-1 flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium text-foreground/90 break-words">
-                {pickHeadline(effectiveResult)}
+                {pickHeadline(effectiveResult, lang)}
               </span>
               <span className="shrink-0 font-mono text-xs font-semibold text-foreground tabular-nums">
                 {interpolate(t.attack.scoreLabel, {
@@ -865,7 +1025,7 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
 
             {/* Next action advice */}
             <AdviceBox
-              text={pickActionText(effectiveResult.next_action)}
+              text={pickActionText(effectiveResult.next_action, lang)}
               verdict={effectiveResult.verdict}
             />
           </CardContent>

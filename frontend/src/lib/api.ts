@@ -124,10 +124,16 @@ function extractValidationMessage(
   return null;
 }
 
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+  analyst?: boolean;
+}
+
 async function requestJson<T>(
   path: string,
   init?: RequestInit,
-  lang: Lang = getCurrentLang()
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
 ): Promise<T> {
   const dict = getDictionary(lang);
   const url = appendLangParam(path, lang);
@@ -141,11 +147,15 @@ async function requestJson<T>(
   ) {
     headers.set("Content-Type", "application/json");
   }
+  if (options?.analyst) {
+    headers.set("X-Role", "analyst");
+  }
 
   try {
     response = await fetch(url, {
       ...init,
       headers,
+      signal: options?.signal ?? init?.signal,
       cache: "no-store",
     });
   } catch (err) {
@@ -213,16 +223,16 @@ async function requestJson<T>(
 export async function checkPayment(
   payload: CheckRequest,
   lang: Lang = getCurrentLang(),
-  options?: { signal?: AbortSignal }
+  options?: ApiRequestOptions
 ): Promise<CheckResult> {
   return requestJson<CheckResult>(
     "/api/payments/check",
     {
       method: "POST",
       body: JSON.stringify(payload),
-      signal: options?.signal,
     },
-    lang
+    lang,
+    options
   );
 }
 
@@ -232,14 +242,16 @@ interface RawQueueItem extends CheckRequest {
 }
 
 export async function getQueue(
-  lang: Lang = getCurrentLang()
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
 ): Promise<QueueItem[]> {
   const raw = await requestJson<RawQueueItem[]>(
     "/api/payments/queue",
     {
       method: "GET",
     },
-    lang
+    lang,
+    options
   );
   return raw.map((item) => ({
     id: item.id,
@@ -251,6 +263,8 @@ export async function getQueue(
       recipient_bik: item.recipient_bik,
       amount_kzt: item.amount_kzt,
       purpose: item.purpose,
+      ...(item.kbe ? { kbe: item.kbe } : {}),
+      ...(item.knp ? { knp: item.knp } : {}),
     },
     result: item.check,
   }));
@@ -291,7 +305,8 @@ function adaptApproval(raw: RawApproval): Approval {
 
 export async function createApproval(
   payload: CreateApprovalRequest,
-  lang: Lang = getCurrentLang()
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
 ): Promise<Approval> {
   const raw = await requestJson<RawApproval>(
     "/api/approvals",
@@ -302,20 +317,23 @@ export async function createApproval(
         accountant_note: payload.accountant_note,
       }),
     },
-    lang
+    lang,
+    options
   );
   return adaptApproval(raw);
 }
 
 export async function getApprovals(
-  lang: Lang = getCurrentLang()
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
 ): Promise<Approval[]> {
   const raw = await requestJson<RawApproval[]>(
     "/api/approvals",
     {
       method: "GET",
     },
-    lang
+    lang,
+    options
   );
   return raw.map(adaptApproval);
 }
@@ -323,7 +341,8 @@ export async function getApprovals(
 export async function decideApproval(
   id: string,
   payload: DecisionRequest,
-  lang: Lang = getCurrentLang()
+  lang: Lang = getCurrentLang(),
+  options?: ApiRequestOptions
 ): Promise<Approval> {
   const dict = getDictionary(lang);
   try {
@@ -333,7 +352,8 @@ export async function decideApproval(
         method: "POST",
         body: JSON.stringify(payload),
       },
-      lang
+      lang,
+      options
     );
     return adaptApproval(raw);
   } catch (err) {

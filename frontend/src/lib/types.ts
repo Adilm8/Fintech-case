@@ -8,7 +8,9 @@ export type ComparisonField =
   | "iik"
   | "bik"
   | "bank"
-  | "amount";
+  | "amount"
+  | "kbe"
+  | "knp";
 
 export type PrimaryAction = "postpone" | "send_to_director" | "sign";
 
@@ -24,6 +26,16 @@ export interface CheckRequest {
   recipient_bik: string;
   amount_kzt: number;
   purpose: string;
+  kbe?: string;
+  knp?: string;
+}
+
+export interface SignPaymentPayload {
+  check_id: string;
+  verdict: Verdict;
+  request: CheckRequest;
+  accountant_ack: boolean;
+  approval_id?: string | null;
 }
 
 export interface Evidence {
@@ -70,6 +82,27 @@ export interface TrustedInfo {
   director_comment: string | null;
 }
 
+export interface AnalystSignalDetail {
+  rule_id: string;
+  reason?: string;
+  reason_ru: string;
+  evidence?: Evidence | null;
+}
+
+export interface BccAccountAnalystInfo {
+  iik: string;
+  owner_bin: string;
+  owner_name: string;
+  opened_at: string;
+  age_days: number;
+  owner_matches_recipient: boolean;
+}
+
+export interface AnalystDetails {
+  bcc_account?: BccAccountAnalystInfo | null;
+  signal_details?: AnalystSignalDetail[];
+}
+
 export interface CheckResult {
   check_id: string;
   verdict: Verdict;
@@ -82,6 +115,8 @@ export interface CheckResult {
   history: History;
   trusted?: boolean;
   trusted_info?: TrustedInfo | null;
+  analyst_details?: AnalystDetails | null;
+  ruleset_version?: string | null;
 }
 
 export interface QueueItem {
@@ -154,6 +189,22 @@ export interface MetricsSummary {
 export interface MetricsKindItem {
   kind?: string;
   label?: string;
+  label_ru?: string;
+  label_kk?: string;
+  label_en?: string;
+  title?: string;
+  title_ru?: string;
+  title_kk?: string;
+  title_en?: string;
+  name?: string;
+  name_ru?: string;
+  name_kk?: string;
+  name_en?: string;
+  description?: string;
+  description_ru?: string;
+  description_kk?: string;
+  description_en?: string;
+  category?: string;
   count?: number;
   total?: number;
   detected?: number;
@@ -164,13 +215,30 @@ export interface MetricsKindItem {
   verdicts?: MetricsVerdictCounts;
 }
 
+export interface HistoryReplayMetrics {
+  total_payments?: number;
+  total?: number;
+  payments_count?: number;
+  count?: number;
+  alert_rate?: number | null;
+  false_positive_rate?: number | null;
+  flagged_count?: number;
+  alert_count?: number;
+  alerts?: number;
+  verdicts?: MetricsVerdictCounts;
+  period_days?: number;
+  period?: string;
+}
+
 export interface MetricsResponse {
   seed?: number;
   dataset_path?: string;
+  ruleset_version?: string | null;
   positive_verdicts?: Verdict[];
   summary?: MetricsSummary;
   confusion?: MetricsConfusion;
   verdict_by_label?: Record<string, MetricsVerdictCounts>;
+  history_replay?: HistoryReplayMetrics | null;
   total?: number;
   attacks?: number;
   legit?: number;
@@ -179,4 +247,6 @@ export interface MetricsResponse {
   by_kind?: MetricsKindItem[];
   disclaimer?: string;
   disclaimer_ru?: string;
+  disclaimer_kk?: string;
+  disclaimer_en?: string;
 }

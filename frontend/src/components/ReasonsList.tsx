@@ -11,7 +11,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useT } from "@/i18n";
-import { pickReason } from "@/lib/format";
+import { localizeBackendText, pickReason } from "@/lib/format";
 import type { Signal, SignalSeverity } from "@/lib/types";
 import { cn } from "cn";
 
@@ -29,7 +29,7 @@ const SEVERITY_DOT_CLASS: Record<SignalSeverity, string> = {
 };
 
 export function ReasonsList({ signals, score, className }: ReasonsListProps) {
-  const { t, formatDate, interpolate } = useT();
+  const { t, lang, formatDate, interpolate } = useT();
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const orderedSignals = signals ?? [];
@@ -37,6 +37,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
   const hiddenCount = Math.max(0, orderedSignals.length - topReasons.length);
 
   const signalRulesMap: Record<string, string> = t.signalRules;
+  const fieldLabelsMap: Record<string, string> = t.fields;
 
   return (
     <Card className={cn("min-w-0", className)}>
@@ -51,7 +52,10 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
         ) : (
           <ul className="space-y-2.5">
             {topReasons.map((signal, idx) => {
-              const isTrustedSignal = signal.rule_id === "trusted_account";
+              const isPositiveSignal =
+                signal.rule_id === "trusted_account" ||
+                signal.rule_id === "budget_payment" ||
+                signal.rule_id === "bank_confirmed_account";
               return (
                 <li
                   key={`${signal.rule_id}-${idx}`}
@@ -61,13 +65,13 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                     aria-hidden="true"
                     className={cn(
                       "mt-2 size-2 shrink-0 rounded-full",
-                      isTrustedSignal
+                      isPositiveSignal
                         ? "bg-[#00AB75]"
                         : SEVERITY_DOT_CLASS[signal.severity] ?? "bg-[#737376]"
                     )}
                   />
                   <span className="min-w-0 break-words">
-                    {pickReason(signal)}
+                    {pickReason(signal, lang)}
                   </span>
                 </li>
               );
@@ -116,8 +120,14 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
 
               <div className="space-y-2.5">
                 {orderedSignals.map((signal, idx) => {
-                  const ruleLabel = signalRulesMap[signal.rule_id];
+                  const ruleTitle =
+                    signalRulesMap[signal.rule_id] ?? t.reasons.unknownSignal;
                   const isExtra = idx >= 4;
+                  const evidenceFieldLabel = signal.evidence
+                    ? fieldLabelsMap[signal.evidence.field] ??
+                      signal.evidence.field
+                    : null;
+
                   return (
                     <div
                       key={`${signal.rule_id}-detail-${idx}`}
@@ -125,20 +135,15 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                          <span className="font-semibold text-foreground break-words">
+                            {ruleTitle}
+                          </span>
                           <Badge
                             variant="outline"
-                            className="h-auto max-w-full whitespace-normal break-all font-mono text-[11px] px-1.5 py-0.5"
+                            className="h-auto px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
                           >
-                            {signal.rule_id}
-                          </Badge>
-                          {ruleLabel && (
-                            <span className="font-medium text-foreground break-words">
-                              {ruleLabel}
-                            </span>
-                          )}
-                          <span className="text-muted-foreground">
                             {t.severity[signal.severity] ?? signal.severity}
-                          </span>
+                          </Badge>
                           {isExtra && (
                             <Badge
                               variant="secondary"
@@ -157,7 +162,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                       </div>
 
                       <p className="text-sm text-foreground break-words">
-                        {pickReason(signal)}
+                        {pickReason(signal, lang)}
                       </p>
 
                       {signal.evidence && (
@@ -166,7 +171,7 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                             <span className="text-foreground/70">
                               {t.reasons.evidenceField}
                             </span>
-                            {signal.evidence.field}
+                            {evidenceFieldLabel}
                           </div>
                           {signal.evidence.since && (
                             <div className="min-w-0">
@@ -181,7 +186,10 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                               <span className="text-foreground/70">
                                 {t.reasons.evidenceExpected}
                               </span>
-                              {signal.evidence.expected}
+                              {localizeBackendText(
+                                signal.evidence.expected,
+                                lang
+                              )}
                             </div>
                           )}
                           {signal.evidence.actual !== null && (
@@ -189,7 +197,10 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                               <span className="text-foreground/70">
                                 {t.reasons.evidenceActual}
                               </span>
-                              {signal.evidence.actual}
+                              {localizeBackendText(
+                                signal.evidence.actual,
+                                lang
+                              )}
                             </div>
                           )}
                         </div>

@@ -1,17 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAppData } from "@/components/AppShell";
-import { CheckScreen } from "@/components/CheckScreen";
+import { PaymentCheckView } from "@/components/PaymentCheckView";
 import { PaymentQueueScreen } from "@/components/PaymentQueueScreen";
-import type { CheckRequest, CheckResult } from "@/lib/types";
-
-interface SelectedPayment {
-  request: CheckRequest;
-  result: CheckResult;
-}
+import { getPaymentCheckHref } from "@/lib/queue-storage";
 
 function HomeContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     queue,
     approvals,
@@ -20,46 +18,14 @@ function HomeContent() {
     apiError,
     resetCounter,
     loadData,
-    refreshApprovalsOnly,
-    upsertApproval,
     addCustomQueueItem,
     reportNetworkError,
   } = useAppData();
 
-  const [selectedPayment, setSelectedPayment] =
-    useState<SelectedPayment | null>(null);
-  const [prefillRequest, setPrefillRequest] = useState<CheckRequest | null>(
-    null
-  );
+  const adHocId = searchParams.get("id")?.trim() || null;
 
-  if (selectedPayment) {
-    return (
-      <CheckScreen
-        key={`check-${resetCounter}-${selectedPayment.request.recipient_bin}-${selectedPayment.request.recipient_iik}-${selectedPayment.request.amount_kzt}`}
-        request={selectedPayment.request}
-        result={selectedPayment.result}
-        approvals={approvals}
-        onBack={() => {
-          setSelectedPayment(null);
-          void loadData(false);
-        }}
-        onFixRequisites={(req) => {
-          setPrefillRequest(req);
-          setSelectedPayment(null);
-        }}
-        onResultUpdate={(updatedResult) => {
-          setSelectedPayment((prev) =>
-            prev ? { ...prev, result: updatedResult } : prev
-          );
-          void loadData(false);
-        }}
-        onApprovalCreated={(createdApproval) => {
-          upsertApproval(createdApproval);
-          void refreshApprovalsOnly();
-        }}
-        onNetworkError={reportNetworkError}
-      />
-    );
+  if (adHocId) {
+    return <PaymentCheckView paymentId={adHocId} />;
   }
 
   return (
@@ -70,11 +36,11 @@ function HomeContent() {
       approvalsError={approvalsError}
       isLoading={isLoading}
       hasError={Boolean(apiError)}
-      prefillRequest={prefillRequest}
-      onClearPrefill={() => setPrefillRequest(null)}
-      onSelectPayment={(request, result) => {
-        setPrefillRequest(null);
-        setSelectedPayment({ request, result });
+      onSelectPayment={(item) => {
+        router.push(getPaymentCheckHref(item.id));
+      }}
+      onSelectPaymentById={(id) => {
+        router.push(getPaymentCheckHref(id));
       }}
       onAddQueueItem={addCustomQueueItem}
       onRefreshQueue={() => loadData(false)}
@@ -85,5 +51,9 @@ function HomeContent() {
 
 export default function Home() {
   const { homeResetNonce } = useAppData();
-  return <HomeContent key={homeResetNonce} />;
+  return (
+    <Suspense fallback={null}>
+      <HomeContent key={homeResetNonce} />
+    </Suspense>
+  );
 }

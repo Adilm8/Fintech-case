@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -8,11 +9,20 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
+  Loader2,
   Radar,
   RotateCcw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -23,7 +33,7 @@ import { cn } from "cn";
 
 interface AppHeaderProps {
   pendingCount: number;
-  onResetDemo: () => void;
+  onResetDemo: () => Promise<void> | void;
   isResetting: boolean;
   onHomeReset?: () => void;
 }
@@ -36,15 +46,34 @@ export function AppHeader({
 }: AppHeaderProps) {
   const pathname = usePathname();
   const { t, lang, setLang } = useT();
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const activeTabRef = useRef<HTMLAnchorElement | null>(null);
+
+  useEffect(() => {
+    const el = activeTabRef.current;
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({
+        behavior: "smooth",
+        inline: "center",
+        block: "nearest",
+      });
+    }
+  }, [pathname, lang]);
 
   const resetLabel = isResetting ? t.nav.resetting : t.nav.resetDemo;
+
+  const handleConfirmReset = async () => {
+    if (isResetting) return;
+    await onResetDemo();
+    setResetDialogOpen(false);
+  };
 
   const navItems = [
     {
       href: "/",
       label: t.nav.payments,
       icon: FileText,
-      active: pathname === "/",
+      active: pathname === "/" || pathname.startsWith("/check"),
       badge: null as number | null,
     },
     {
@@ -122,7 +151,7 @@ export function AppHeader({
                     aria-pressed={isSelected}
                     onClick={() => setLang(option.code)}
                     className={cn(
-                      "inline-flex min-h-9 min-w-10 items-center justify-center rounded-[10px] px-2.5 text-xs font-semibold tracking-wide transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 sm:px-2.5",
+                      "inline-flex min-h-9 w-[42px] items-center justify-center rounded-[10px] text-xs font-semibold tracking-wide transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
                       isSelected
                         ? "bg-card text-[var(--brand-text)] shadow-xs ring-1 ring-border/70"
                         : "text-muted-foreground hover:text-foreground"
@@ -140,26 +169,20 @@ export function AppHeader({
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    onClick={onResetDemo}
+                    size="icon"
+                    onClick={() => setResetDialogOpen(true)}
                     disabled={isResetting}
                     aria-label={resetLabel}
                     title={resetLabel}
-                    className="min-h-11 min-w-11 px-0 text-muted-foreground hover:text-foreground sm:min-h-9 sm:min-w-0 sm:gap-1.5 sm:px-3"
+                    className="size-11 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:size-9"
                   />
                 }
               >
                 <RotateCcw
-                  className={cn(
-                    "size-4 sm:size-3.5",
-                    isResetting && "animate-spin"
-                  )}
+                  className={cn("size-4", isResetting && "animate-spin")}
                 />
-                <span className="hidden sm:inline">{resetLabel}</span>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="sm:hidden">
-                {resetLabel}
-              </TooltipContent>
+              <TooltipContent side="bottom">{resetLabel}</TooltipContent>
             </Tooltip>
           </div>
 
@@ -182,6 +205,7 @@ export function AppHeader({
             return (
               <Link
                 key={item.href}
+                ref={item.active ? activeTabRef : undefined}
                 href={item.href}
                 aria-current={item.active ? "page" : undefined}
                 onClick={() => {
@@ -231,6 +255,54 @@ export function AppHeader({
           })}
         </nav>
       </div>
+
+      <Dialog
+        open={resetDialogOpen}
+        onOpenChange={(nextOpen) => {
+          if (!isResetting) {
+            setResetDialogOpen(nextOpen);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.nav.resetConfirmTitle}</DialogTitle>
+            <DialogDescription>
+              {t.nav.resetConfirmDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResetDialogOpen(false)}
+              disabled={isResetting}
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
+            >
+              {t.common.cancel}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleConfirmReset()}
+              disabled={isResetting}
+              className="min-h-11 w-full gap-1.5 sm:min-h-9 sm:w-auto"
+            >
+              {isResetting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>{t.nav.resetting}</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="size-4" />
+                  <span>{t.nav.resetConfirmAction}</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

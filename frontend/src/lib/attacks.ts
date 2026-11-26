@@ -1,4 +1,3 @@
-import type { Lang } from "@/i18n";
 import type { CheckRequest } from "./types";
 
 /**
@@ -23,6 +22,29 @@ export const CYRILLIC_TO_LATIN_MAP: Record<string, string> = {
   "\u0441": "c", // с -> c
   "\u0445": "x", // х -> x
 };
+
+const LEGAL_FORM_TOKENS = new Set([
+  "ТОО",
+  "АО",
+  "ЖШС",
+  "АҚ",
+  "АК",
+  "ИП",
+  "ЖК",
+  "КХ",
+  "ПК",
+  "ОАО",
+  "ЗАО",
+  "ООО",
+  "ГКП",
+  "РГП",
+  "LLP",
+  "JSC",
+  "TOO",
+  "AO",
+  "IP",
+  "IE",
+]);
 
 const OTHER_KZ_BANKS: readonly { code: string; bik: string }[] = [
   { code: "722", bik: "CASPKZKA" }, // Kaspi Bank
@@ -50,11 +72,32 @@ const BCC_OTHER_COMPANY_ACCOUNTS: readonly {
   { iik: "KZ65856KZT0724453180", ownerBin: "251247446379" },
 ];
 
-const URGENT_SUFFIX_BY_LANG: Record<Lang, string> = {
-  ru: "\u0441\u0440\u043e\u0447\u043d\u043e",
-  kk: "\u0448\u04b1\u0493\u044b\u043b",
-  en: "urgent",
-};
+const URGENT_KEYWORD_RU = "\u0441\u0440\u043e\u0447\u043d\u043e"; // "срочно"
+export const INVISIBLE_CGJ = "\u034F"; // COMBINING GRAPHEME JOINER
+
+const BIN_WEIGHTS_1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
+const BIN_WEIGHTS_2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2] as const;
+
+/**
+ * Computes a valid 12-digit KZ BIN/IIN from an 11-digit prefix using official mod-11 weights.
+ */
+export function buildValidKzBin(prefix11: string): string {
+  const digits = prefix11.replace(/\D+/g, "").slice(0, 11).split("").map(Number);
+  if (digits.length !== 11) {
+    throw new Error("BIN prefix must contain 11 digits");
+  }
+  let rem =
+    digits.reduce((acc, d, idx) => acc + d * BIN_WEIGHTS_1[idx], 0) % 11;
+  if (rem === 10) {
+    rem = digits.reduce((acc, d, idx) => acc + d * BIN_WEIGHTS_2[idx], 0) % 11;
+  }
+  if (rem === 10) {
+    // Bump last digit of prefix by 1 and recompute if double-10 edge case ever occurs.
+    const nextPrefix = `${prefix11.slice(0, 10)}${(digits[10] + 1) % 10}`;
+    return buildValidKzBin(nextPrefix);
+  }
+  return `${digits.join("")}${rem}`;
+}
 
 function mod97NumericString(alphanumeric: string): number {
   let remainder = 0;
@@ -87,28 +130,97 @@ export function buildValidKzIik(bankCode: string, accountSuffix: string): string
   return `KZ${checkDigits}${bban}`;
 }
 
+interface NameWordSpan {
+  word: string;
+  start: number;
+  end: number;
+  isLegalForm: boolean;
+}
+
+function tokenizeRecipientName(name: string): NameWordSpan[] {
+  const spans: NameWordSpan[] = [];
+  const regex = /[\p{L}\p{N}]+/gu;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(name)) !== null) {
+    const word = match[0];
+    const upper = word.toUpperCase();
+    spans.push({
+      word,
+      start: match.index,
+      end: match.index + word.length,
+      isLegalForm: LEGAL_FORM_TOKENS.has(upper),
+    });
+  }
+  return spans;
+}
+
 /**
- * Replaces the first replaceable Cyrillic letter in recipient_name with a visually
- * identical Latin character.
+ * Replaces a Cyrillic letter in the distinctive part of recipient_name (skipping legal forms
+ * such as ТОО, АО, ИП, ЖШС) with a visually identical Latin homoglyph.
  */
 export function applyHomoglyphAttack(request: CheckRequest): CheckRequest {
-  const chars = Array.from(request.recipient_name);
-  for (let i = 0; i < chars.length; i += 1) {
-    const replacement = CYRILLIC_TO_LATIN_MAP[chars[i]];
-    if (replacement) {
-      chars[i] = replacement;
-      return {
-        ...request,
-        recipient_name: chars.join(""),
-      };
+  const name = request.recipient_name;
+  const spans = tokenizeRecipientName(name);
+  const distinctiveSpans = spans.filter((span) => !span.isLegalForm);
+
+  // Prefer uppercase distinctive letters (e.g. "С" in "Снаб") or consonant homoglyphs in later
+  // distinctive tokens first, then any replaceable letter in distinctive tokens.
+  const searchOrder: NameWordSpan[] =
+    distinctiveSpans.length > 1
+      ? [...distinctiveSpans.slice(1), distinctiveSpans[0]]
+      : distinctiveSpans;
+
+  for (const span of searchOrder) {
+    for (let i = span.start; i < span.end; i += 1) {
+      const ch = name[i];
+      const replacement = CYRILLIC_TO_LATIN_MAP[ch];
+      if (replacement) {
+        return {
+          ...request,
+          recipient_name: `${name.slice(0, i)}${replacement}${name.slice(i + 1)}`,
+        };
+      }
     }
   }
+
   return request;
+}
+
+/**
+ * Inserts an invisible Unicode Combining Grapheme Joiner (U+034F) inside a distinctive word
+ * of recipient_name while leaving the visible text unchanged.
+ */
+export function applyInvisibleCharAttack(request: CheckRequest): CheckRequest {
+  const name = request.recipient_name;
+  if (name.includes(INVISIBLE_CGJ)) {
+    return request;
+  }
+
+  const spans = tokenizeRecipientName(name);
+  const targetSpan =
+    spans.find((span) => !span.isLegalForm && span.word.length >= 2) ??
+    spans.find((span) => !span.isLegalForm) ??
+    spans[0];
+
+  if (!targetSpan) {
+    return {
+      ...request,
+      recipient_name: `${name}${INVISIBLE_CGJ}`,
+    };
+  }
+
+  const insertAt =
+    targetSpan.word.length >= 2 ? targetSpan.start + 1 : targetSpan.end;
+  return {
+    ...request,
+    recipient_name: `${name.slice(0, insertAt)}${INVISIBLE_CGJ}${name.slice(insertAt)}`,
+  };
 }
 
 /**
  * Swaps the 3-digit bank code in a KZ IIK to a different bank, recomputes a valid
  * ISO-7064 mod-97 checksum, and updates the BIC to match so pre-validation passes.
+ * Leaves recipient_bin unchanged (BEC account-change case).
  */
 export function applyOtherBankIikAttack(request: CheckRequest): CheckRequest {
   const cleanIik = request.recipient_iik.replace(/\s+/g, "").toUpperCase();
@@ -133,6 +245,40 @@ export function applyOtherBankIikAttack(request: CheckRequest): CheckRequest {
     ...request,
     recipient_iik: buildValidKzIik(nextBank.code, accountSuffix),
     recipient_bik: nextBank.bik,
+  };
+}
+
+/**
+ * Replaces both BIN and IIK/BIK with an attacker's own valid credentials (mod-11 BIN +
+ * matching mod-97 IIK & BIK) while keeping the exact supplier recipient_name.
+ */
+export function applyOwnBinOwnAccountAttack(
+  request: CheckRequest
+): CheckRequest {
+  const cleanBin = request.recipient_bin.replace(/\s+/g, "");
+  const cleanIik = request.recipient_iik.replace(/\s+/g, "").toUpperCase();
+  const currentBankCode =
+    cleanIik.length >= 7 && cleanIik.startsWith("KZ")
+      ? cleanIik.slice(4, 7)
+      : "";
+
+  const candidateBins = [
+    buildValidKzBin("26014007788"),
+    buildValidKzBin("26024009911"),
+  ];
+  const attackerBin =
+    candidateBins.find((bin) => bin !== cleanBin) ?? candidateBins[0];
+
+  const attackerBank =
+    OTHER_KZ_BANKS.find((bank) => bank.code !== currentBankCode) ??
+    OTHER_KZ_BANKS[0];
+  const attackerIik = buildValidKzIik(attackerBank.code, "0008844112233");
+
+  return {
+    ...request,
+    recipient_bin: attackerBin,
+    recipient_iik: attackerIik,
+    recipient_bik: attackerBank.bik,
   };
 }
 
@@ -179,19 +325,16 @@ export function applyMultiplyAmountAttack(
 }
 
 /**
- * Appends a localized urgency keyword to the payment purpose.
+ * Appends the Russian urgency keyword ("срочно") recognized by the backend rules
+ * regardless of the active UI language.
  */
-export function applyUrgentPurposeAttack(
-  request: CheckRequest,
-  lang: Lang = "ru"
-): CheckRequest {
-  const keyword = URGENT_SUFFIX_BY_LANG[lang] ?? URGENT_SUFFIX_BY_LANG.ru;
+export function applyUrgentPurposeAttack(request: CheckRequest): CheckRequest {
   const trimmed = request.purpose.trim();
-  if (trimmed.toLowerCase().includes(keyword.toLowerCase())) {
+  if (trimmed.toLowerCase().includes(URGENT_KEYWORD_RU)) {
     return request;
   }
   return {
     ...request,
-    purpose: trimmed ? `${trimmed} ${keyword}` : keyword,
+    purpose: trimmed ? `${trimmed}, ${URGENT_KEYWORD_RU}` : URGENT_KEYWORD_RU,
   };
 }

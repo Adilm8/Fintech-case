@@ -12,10 +12,17 @@ export interface CharDiffToken {
   codePoint: string;
   originalCodePoint: string | null;
   isHomoglyphLookalike: boolean;
+  isInvisible: boolean;
 }
 
 const CYRILLIC_REGEX = /[\u0400-\u04FF]/;
 const LATIN_LETTER_REGEX = /^[A-Za-z]$/;
+const INVISIBLE_CHAR_REGEX =
+  /^[\u00AD\u034F\u115F\u1160\u200B-\u200F\u2060\u2800\u3164\uFE00-\uFE0F\uFEFF\uFFA0]$/;
+
+export function isInvisibleChar(char: string): boolean {
+  return INVISIBLE_CHAR_REGEX.test(char);
+}
 
 export function formatCodePoint(char: string): string {
   const cp = char.codePointAt(0);
@@ -209,13 +216,15 @@ export function computeAlignedCharDiff(
       ((isCyrillicChar(originalChar) && isLatinLetter(char)) ||
         (isLatinLetter(originalChar) && isCyrillicChar(char)));
     const latinInCyrillic = changed && isLatinInCyrillic(char, attacked);
+    const invisible = isInvisibleChar(char);
     return {
       char,
-      changed,
+      changed: changed || invisible,
       originalChar,
       codePoint,
       originalCodePoint,
       isHomoglyphLookalike: scriptSwap || latinInCyrillic,
+      isInvisible: invisible,
     };
   };
 

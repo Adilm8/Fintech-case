@@ -9,6 +9,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import {
+  formatDateForLang,
+  formatMoneyForLang,
+} from "@/lib/format";
 import type { TrustedInfo } from "@/lib/types";
 import { en } from "./en";
 import { kk } from "./kk";
@@ -24,13 +28,21 @@ export const LANG_OPTIONS: readonly { code: Lang; label: string }[] = [
   { code: "en", label: "ENG" },
 ] as const;
 
-const LOCALE_BY_LANG: Record<Lang, string> = {
-  ru: "ru-RU",
-  kk: "kk-KZ",
-  en: "en-US",
-};
-
 const DICTIONARIES: Record<Lang, Dictionary> = { ru, kk, en };
+
+const emptySubscribe = () => () => {};
+
+/**
+ * Returns false during SSR and initial hydration, then true once mounted on the client.
+ * Keeps SSR and client hydration markup identical for localStorage-backed state.
+ */
+export function useMounted(): boolean {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+}
 
 function isLang(value: unknown): value is Lang {
   return value === "ru" || value === "kk" || value === "en";
@@ -139,52 +151,7 @@ export function formatPlural(
   return interpolate(template, { count });
 }
 
-export function formatMoneyForLang(
-  amount: number | null | undefined,
-  lang: Lang
-): string {
-  if (amount === null || amount === undefined || Number.isNaN(amount)) {
-    return "—";
-  }
-  const hasFraction = Math.abs(amount % 1) > 0.001;
-  const formatted = new Intl.NumberFormat(LOCALE_BY_LANG[lang], {
-    minimumFractionDigits: hasFraction ? 2 : 0,
-    maximumFractionDigits: hasFraction ? 2 : 0,
-  })
-    .format(amount)
-    .replace(/\u00a0/g, " ");
-
-  return `${formatted} ₸`;
-}
-
-export function formatDateForLang(
-  dateStr: string | null | undefined,
-  lang: Lang
-): string {
-  if (!dateStr) return "—";
-
-  let parsed: Date;
-  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
-  if (dateOnlyMatch) {
-    parsed = new Date(
-      Number(dateOnlyMatch[1]),
-      Number(dateOnlyMatch[2]) - 1,
-      Number(dateOnlyMatch[3])
-    );
-  } else {
-    parsed = new Date(dateStr);
-  }
-
-  if (Number.isNaN(parsed.getTime())) {
-    return dateStr;
-  }
-
-  return new Intl.DateTimeFormat(LOCALE_BY_LANG[lang], {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(parsed);
-}
+export { formatDateForLang, formatMoneyForLang };
 
 export function formatTrustedBannerForLang(
   trustedInfo: TrustedInfo | null | undefined,
@@ -202,6 +169,7 @@ export function formatTrustedBannerForLang(
 
 export interface LangContextValue {
   lang: Lang;
+  mounted: boolean;
   t: Dictionary;
   setLang: (nextLang: Lang) => void;
   formatMoney: (amount: number | null | undefined) => string;
@@ -214,15 +182,18 @@ export interface LangContextValue {
 const LangContext = createContext<LangContextValue | null>(null);
 
 export function LangProvider({ children }: { children: ReactNode }) {
-  const lang = useSyncExternalStore(
+  const mounted = useMounted();
+  const storedLang = useSyncExternalStore(
     subscribeLangStore,
     getClientLangSnapshot,
     getServerLangSnapshot
   );
+  const lang: Lang = mounted ? storedLang : "ru";
 
   useEffect(() => {
+    if (!mounted) return;
     document.documentElement.lang = lang;
-  }, [lang]);
+  }, [lang, mounted]);
 
   const setLang = useCallback((nextLang: Lang) => {
     setCurrentLang(nextLang);
@@ -252,6 +223,7 @@ export function LangProvider({ children }: { children: ReactNode }) {
   const value = useMemo<LangContextValue>(
     () => ({
       lang,
+      mounted,
       t: getDictionary(lang),
       setLang,
       formatMoney,
@@ -260,7 +232,7 @@ export function LangProvider({ children }: { children: ReactNode }) {
       plural,
       formatTrustedBanner,
     }),
-    [lang, setLang, formatMoney, formatDate, plural, formatTrustedBanner]
+    [lang, mounted, setLang, formatMoney, formatDate, plural, formatTrustedBanner]
   );
 
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>;

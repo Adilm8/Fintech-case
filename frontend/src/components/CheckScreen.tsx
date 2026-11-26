@@ -16,11 +16,13 @@ import {
 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
 import { ComparisonTable } from "@/components/ComparisonTable";
+import { NewPaymentDialog } from "@/components/NewPaymentDialog";
 import { ReasonsList } from "@/components/ReasonsList";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -44,33 +46,45 @@ import {
   findApprovalForPayment,
 } from "@/lib/approvals";
 import {
+  extractInvalidFieldMap,
   pickActionText,
   pickHeadline,
   VERDICT_STYLES,
 } from "@/lib/format";
 import { notify } from "@/lib/toast";
-import type { Approval, CheckRequest, CheckResult } from "@/lib/types";
+import type {
+  Approval,
+  CheckRequest,
+  CheckResult,
+  SignPaymentPayload,
+} from "@/lib/types";
 import { cn } from "cn";
 
 interface CheckScreenProps {
+  paymentId?: string;
   request: CheckRequest;
   result: CheckResult;
   approvals: Approval[];
   onBack: () => void;
   onFixRequisites?: (request: CheckRequest) => void;
+  onPaymentFixed?: (request: CheckRequest, result: CheckResult) => void;
   onResultUpdate?: (updatedResult: CheckResult) => void;
   onApprovalCreated?: (approval: Approval) => void;
+  onSigned?: (payload: SignPaymentPayload) => void;
   onNetworkError?: (message: string) => void;
 }
 
 export function CheckScreen({
+  paymentId,
   request,
   result,
   approvals,
   onBack,
   onFixRequisites,
+  onPaymentFixed,
   onResultUpdate,
   onApprovalCreated,
+  onSigned,
   onNetworkError,
 }: CheckScreenProps) {
   const router = useRouter();
@@ -91,8 +105,11 @@ export function CheckScreen({
   const [demoActionStatus, setDemoActionStatus] = useState<
     "signed" | "postponed" | null
   >(null);
+  const [accountantAck, setAccountantAck] = useState(false);
+  const [signedWithAck, setSignedWithAck] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [fixDialogOpen, setFixDialogOpen] = useState(false);
   const [accountantNote, setAccountantNote] = useState("");
   const [isSendingApproval, setIsSendingApproval] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -103,6 +120,10 @@ export function CheckScreen({
   const lastFetchedLangRef = useRef(lang);
   const baseCheckIdRef = useRef(result.check_id);
   const onNetworkErrorRef = useRef(onNetworkError);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [paymentId]);
 
   useEffect(() => {
     baseCheckIdRef.current = result.check_id;
@@ -143,7 +164,25 @@ export function CheckScreen({
   const isApprovedByDirector = approvalStatus === "approved";
   const isRejectedByDirector = approvalStatus === "rejected";
   const isTrusted = currentResult.trusted === true;
-  const showTrustedBanner = isTrusted || Boolean(currentResult.trusted_info);
+  const hasTrustedInfo = isTrusted || Boolean(currentResult.trusted_info);
+
+  const verdict = currentResult.verdict;
+  const showProminentTrustedBanner = hasTrustedInfo && verdict === "green";
+  const showSecondaryTrustedNote = hasTrustedInfo && verdict !== "green";
+  const invalidFields = extractInvalidFieldMap(verdict, currentResult.signals);
+  const requiresAccountantAck =
+    (verdict === "yellow" || verdict === "grey") &&
+    !isApprovedByDirector &&
+    !isPendingApproval &&
+    !isRejectedByDirector;
+
+  const canSign =
+    verdict !== "invalid" &&
+    !isRejectedByDirector &&
+    !isPendingApproval &&
+    (isApprovedByDirector ||
+      verdict === "green" ||
+      (requiresAccountantAck && accountantAck));
 
   const handleRecheck = async () => {
     setIsRechecking(true);
@@ -152,6 +191,9 @@ export function CheckScreen({
       const updated = await checkPayment(request, lang);
       lastFetchedLangRef.current = lang;
       setOverride({ baseCheckId: result.check_id, result: updated });
+      setAccountantAck(false);
+      setDemoActionStatus(null);
+      setSignedWithAck(false);
       onResultUpdate?.(updated);
       notify.success(t.toast.recheckTitle, t.toast.recheckDescription);
     } catch (err) {
@@ -168,7 +210,27 @@ export function CheckScreen({
   };
 
   const handleSignDemo = () => {
+    if (!canSign) return;
+    const ack = requiresAccountantAck && accountantAck;
+    const signPayload: SignPaymentPayload = {
+      check_id: currentResult.check_id,
+      verdict,
+      request,
+      accountant_ack: ack,
+      approval_id: effectiveApproval?.id ?? null,
+    };
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<SignPaymentPayload>("business-shield:sign", {
+          detail: signPayload,
+        })
+      );
+    }
+    onSigned?.(signPayload);
+
     setRecheckError(null);
+    setSignedWithAck(ack);
     setDemoActionStatus("signed");
     notify.success(
       t.toast.signedTitle,
@@ -183,6 +245,18 @@ export function CheckScreen({
     setRecheckError(null);
     setDemoActionStatus("postponed");
     notify.warning(t.toast.postponedTitle, t.toast.postponedDescription);
+  };
+
+  const handleOpenFixRequisites = () => {
+    if (onPaymentFixed) {
+      setFixDialogOpen(true);
+      return;
+    }
+    if (onFixRequisites) {
+      onFixRequisites(request);
+      return;
+    }
+    onBack();
   };
 
   const handleSendToDirector = async () => {
@@ -227,7 +301,6 @@ export function CheckScreen({
     }
   };
 
-  const verdict = currentResult.verdict;
   const resolvedApprovalStatus = effectiveApproval?.status ?? approvalStatus;
   const approvalStyle = resolvedApprovalStatus
     ? APPROVAL_STATUS_STYLES[resolvedApprovalStatus]
@@ -258,10 +331,8 @@ export function CheckScreen({
         <Button
           type="button"
           size="lg"
-          onClick={() =>
-            onFixRequisites ? onFixRequisites(request) : onBack()
-          }
-          className={cn("min-h-11 w-full gap-2", invalidBtnClass)}
+          onClick={handleOpenFixRequisites}
+          className={cn("hidden md:inline-flex min-h-11 w-full gap-2", invalidBtnClass)}
         >
           <FileEdit className="size-4" />
           <span>{t.check.actionFixRequisites}</span>
@@ -294,7 +365,7 @@ export function CheckScreen({
             type="button"
             size="lg"
             onClick={handleSignDemo}
-            className="min-h-11 w-full gap-2"
+            className="hidden md:inline-flex min-h-11 w-full gap-2"
           >
             <ShieldCheck className="size-4" />
             <span>{t.check.actionSign}</span>
@@ -314,7 +385,7 @@ export function CheckScreen({
               type="button"
               size="lg"
               onClick={handlePostponeDemo}
-              className={cn("min-h-11 w-full gap-2", redBtnClass)}
+              className={cn("hidden md:inline-flex min-h-11 w-full gap-2", redBtnClass)}
             >
               <PauseCircle className="size-4" />
               <span>{t.check.actionPostpone}</span>
@@ -336,39 +407,13 @@ export function CheckScreen({
         );
       }
 
-      if (verdict === "green") {
-        return (
-          <div className="space-y-2">
-            <Button
-              type="button"
-              size="lg"
-              onClick={handleSignDemo}
-              className="min-h-11 w-full gap-2"
-            >
-              <ShieldCheck className="size-4" />
-              <span>{t.check.actionSign}</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              disabled
-              className="min-h-11 w-full gap-2"
-            >
-              <Clock className="size-4" />
-              <span>{t.check.actionSentToDirector}</span>
-            </Button>
-          </div>
-        );
-      }
-
       return (
         <div className="space-y-2">
           <Button
             type="button"
             size="lg"
             disabled
-            className="min-h-11 w-full gap-2"
+            className="hidden md:inline-flex min-h-11 w-full gap-2"
           >
             <Clock className="size-4" />
             <span>{t.check.actionSentToDirector}</span>
@@ -377,12 +422,15 @@ export function CheckScreen({
             type="button"
             variant="outline"
             size="lg"
-            onClick={handleSignDemo}
+            disabled
             className="min-h-11 w-full gap-2"
           >
             <ShieldCheck className="size-4" />
             <span>{t.check.actionSign}</span>
           </Button>
+          <p className="pt-1 text-xs text-muted-foreground">
+            {t.check.blockedUntilDecisionHint}
+          </p>
         </div>
       );
     }
@@ -393,7 +441,7 @@ export function CheckScreen({
           type="button"
           size="lg"
           onClick={handleSignDemo}
-          className="min-h-11 w-full gap-2"
+          className="hidden md:inline-flex min-h-11 w-full gap-2"
         >
           <ShieldCheck className="size-4" />
           <span>{t.check.actionSign}</span>
@@ -408,7 +456,7 @@ export function CheckScreen({
             type="button"
             size="lg"
             onClick={handlePostponeDemo}
-            className={cn("min-h-11 w-full gap-2", redBtnClass)}
+            className={cn("hidden md:inline-flex min-h-11 w-full gap-2", redBtnClass)}
           >
             <PauseCircle className="size-4" />
             <span>{t.check.actionPostpone}</span>
@@ -431,20 +479,44 @@ export function CheckScreen({
     }
 
     return (
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <Button
           type="button"
           size="lg"
           onClick={openDirectorDialog}
-          className="min-h-11 w-full gap-2"
+          className="hidden md:inline-flex min-h-11 w-full gap-2"
         >
           <Send className="size-4" />
           <span>{t.check.actionSendToDirector}</span>
         </Button>
+
+        <div className="flex min-h-11 items-start gap-2.5 rounded-xl border border-border bg-background/80 px-3 py-2.5">
+          <Checkbox
+            id="accountant-ack-checkbox"
+            checked={accountantAck}
+            onCheckedChange={(checked) => setAccountantAck(Boolean(checked))}
+            className="mt-0.5"
+          />
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label
+              htmlFor="accountant-ack-checkbox"
+              className="cursor-pointer text-xs font-medium leading-snug text-foreground"
+            >
+              {t.check.accountantAckLabel}
+            </Label>
+            {!accountantAck && (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                {t.check.accountantAckRequiredHint}
+              </p>
+            )}
+          </div>
+        </div>
+
         <Button
           type="button"
           variant="outline"
           size="lg"
+          disabled={!accountantAck}
           onClick={handleSignDemo}
           className="min-h-11 w-full gap-2"
         >
@@ -461,9 +533,7 @@ export function CheckScreen({
         <Button
           type="button"
           size="lg"
-          onClick={() =>
-            onFixRequisites ? onFixRequisites(request) : onBack()
-          }
+          onClick={handleOpenFixRequisites}
           className={cn("min-h-11 w-full gap-2", invalidBtnClass)}
         >
           <FileEdit className="size-4" />
@@ -476,7 +546,49 @@ export function CheckScreen({
       return null;
     }
 
-    if (isApprovedByDirector || verdict === "green") {
+    if (isApprovedByDirector) {
+      return (
+        <Button
+          type="button"
+          size="lg"
+          onClick={handleSignDemo}
+          className="min-h-11 w-full gap-2"
+        >
+          <ShieldCheck className="size-4" />
+          <span>{t.check.actionSign}</span>
+        </Button>
+      );
+    }
+
+    if (isPendingApproval) {
+      if (verdict === "red") {
+        return (
+          <Button
+            type="button"
+            size="lg"
+            onClick={handlePostponeDemo}
+            className={cn("min-h-11 w-full gap-2", redBtnClass)}
+          >
+            <PauseCircle className="size-4" />
+            <span>{t.check.actionPostpone}</span>
+          </Button>
+        );
+      }
+
+      return (
+        <Button
+          type="button"
+          size="lg"
+          disabled
+          className="min-h-11 w-full gap-2"
+        >
+          <Clock className="size-4" />
+          <span>{t.check.actionSentToDirector}</span>
+        </Button>
+      );
+    }
+
+    if (verdict === "green") {
       return (
         <Button
           type="button"
@@ -504,20 +616,6 @@ export function CheckScreen({
       );
     }
 
-    if (isPendingApproval) {
-      return (
-        <Button
-          type="button"
-          size="lg"
-          disabled
-          className="min-h-11 w-full gap-2"
-        >
-          <Clock className="size-4" />
-          <span>{t.check.actionSentToDirector}</span>
-        </Button>
-      );
-    }
-
     return (
       <Button
         type="button"
@@ -532,6 +630,13 @@ export function CheckScreen({
   };
 
   const mobilePrimaryAction = renderPrimaryMobileAction();
+  const hideInlineActionsCardOnMobile =
+    (verdict === "invalid" ||
+      (verdict === "green" &&
+        !isPendingApproval &&
+        !isApprovedByDirector &&
+        !isRejectedByDirector)) &&
+    demoActionStatus === null;
 
   return (
     <div
@@ -601,10 +706,16 @@ export function CheckScreen({
                 <span>{directorComment}</span>
               </div>
             )}
+            {showSecondaryTrustedNote && (
+              <div className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground break-words">
+                <ShieldCheck className="size-3.5 shrink-0 text-muted-foreground" />
+                <span>{formatTrustedBanner(currentResult.trusted_info)}</span>
+              </div>
+            )}
           </div>
 
           <div className="min-w-0 shrink-0 space-y-1 text-left sm:text-right">
-            <div className="text-2xl font-bold tabular-nums text-foreground">
+            <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground">
               {formatMoney(request.amount_kzt)}
             </div>
             <div className="text-xs text-muted-foreground space-y-1">
@@ -630,10 +741,10 @@ export function CheckScreen({
 
       <VerdictBanner
         verdict={verdict}
-        headline={pickHeadline(currentResult)}
+        headline={pickHeadline(currentResult, lang)}
       />
 
-      {showTrustedBanner && (
+      {showProminentTrustedBanner && (
         <Alert className="rounded-xl border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]">
           <ShieldCheck className="size-4 text-[var(--brand-text)]" />
           <AlertTitle>{t.check.trustedBannerTitle}</AlertTitle>
@@ -644,7 +755,10 @@ export function CheckScreen({
       )}
 
       {recheckError && (
-        <Alert variant="destructive" className="rounded-xl bg-red-50/90 border-red-300">
+        <Alert
+          variant="destructive"
+          className="rounded-xl bg-red-50/90 border-red-300"
+        >
           <AlertCircle className="size-4" />
           <AlertTitle>{t.check.actionErrorTitle}</AlertTitle>
           <AlertDescription className="break-words">
@@ -672,6 +786,7 @@ export function CheckScreen({
           <ComparisonTable
             comparison={currentResult.comparison}
             trusted={isTrusted}
+            invalidFields={invalidFields}
           />
 
           <ReasonsList
@@ -682,11 +797,16 @@ export function CheckScreen({
 
         <div className="min-w-0 space-y-4 lg:sticky lg:top-28">
           <AdviceBox
-            text={pickActionText(currentResult.next_action)}
+            text={pickActionText(currentResult.next_action, lang)}
             verdict={verdict}
           />
 
-          <Card className="min-w-0">
+          <Card
+            className={cn(
+              "min-w-0",
+              hideInlineActionsCardOnMobile && "hidden md:block"
+            )}
+          >
             <CardContent className="pt-4 space-y-2.5">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.check.actionsEyebrow}
@@ -697,7 +817,9 @@ export function CheckScreen({
                   role="status"
                   className="rounded-xl border border-[#00AB75]/35 bg-[#E8F8F2] px-3 py-2 text-xs font-medium text-[#064A34]"
                 >
-                  {t.check.signedStatusNote}
+                  {signedWithAck
+                    ? t.check.signedWithAckStatusNote
+                    : t.check.signedStatusNote}
                 </div>
               )}
               {demoActionStatus === "postponed" && (
@@ -712,6 +834,14 @@ export function CheckScreen({
           </Card>
         </div>
       </div>
+
+      {currentResult.ruleset_version && (
+        <div className="text-right font-mono text-[11px] text-muted-foreground/75">
+          {interpolate(t.check.rulesetVersion, {
+            version: currentResult.ruleset_version,
+          })}
+        </div>
+      )}
 
       {mobilePrimaryAction && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(29,29,30,0.08)] backdrop-blur supports-[backdrop-filter]:bg-card/90 md:hidden">
@@ -741,7 +871,7 @@ export function CheckScreen({
                 {request.recipient_name}
               </div>
               <div className="flex flex-wrap items-baseline gap-x-1.5 text-muted-foreground">
-                <span className="tabular-nums">
+                <span className="tabular-nums whitespace-nowrap">
                   {formatMoney(request.amount_kzt)}
                 </span>
                 <span aria-hidden="true">·</span>
@@ -800,6 +930,21 @@ export function CheckScreen({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {onPaymentFixed && (
+        <NewPaymentDialog
+          key={`fix-${paymentId ?? "item"}-${request.recipient_bin}-${request.recipient_iik}-${request.recipient_bik}-${request.amount_kzt}`}
+          open={fixDialogOpen}
+          onOpenChange={setFixDialogOpen}
+          mode="edit"
+          prefillRequest={request}
+          invalidFields={invalidFields}
+          onPaymentCreated={(updatedRequest, updatedResult) => {
+            onPaymentFixed(updatedRequest, updatedResult);
+          }}
+          onNetworkError={(message) => onNetworkError?.(message)}
+        />
+      )}
     </div>
   );
 }

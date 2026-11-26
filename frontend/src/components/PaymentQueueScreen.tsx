@@ -53,7 +53,8 @@ interface PaymentQueueScreenProps {
   hasError?: boolean;
   prefillRequest?: CheckRequest | null;
   onClearPrefill?: () => void;
-  onSelectPayment: (request: CheckRequest, result: CheckResult) => void;
+  onSelectPayment: (item: QueueItem) => void;
+  onSelectPaymentById?: (id: string) => void;
   onAddQueueItem: (request: CheckRequest, result: CheckResult) => string;
   onRefreshQueue: () => Promise<void> | void;
   onNetworkError: (message: string) => void;
@@ -115,6 +116,7 @@ export function PaymentQueueScreen({
   prefillRequest,
   onClearPrefill,
   onSelectPayment,
+  onSelectPaymentById,
   onAddQueueItem,
   onRefreshQueue,
   onNetworkError,
@@ -197,6 +199,11 @@ export function PaymentQueueScreen({
     [verdictCounts, verdictFilter]
   );
 
+  const signableQueue = useMemo(
+    () => queue.filter((item) => item.result.verdict !== "invalid"),
+    [queue]
+  );
+
   const attentionCount = useMemo(
     () => queue.filter((item) => needsAttention(item.result.verdict)).length,
     [queue]
@@ -207,9 +214,13 @@ export function PaymentQueueScreen({
     [approvals]
   );
 
-  const totalQueueAmount = useMemo(
-    () => queue.reduce((sum, item) => sum + (item.request.amount_kzt || 0), 0),
-    [queue]
+  const totalSignableAmount = useMemo(
+    () =>
+      signableQueue.reduce(
+        (sum, item) => sum + (item.request.amount_kzt || 0),
+        0
+      ),
+    [signableQueue]
   );
 
   const filteredQueue = useMemo(() => {
@@ -236,7 +247,10 @@ export function PaymentQueueScreen({
     }
   };
 
-  const handlePaymentCreated = (request: CheckRequest, result: CheckResult) => {
+  const handlePaymentCreated = (
+    request: CheckRequest,
+    result: CheckResult
+  ): string => {
     if (prefillRequest) {
       onClearPrefill?.();
     }
@@ -252,6 +266,7 @@ export function PaymentQueueScreen({
     }
     setHighlightedId(addedId);
     void onRefreshQueue();
+    return addedId;
   };
 
   const registerRowRef = (id: string, node: HTMLElement | null) => {
@@ -318,7 +333,7 @@ export function PaymentQueueScreen({
                     </div>
                   </div>
                   <div className="text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
-                    {queue.length}
+                    {signableQueue.length}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {t.queue.tiles.toSignHint}
@@ -410,8 +425,8 @@ export function PaymentQueueScreen({
                     <Wallet className="size-4" />
                   </div>
                 </div>
-                <div className="truncate text-lg font-bold tabular-nums text-foreground sm:text-2xl">
-                  {formatMoney(totalQueueAmount)}
+                <div className="truncate whitespace-nowrap text-lg font-bold tabular-nums text-foreground sm:text-2xl">
+                  {formatMoney(totalSignableAmount)}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {t.queue.tiles.totalAmountHint}
@@ -724,7 +739,7 @@ export function PaymentQueueScreen({
                       key={item.id}
                       ref={(node) => registerRowRef(`mobile:${item.id}`, node)}
                       type="button"
-                      onClick={() => onSelectPayment(item.request, item.result)}
+                      onClick={() => onSelectPayment(item)}
                       className={cn(
                         "w-full min-h-11 rounded-xl border bg-card p-3.5 text-left shadow-xs transition-all hover:bg-muted/50 active:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                         isHighlighted
@@ -750,12 +765,20 @@ export function PaymentQueueScreen({
                         </div>
                         <VerdictBadge
                           verdict={item.result.verdict}
+                          label={
+                            item.result.verdict === "green" &&
+                            item.result.signals.some(
+                              (s) => s.rule_id === "budget_payment"
+                            )
+                              ? t.signalRules.budget_payment
+                              : undefined
+                          }
                           className="shrink-0"
                         />
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="text-xl font-bold tabular-nums text-foreground">
+                        <div className="text-xl font-bold tabular-nums whitespace-nowrap text-foreground">
                           {formatMoney(item.request.amount_kzt)}
                         </div>
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -846,13 +869,11 @@ export function PaymentQueueScreen({
                           }
                           tabIndex={0}
                           role="button"
-                          onClick={() =>
-                            onSelectPayment(item.request, item.result)
-                          }
+                          onClick={() => onSelectPayment(item)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              onSelectPayment(item.request, item.result);
+                              onSelectPayment(item);
                             }
                           }}
                           className={cn(
@@ -896,7 +917,17 @@ export function PaymentQueueScreen({
                           </TableCell>
                           <TableCell className="py-3.5 whitespace-normal">
                             <div className="flex flex-col items-start gap-1.5">
-                              <VerdictBadge verdict={item.result.verdict} />
+                              <VerdictBadge
+                                verdict={item.result.verdict}
+                                label={
+                                  item.result.verdict === "green" &&
+                                  item.result.signals.some(
+                                    (s) => s.rule_id === "budget_payment"
+                                  )
+                                    ? t.signalRules.budget_payment
+                                    : undefined
+                                }
+                              />
                               {approvalStyle && approvalLabel && (
                                 <Badge
                                   variant="outline"
@@ -937,7 +968,13 @@ export function PaymentQueueScreen({
         onOpenChange={handleDialogOpenChange}
         prefillRequest={prefillRequest}
         onPaymentCreated={handlePaymentCreated}
-        onOpenPaymentCheck={onSelectPayment}
+        onOpenPaymentCheck={(id, request, result) => {
+          if (onSelectPaymentById) {
+            onSelectPaymentById(id);
+          } else {
+            onSelectPayment({ id, request, result });
+          }
+        }}
         onNetworkError={onNetworkError}
       />
     </div>

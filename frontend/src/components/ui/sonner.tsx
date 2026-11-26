@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useSyncExternalStore, type CSSProperties } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,11 +10,41 @@ import {
 } from "lucide-react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-function Toaster({ ...props }: ToasterProps) {
+const MOBILE_MEDIA_QUERY = "(max-width: 767px)";
+
+function subscribeMobileViewport(listener: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) {
+    return () => {};
+  }
+  const mql = window.matchMedia(MOBILE_MEDIA_QUERY);
+  mql.addEventListener("change", listener);
+  return () => mql.removeEventListener("change", listener);
+}
+
+function getMobileViewportSnapshot(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) {
+    return false;
+  }
+  return window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+}
+
+function getServerMobileViewportSnapshot(): boolean {
+  return false;
+}
+
+function Toaster({ position, ...props }: ToasterProps) {
+  const isMobile = useSyncExternalStore(
+    subscribeMobileViewport,
+    getMobileViewportSnapshot,
+    getServerMobileViewportSnapshot
+  );
+
+  const resolvedPosition = position ?? (isMobile ? "bottom-center" : "top-right");
+
   return (
     <Sonner
       theme="light"
-      position="top-right"
+      position={resolvedPosition}
       closeButton
       className="toaster group"
       icons={{

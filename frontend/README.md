@@ -23,7 +23,7 @@ Every request in `src/lib/api.ts` automatically appends `?lang=<lang>` (using th
 
 ## Requirements
 
-- Node.js 24+
+- Node.js 20+
 - Backend API running at `http://localhost:8000` (see `NEXT_PUBLIC_API_URL`)
 
 ## Setup & Run

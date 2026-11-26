@@ -10,11 +10,13 @@ import {
   ClipboardCheck,
   Inbox,
   Loader2,
+  Lock,
   MessageSquare,
   RefreshCw,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
+import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
 import { ComparisonTable } from "@/components/ComparisonTable";
 import { ReasonsList } from "@/components/ReasonsList";
 import { VerdictBadge } from "@/components/VerdictBadge";
@@ -45,7 +47,11 @@ import {
   canTrustApproval,
   MIN_DIRECTOR_COMMENT_LENGTH,
 } from "@/lib/approvals";
-import { pickHeadline } from "@/lib/format";
+import {
+  extractInvalidFieldMap,
+  parseKztString,
+  pickHeadline,
+} from "@/lib/format";
 import { notify } from "@/lib/toast";
 import type { Approval, ApprovalDecision } from "@/lib/types";
 import { cn } from "cn";
@@ -53,6 +59,8 @@ import { cn } from "cn";
 interface DirectorScreenProps {
   approvals: Approval[];
   isLoading: boolean;
+  analystMode: boolean;
+  onAnalystModeChange: (enabled: boolean) => void;
   onRefresh: () => Promise<void> | void;
   onNetworkError: (message: string) => void;
 }
@@ -83,10 +91,8 @@ function getApprovalSummary(
   } else {
     const rawAmount = getFieldFromComparison(approval, "amount");
     if (rawAmount) {
-      const cleaned = rawAmount.replace(/\s+/g, "").replace(",", ".");
-      amountDisplay = Number.isFinite(Number(cleaned))
-        ? formatMoney(Number(cleaned))
-        : rawAmount;
+      const parsed = parseKztString(rawAmount);
+      amountDisplay = parsed !== null ? formatMoney(parsed) : rawAmount;
     }
   }
 
@@ -101,6 +107,7 @@ function getApprovalSummary(
 
 interface PendingApprovalCardProps {
   approval: Approval;
+  analystMode: boolean;
   onDecided: (decision: ApprovalDecision, recipientName: string) => Promise<void>;
   onConflictError: (message: string) => Promise<void>;
   onNetworkError: (message: string) => void;
@@ -108,6 +115,7 @@ interface PendingApprovalCardProps {
 
 function PendingApprovalCard({
   approval,
+  analystMode,
   onDecided,
   onConflictError,
   onNetworkError,
@@ -125,6 +133,9 @@ function PendingApprovalCard({
     t.director.recipientFallback
   );
   const isRed = approval.check.verdict === "red";
+  const isBudgetPayment =
+    approval.check.verdict === "green" &&
+    approval.check.signals.some((s) => s.rule_id === "budget_payment");
   const allowTrust = canTrustApproval(approval);
   const effectiveTrust = allowTrust && trustAccount;
   const trimmedComment = comment.trim();
@@ -150,7 +161,8 @@ function PendingApprovalCard({
           director_comment: trimmedComment,
           trust_account: decision === "approved" ? effectiveTrust : false,
         },
-        lang
+        lang,
+        { analyst: analystMode }
       );
       await onDecided(decision, summary.recipientName);
     } catch (err) {
@@ -210,10 +222,15 @@ function PendingApprovalCard({
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right sm:space-y-1">
-            <div className="text-2xl font-bold tabular-nums text-foreground">
+            <div className="text-2xl font-bold tabular-nums whitespace-nowrap text-foreground">
               {summary.amountDisplay}
             </div>
-            <VerdictBadge verdict={approval.check.verdict} />
+            <VerdictBadge
+              verdict={approval.check.verdict}
+              label={
+                isBudgetPayment ? t.signalRules.budget_payment : undefined
+              }
+            />
           </div>
         </div>
       </CardHeader>
@@ -221,18 +238,26 @@ function PendingApprovalCard({
       <CardContent className="pt-5 space-y-5">
         <VerdictBanner
           verdict={approval.check.verdict}
-          headline={pickHeadline(approval.check)}
+          headline={pickHeadline(approval.check, lang)}
         />
 
         <ComparisonTable
           comparison={approval.check.comparison}
           trusted={Boolean(approval.check.trusted)}
+          invalidFields={extractInvalidFieldMap(
+            approval.check.verdict,
+            approval.check.signals
+          )}
         />
 
         <ReasonsList
           signals={approval.check.signals}
           score={approval.check.score}
         />
+
+        {analystMode && (
+          <AnalystDetailsCard details={approval.check.analyst_details} />
+        )}
 
         <div className="rounded-xl border border-border bg-background/80 p-4 space-y-1.5">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -381,6 +406,14 @@ function PendingApprovalCard({
               )}
             </Button>
           </div>
+
+          {approval.check.ruleset_version && (
+            <div className="pt-1 text-right font-mono text-[11px] text-muted-foreground/75">
+              {interpolate(t.check.rulesetVersion, {
+                version: approval.check.ruleset_version,
+              })}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -390,6 +423,8 @@ function PendingApprovalCard({
 export function DirectorScreen({
   approvals,
   isLoading,
+  analystMode,
+  onAnalystModeChange,
   onRefresh,
   onNetworkError,
 }: DirectorScreenProps) {
@@ -450,17 +485,51 @@ export function DirectorScreen({
           </p>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void onRefresh()}
-          disabled={isLoading}
-          className="min-h-11 w-full gap-1.5 rounded-xl sm:min-h-9 sm:w-auto"
-        >
-          <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
-          <span>{t.common.refresh}</span>
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2.5">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={analystMode}
+            onClick={() => onAnalystModeChange(!analystMode)}
+            className={cn(
+              "inline-flex min-h-11 w-full items-center justify-between gap-2.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:w-auto sm:justify-start",
+              analystMode
+                ? "border-slate-400 bg-slate-100 text-slate-900"
+                : "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Lock className="size-3.5 shrink-0" />
+              <span>{t.director.analystViewToggle}</span>
+            </span>
+            <span
+              aria-hidden="true"
+              className={cn(
+                "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                analystMode ? "bg-slate-700" : "bg-muted-foreground/30"
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block size-3.5 rounded-full bg-white shadow-xs transition-transform",
+                  analystMode ? "translate-x-[18px]" : "translate-x-1"
+                )}
+              />
+            </span>
+          </button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void onRefresh()}
+            disabled={isLoading}
+            className="min-h-11 w-full gap-1.5 rounded-xl sm:min-h-9 sm:w-auto"
+          >
+            <RefreshCw className={cn("size-3.5", isLoading && "animate-spin")} />
+            <span>{t.common.refresh}</span>
+          </Button>
+        </div>
       </div>
 
       {/* Summary tiles */}
@@ -623,6 +692,7 @@ export function DirectorScreen({
             <PendingApprovalCard
               key={approval.id}
               approval={approval}
+              analystMode={analystMode}
               onDecided={handleDecided}
               onConflictError={handleConflictError}
               onNetworkError={onNetworkError}
@@ -648,57 +718,62 @@ export function DirectorScreen({
               const isApproved = approval.status === "approved";
 
               return (
-                <div
-                  key={approval.id}
-                  className="flex flex-col gap-2.5 px-4 py-3.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4 sm:px-5"
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-foreground break-words">
-                        {summary.recipientName}
-                      </span>
-                      <span className="font-semibold tabular-nums text-foreground">
-                        {summary.amountDisplay}
-                      </span>
+                <div key={approval.id} className="space-y-3 px-4 py-3.5 sm:px-5">
+                  <div className="flex flex-col gap-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-foreground break-words">
+                          {summary.recipientName}
+                        </span>
+                        <span className="font-semibold tabular-nums whitespace-nowrap text-foreground">
+                          {summary.amountDisplay}
+                        </span>
+                      </div>
+                      {approval.director_comment && (
+                        <p className="text-xs text-muted-foreground break-words">
+                          {interpolate(t.check.directorCommentLine, {
+                            comment: approval.director_comment,
+                          })}
+                        </p>
+                      )}
                     </div>
-                    {approval.director_comment && (
-                      <p className="text-xs text-muted-foreground break-words">
-                        {interpolate(t.check.directorCommentLine, {
-                          comment: approval.director_comment,
-                        })}
-                      </p>
-                    )}
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {approval.trust_account && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {approval.trust_account && (
+                        <Badge
+                          variant="outline"
+                          className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
+                        >
+                          <ShieldCheck className="size-3" />
+                          <span>{t.director.trustedBadge}</span>
+                        </Badge>
+                      )}
                       <Badge
                         variant="outline"
-                        className="h-auto gap-1 border-[#00AB75]/35 bg-[#E8F8F2] py-0.5 text-[#006B49]"
+                        className={cn(
+                          "h-auto py-0.5",
+                          isApproved
+                            ? "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]"
+                            : "border-red-200 bg-red-50 text-red-800"
+                        )}
                       >
-                        <ShieldCheck className="size-3" />
-                        <span>{t.director.trustedBadge}</span>
+                        {isApproved
+                          ? t.director.statusApprovedShort
+                          : t.director.statusRejectedShort}
                       </Badge>
-                    )}
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "h-auto py-0.5",
-                        isApproved
-                          ? "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]"
-                          : "border-red-200 bg-red-50 text-red-800"
+                      {approval.decided_at && (
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(approval.decided_at)}
+                        </span>
                       )}
-                    >
-                      {isApproved
-                        ? t.director.statusApprovedShort
-                        : t.director.statusRejectedShort}
-                    </Badge>
-                    {approval.decided_at && (
-                      <span className="text-xs text-muted-foreground">
-                        {formatDate(approval.decided_at)}
-                      </span>
-                    )}
+                    </div>
                   </div>
+
+                  {analystMode && approval.check.analyst_details && (
+                    <AnalystDetailsCard
+                      details={approval.check.analyst_details}
+                    />
+                  )}
                 </div>
               );
             })}

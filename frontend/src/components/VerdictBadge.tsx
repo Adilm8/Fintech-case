@@ -8,13 +8,14 @@ import { cn } from "cn";
 
 interface VerdictBadgeProps {
   verdict: Verdict;
+  label?: string;
   className?: string;
 }
 
-export function VerdictBadge({ verdict, className }: VerdictBadgeProps) {
+export function VerdictBadge({ verdict, label, className }: VerdictBadgeProps) {
   const { t } = useT();
   const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.grey;
-  const label = t.verdicts[verdict] ?? t.verdicts.grey;
+  const displayLabel = label?.trim() || t.verdicts[verdict] || t.verdicts.grey;
 
   return (
     <Badge
@@ -29,7 +30,7 @@ export function VerdictBadge({ verdict, className }: VerdictBadgeProps) {
         aria-hidden="true"
         className={cn("size-2 rounded-full shrink-0", style.dotClass)}
       />
-      <span>{label}</span>
+      <span>{displayLabel}</span>
     </Badge>
   );
 }

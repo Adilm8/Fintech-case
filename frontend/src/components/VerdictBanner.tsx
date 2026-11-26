@@ -41,17 +41,16 @@ export function VerdictBanner({
   const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.grey;
   const Icon = VERDICT_ICONS[verdict] ?? HelpCircle;
 
-  const title = t.verdicts[verdict] ?? t.verdicts.grey;
+  const fallbackTitle = t.verdicts[verdict] ?? t.verdicts.grey;
   const trimmedHeadline = headline?.trim() ?? "";
   const trimmedSubtitle = subtitle?.trim() ?? "";
 
-  const normalizedTitle = normalizeText(title);
+  const title = trimmedHeadline || fallbackTitle;
   const resolvedSubtitle =
-    trimmedHeadline && normalizeText(trimmedHeadline) !== normalizedTitle
-      ? trimmedHeadline
-      : trimmedSubtitle && normalizeText(trimmedSubtitle) !== normalizedTitle
-        ? trimmedSubtitle
-        : null;
+    trimmedSubtitle &&
+    normalizeText(trimmedSubtitle) !== normalizeText(title)
+      ? trimmedSubtitle
+      : null;
 
   return (
     <div
