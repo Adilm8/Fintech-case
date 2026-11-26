@@ -1,0 +1,50 @@
+[
+  {
+    "id": "Q-001",
+    "scenario": "green",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «Алатау Снаб»",
+    "recipient_bin": "160542439625",
+    "recipient_iik": "KZ246010005016525808",
+    "recipient_bik": "HSBKKZKX",
+    "amount_kzt": 1360000,
+    "purpose": "Оплата по счёту № 214 за строительные материалы по договору № 14-А"
+  },
+  {
+    "id": "Q-002",
+    "scenario": "yellow",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «КазЛогистик Групп»",
+    "recipient_bin": "180947320524",
+    "recipient_iik": "KZ509650006872032298",
+    "recipient_bik": "IRTYKZKA",
+    "amount_kzt": 820000,
+    "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 318"
+  },
+  {
+    "id": "Q-003",
+    "scenario": "red",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО \"Алатау Cнаб\"",
+    "recipient_bin": "240646118785",
+    "recipient_iik": "KZ90125KZT2486117574",
+    "recipient_bik": "KCJBKZKX",
+    "amount_kzt": 4900000,
+    "purpose": "Оплата по договору № 14-А за поставку оборудования, срочно, по новым реквизитам"
+  },
+  {
+    "id": "Q-004",
+    "scenario": "grey",
+    "created_at": "2026-04-20",
+    "payer_id": "client-technostroy",
+    "recipient_name": "ТОО «Сарыарка Принт»",
+    "recipient_bin": "210844188013",
+    "recipient_iik": "KZ327220003914781165",
+    "recipient_bik": "CASPKZKA",
+    "amount_kzt": 240000,
+    "purpose": "Оплата за полиграфическую продукцию по счёту № 19"
+  }
+]

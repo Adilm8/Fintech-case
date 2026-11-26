@@ -1,0 +1,341 @@
+{
+  "client": {
+    "payer_id": "client-technostroy",
+    "name": "ТОО «ТехноСтрой Астана»",
+    "bin": "170346704876",
+    "iik": "KZ51125KZT1721175500",
+    "bik": "KCJBKZKX"
+  },
+  "payments": [
+    {
+      "id": "HIST-001",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-10-30",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1290000,
+      "purpose": "Оплата по счёту № 101 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-002",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-11-03",
+      "recipient_name": "ТОО «КазЛогистик Групп»",
+      "recipient_bin": "180947320524",
+      "recipient_iik": "KZ599980004227133320",
+      "recipient_bik": "TSESKZKA",
+      "amount_kzt": 830000,
+      "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 108"
+    },
+    {
+      "id": "HIST-003",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-11-07",
+      "recipient_name": "ТОО «СтепьЭнергоСервис»",
+      "recipient_bin": "151144817419",
+      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 545000,
+      "purpose": "Оплата электромонтажных материалов по счёту № 114"
+    },
+    {
+      "id": "HIST-004",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-11-11",
+      "recipient_name": "ТОО «НурМеталлПоставка»",
+      "recipient_bin": "140242389680",
+      "recipient_iik": "KZ579650007988348136",
+      "recipient_bik": "IRTYKZKA",
+      "amount_kzt": 2210000,
+      "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 120"
+    },
+    {
+      "id": "HIST-005",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-11-17",
+      "recipient_name": "ТОО «АлматыОфисТрейд»",
+      "recipient_bin": "190747359118",
+      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 325000,
+      "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 126"
+    },
+    {
+      "id": "HIST-006",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-11-26",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1320000,
+      "purpose": "Оплата по счёту № 102 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-007",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-12-03",
+      "recipient_name": "ТОО «КазЛогистик Групп»",
+      "recipient_bin": "180947320524",
+      "recipient_iik": "KZ599980004227133320",
+      "recipient_bik": "TSESKZKA",
+      "amount_kzt": 790000,
+      "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 109"
+    },
+    {
+      "id": "HIST-008",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-12-07",
+      "recipient_name": "ТОО «СтепьЭнергоСервис»",
+      "recipient_bin": "151144817419",
+      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 560000,
+      "purpose": "Оплата электромонтажных материалов по счёту № 115"
+    },
+    {
+      "id": "HIST-009",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-12-11",
+      "recipient_name": "ТОО «НурМеталлПоставка»",
+      "recipient_bin": "140242389680",
+      "recipient_iik": "KZ579650007988348136",
+      "recipient_bik": "IRTYKZKA",
+      "amount_kzt": 2260000,
+      "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 121"
+    },
+    {
+      "id": "HIST-010",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-12-20",
+      "recipient_name": "ТОО «АлматыОфисТрейд»",
+      "recipient_bin": "190747359118",
+      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 285000,
+      "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 127"
+    },
+    {
+      "id": "HIST-011",
+      "payer_id": "client-technostroy",
+      "paid_at": "2025-12-23",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1340000,
+      "purpose": "Оплата по счёту № 103 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-012",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-01-01",
+      "recipient_name": "ТОО «КазЛогистик Групп»",
+      "recipient_bin": "180947320524",
+      "recipient_iik": "KZ599980004227133320",
+      "recipient_bik": "TSESKZKA",
+      "amount_kzt": 810000,
+      "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 110"
+    },
+    {
+      "id": "HIST-013",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-01-06",
+      "recipient_name": "ТОО «СтепьЭнергоСервис»",
+      "recipient_bin": "151144817419",
+      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 525000,
+      "purpose": "Оплата электромонтажных материалов по счёту № 116"
+    },
+    {
+      "id": "HIST-014",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-01-10",
+      "recipient_name": "ТОО «НурМеталлПоставка»",
+      "recipient_bin": "140242389680",
+      "recipient_iik": "KZ579650007988348136",
+      "recipient_bik": "IRTYKZKA",
+      "amount_kzt": 2130000,
+      "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 122"
+    },
+    {
+      "id": "HIST-015",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-01-18",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1390000,
+      "purpose": "Оплата по счёту № 104 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-016",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-01-22",
+      "recipient_name": "ТОО «АлматыОфисТрейд»",
+      "recipient_bin": "190747359118",
+      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 310000,
+      "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 128"
+    },
+    {
+      "id": "HIST-017",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-01-31",
+      "recipient_name": "ТОО «КазЛогистик Групп»",
+      "recipient_bin": "180947320524",
+      "recipient_iik": "KZ599980004227133320",
+      "recipient_bik": "TSESKZKA",
+      "amount_kzt": 875000,
+      "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 111"
+    },
+    {
+      "id": "HIST-018",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-02-05",
+      "recipient_name": "ТОО «СтепьЭнергоСервис»",
+      "recipient_bin": "151144817419",
+      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 510000,
+      "purpose": "Оплата электромонтажных материалов по счёту № 117"
+    },
+    {
+      "id": "HIST-019",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-02-09",
+      "recipient_name": "ТОО «НурМеталлПоставка»",
+      "recipient_bin": "140242389680",
+      "recipient_iik": "KZ579650007988348136",
+      "recipient_bik": "IRTYKZKA",
+      "amount_kzt": 2040000,
+      "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 123"
+    },
+    {
+      "id": "HIST-020",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-02-13",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1370000,
+      "purpose": "Оплата по счёту № 105 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-021",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-02-24",
+      "recipient_name": "ТОО «АлматыОфисТрейд»",
+      "recipient_bin": "190747359118",
+      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 300000,
+      "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 129"
+    },
+    {
+      "id": "HIST-022",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-03-02",
+      "recipient_name": "ТОО «КазЛогистик Групп»",
+      "recipient_bin": "180947320524",
+      "recipient_iik": "KZ599980004227133320",
+      "recipient_bik": "TSESKZKA",
+      "amount_kzt": 760000,
+      "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 112"
+    },
+    {
+      "id": "HIST-023",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-03-07",
+      "recipient_name": "ТОО «СтепьЭнергоСервис»",
+      "recipient_bin": "151144817419",
+      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 535000,
+      "purpose": "Оплата электромонтажных материалов по счёту № 118"
+    },
+    {
+      "id": "HIST-024",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-03-10",
+      "recipient_name": "ТОО «НурМеталлПоставка»",
+      "recipient_bin": "140242389680",
+      "recipient_iik": "KZ579650007988348136",
+      "recipient_bik": "IRTYKZKA",
+      "amount_kzt": 2170000,
+      "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 124"
+    },
+    {
+      "id": "HIST-025",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-03-13",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1410000,
+      "purpose": "Оплата по счёту № 106 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-026",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-03-29",
+      "recipient_name": "ТОО «АлматыОфисТрейд»",
+      "recipient_bin": "190747359118",
+      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 340000,
+      "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 130"
+    },
+    {
+      "id": "HIST-027",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-04-02",
+      "recipient_name": "ТОО «КазЛогистик Групп»",
+      "recipient_bin": "180947320524",
+      "recipient_iik": "KZ599980004227133320",
+      "recipient_bik": "TSESKZKA",
+      "amount_kzt": 850000,
+      "purpose": "Оплата транспортно-экспедиционных услуг по счёту № 113"
+    },
+    {
+      "id": "HIST-028",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-04-06",
+      "recipient_name": "ТОО «СтепьЭнергоСервис»",
+      "recipient_bin": "151144817419",
+      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_bik": "KCJBKZKX",
+      "amount_kzt": 580000,
+      "purpose": "Оплата электромонтажных материалов по счёту № 119"
+    },
+    {
+      "id": "HIST-029",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-04-09",
+      "recipient_name": "ТОО «Алатау Снаб»",
+      "recipient_bin": "160542439625",
+      "recipient_iik": "KZ246010005016525808",
+      "recipient_bik": "HSBKKZKX",
+      "amount_kzt": 1350000,
+      "purpose": "Оплата по счёту № 107 за строительные материалы по договору № 14-А"
+    },
+    {
+      "id": "HIST-030",
+      "payer_id": "client-technostroy",
+      "paid_at": "2026-04-10",
+      "recipient_name": "ТОО «НурМеталлПоставка»",
+      "recipient_bin": "140242389680",
+      "recipient_iik": "KZ579650007988348136",
+      "recipient_bik": "IRTYKZKA",
+      "amount_kzt": 2090000,
+      "purpose": "Оплата за металлопрокат по договору № 47-М, счёт № 125"
+    }
+  ]
+}
