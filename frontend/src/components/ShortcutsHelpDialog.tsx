@@ -1,6 +1,5 @@
 "use client";
 
-import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,23 +33,18 @@ export function ShortcutsHelpDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-[var(--brand-text)]">
-              <Keyboard className="size-4" />
-            </div>
-            <DialogTitle>{t.shortcuts.title}</DialogTitle>
-          </div>
+          <DialogTitle>{t.shortcuts.title}</DialogTitle>
           <DialogDescription>{t.shortcuts.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="divide-y divide-border rounded-xl border border-border bg-background/60">
+        <div className="divide-y divide-border rounded-[6px] border border-border bg-card">
           {items.map((item) => (
             <div
               key={item.keyLabel}
-              className="flex items-center justify-between gap-4 px-3.5 py-2.5 text-sm"
+              className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
             >
               <span className="text-foreground">{item.description}</span>
-              <kbd className="inline-flex min-w-8 shrink-0 items-center justify-center rounded-md border border-border bg-card px-2 py-1 font-mono text-xs font-semibold text-foreground shadow-xs">
+              <kbd className="inline-flex min-w-7 shrink-0 items-center justify-center rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-foreground">
                 {item.keyLabel}
               </kbd>
             </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { useT } from "@/i18n";
 import { VERDICT_STYLES } from "@/lib/format";
 import type { Verdict } from "@/lib/types";
@@ -17,20 +16,20 @@ export function VerdictBadge({ verdict, label, className }: VerdictBadgeProps) {
   const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.grey;
   const displayLabel = label?.trim() || t.verdicts[verdict] || t.verdicts.grey;
 
+  const textToneClass =
+    verdict === "red"
+      ? "text-[var(--status-danger-text)]"
+      : verdict === "invalid"
+        ? "text-[var(--status-invalid-text)]"
+        : undefined;
+
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "h-auto min-h-6 gap-1.5 px-2.5 py-0.5 text-xs font-medium",
-        style.badgeClass,
-        className
-      )}
-    >
+    <span className={cn("ui-status", textToneClass, className)}>
       <span
         aria-hidden="true"
-        className={cn("size-2 rounded-full shrink-0", style.dotClass)}
+        className={cn("ui-status-dot", style.dotClass)}
       />
       <span>{displayLabel}</span>
-    </Badge>
+    </span>
   );
 }

@@ -10,23 +10,11 @@
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
   --color-brand-text: var(--brand-text);
+  --color-brand-subtle: var(--brand-subtle);
   --color-brand-foreground: var(--brand-foreground);
-  --font-sans: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-heading: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -43,57 +31,66 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: 0.5rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: var(--radius);
-  --radius-2xl: calc(var(--radius) * 1.25);
-  --radius-3xl: calc(var(--radius) * 1.5);
-  --radius-4xl: calc(var(--radius) * 2);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-lg);
+  --radius-2xl: var(--radius-lg);
+  --radius-3xl: var(--radius-lg);
+  --radius-4xl: var(--radius-lg);
 }
 
 :root {
   --brand: #00ab75;
-  --brand-hover: #009966;
+  --brand-hover: #009465;
   --brand-text: #007a53;
+  --brand-subtle: #f0faf6;
   --brand-foreground: #ffffff;
-  --background: #f5f5fa;
-  --foreground: #1d1d1e;
+
+  --background: #f7f8f9;
+  --foreground: #111827;
+  --text-secondary: #4b5563;
   --card: #ffffff;
-  --card-foreground: #1d1d1e;
+  --card-foreground: #111827;
   --popover: #ffffff;
-  --popover-foreground: #1d1d1e;
+  --popover-foreground: #111827;
   --primary: var(--brand);
   --primary-foreground: var(--brand-foreground);
-  --secondary: #efeff4;
-  --secondary-foreground: #1d1d1e;
-  --muted: #f0f0f5;
-  --muted-foreground: #737376;
-  --accent: #e6f7f1;
-  --accent-foreground: #007d55;
+  --secondary: #f1f3f5;
+  --secondary-foreground: #111827;
+  --muted: #f1f3f5;
+  --muted-foreground: #6b7280;
+  --accent: #f1f3f5;
+  --accent-foreground: #111827;
   --destructive: #dc2626;
-  --border: #e7e7eb;
-  --input: #d6d6dc;
+  --border: #e2e5e9;
+  --input: #cbd0d6;
   --ring: var(--brand);
-  --chart-1: #00ab75;
-  --chart-2: #0284c7;
-  --chart-3: #d97706;
-  --chart-4: #dc2626;
-  --chart-5: #737376;
-  --radius: 1rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1d1d1e;
-  --sidebar-primary: var(--brand);
-  --sidebar-primary-foreground: var(--brand-foreground);
-  --sidebar-accent: #e6f7f1;
-  --sidebar-accent-foreground: #007d55;
-  --sidebar-border: #e7e7eb;
-  --sidebar-ring: var(--brand);
+
+  --status-ok: #00ab75;
+  --status-ok-text: #007a53;
+  --status-warn: #d97706;
+  --status-warn-text: #b45309;
+  --status-danger: #dc2626;
+  --status-danger-text: #b91c1c;
+  --status-neutral: #9ca3af;
+  --status-neutral-text: #4b5563;
+  --status-invalid: #be123c;
+  --status-invalid-text: #9f1239;
+
+  --radius: 0.5rem;
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  --shadow-overlay: 0 4px 16px rgba(17, 24, 39, 0.08), 0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/40;
   }
   html {
     @apply font-sans overflow-x-clip;
@@ -101,10 +98,385 @@
   body {
     @apply bg-background text-foreground font-sans antialiased overflow-x-clip;
   }
-  @media (min-width: 1536px) {
-    html {
-      font-size: 17px;
+}
+
+@layer components {
+  /* Заголовки страниц и секций */
+  .ui-page-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  @media (min-width: 640px) {
+    .ui-page-header {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
     }
+  }
+  .ui-page-title {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--foreground);
+  }
+  .ui-page-subtitle {
+    margin-top: 0.25rem;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    color: var(--muted-foreground);
+  }
+  .ui-section-title {
+    font-size: 0.9375rem;
+    line-height: 1.375rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .ui-label-meta {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+
+  /* Плоские панели и вложенные блоки */
+  .ui-panel {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: none;
+  }
+  .ui-subpanel {
+    background-color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem;
+  }
+
+  /* Компактная полоса сводных показателей (вместо 4 карточек с иконками) */
+  .ui-kpi-strip,
+  .ui-kpi-strip-3 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .ui-kpi-strip > *,
+  .ui-kpi-strip-3 > * {
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+  .ui-kpi-strip > *:nth-child(2n),
+  .ui-kpi-strip-3 > *:nth-child(2n) {
+    border-right: 0;
+  }
+  @media (min-width: 640px) {
+    .ui-kpi-strip-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .ui-kpi-strip-3 > * {
+      border-bottom: 0;
+      border-right: 1px solid var(--border);
+    }
+    .ui-kpi-strip-3 > *:last-child {
+      border-right: 0;
+    }
+  }
+  @media (min-width: 1024px) {
+    .ui-kpi-strip {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .ui-kpi-strip > * {
+      border-bottom: 0;
+      border-right: 1px solid var(--border);
+    }
+    .ui-kpi-strip > *:last-child {
+      border-right: 0;
+    }
+  }
+  .ui-kpi-cell {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    min-width: 0;
+    text-align: left;
+  }
+  .ui-kpi-label {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .ui-kpi-value {
+    font-size: 1.25rem;
+    line-height: 1.625rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+  }
+
+  /* Сводные списки реквизитов (GOV.UK Summary List) */
+  .ui-dl {
+    border-top: 1px solid var(--border);
+  }
+  .ui-dl-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+    padding: 0.625rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  @media (min-width: 640px) {
+    .ui-dl-row {
+      grid-template-columns: 12rem minmax(0, 1fr);
+      gap: 1rem;
+      align-items: baseline;
+    }
+  }
+  .ui-dt {
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .ui-dd {
+    min-width: 0;
+    color: var(--foreground);
+    overflow-wrap: anywhere;
+  }
+
+  /* Статусы: цветная точка + обычный текст (без пилюль и рамок) */
+  .ui-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+  .ui-status-dot {
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 9999px;
+    flex-shrink: 0;
+  }
+  .ui-dot-ok { background-color: var(--status-ok); }
+  .ui-dot-warn { background-color: var(--status-warn); }
+  .ui-dot-danger { background-color: var(--status-danger); }
+  .ui-dot-neutral { background-color: var(--status-neutral); }
+  .ui-dot-invalid { background-color: var(--status-invalid); }
+
+  /* Нейтральная прямоугольная метка для вторичных кодов (без капсулы) */
+  .ui-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--border);
+    background-color: var(--muted);
+    padding: 0.0625rem 0.375rem;
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  /* Уведомления с левой акцентной границей 3px (VerdictBanner, AdviceBox, Alert) */
+  .ui-notice {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    color: var(--foreground);
+    box-shadow: none;
+  }
+  .ui-notice-ok { border-left-color: var(--status-ok); }
+  .ui-notice-warn { border-left-color: var(--status-warn); }
+  .ui-notice-danger { border-left-color: var(--status-danger); }
+  .ui-notice-neutral { border-left-color: var(--status-neutral); }
+  .ui-notice-invalid { border-left-color: var(--status-invalid); }
+
+  /* Вкладки с нижней чертой и прямоугольные чипы фильтров */
+  .ui-tabs {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .ui-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.125rem;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+  .ui-tab:hover {
+    color: var(--foreground);
+  }
+  .ui-tab[aria-selected="true"],
+  .ui-tab[aria-current="page"],
+  .ui-tab-active {
+    color: var(--foreground);
+    border-bottom-color: var(--brand);
+  }
+  .ui-tab-count {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+
+  .ui-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.5rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background-color: var(--card);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  @media (min-width: 640px) {
+    .ui-filter-chip {
+      min-height: 2rem;
+    }
+  }
+  .ui-filter-chip:hover {
+    background-color: var(--muted);
+    color: var(--foreground);
+  }
+  .ui-filter-chip[aria-pressed="true"] {
+    border-color: var(--foreground);
+    background-color: var(--muted);
+    color: var(--foreground);
+  }
+
+  /* Нативный select и компактная полоса загрузки файла */
+  .ui-select {
+    height: 2.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--input);
+    background-color: var(--card);
+    padding: 0 2rem 0 0.75rem;
+    font-size: 1rem;
+    color: var(--foreground);
+    outline: none;
+  }
+  @media (min-width: 640px) {
+    .ui-select {
+      height: 2.25rem;
+      font-size: 0.875rem;
+    }
+  }
+  .ui-select:focus-visible {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 20%, transparent);
+  }
+
+  .ui-dropzone {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border: 1px dashed var(--input);
+    border-radius: var(--radius-sm);
+    background-color: var(--background);
+    padding: 0.625rem 0.875rem;
+  }
+
+  /* Посимвольная подсветка отличий в реквизитах */
+  .ui-diff-row-danger {
+    border-left: 3px solid var(--status-danger);
+  }
+  .ui-diff-row-invalid {
+    border-left: 3px solid var(--status-invalid);
+  }
+  .ui-mark-danger {
+    background-color: #fee2e2;
+    color: #991b1b;
+    text-decoration: underline;
+    text-decoration-color: #dc2626;
+    text-underline-offset: 2px;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 600;
+  }
+  .ui-mark-ok {
+    background-color: #e6f7f1;
+    color: #064a34;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 600;
+  }
+  .ui-mark-warn {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 600;
+  }
+  .ui-mark-tag {
+    display: inline-block;
+    margin-left: 2px;
+    border-radius: 2px;
+    border: 1px solid #f59e0b;
+    background-color: #fffbeb;
+    padding: 0 3px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.25;
+    font-weight: 500;
+    color: #92400e;
+  }
+
+  /* Спокойные пустые состояния без декоративных иконок */
+  .ui-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.375rem;
+    padding: 1.5rem 1rem;
+    text-align: left;
+  }
+  .ui-empty-title {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .ui-empty-desc {
+    max-width: 36rem;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    color: var(--muted-foreground);
   }
 }
 

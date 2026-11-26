@@ -27,6 +27,14 @@ const VERDICT_ICONS = {
   invalid: XCircle,
 } as const;
 
+const NOTICE_VARIANT_CLASSES: Record<Verdict, string> = {
+  green: "ui-notice-ok",
+  yellow: "ui-notice-warn",
+  red: "ui-notice-danger",
+  grey: "ui-notice-neutral",
+  invalid: "ui-notice-invalid",
+};
+
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/[.!\s]+$/g, "");
 }
@@ -40,6 +48,8 @@ export function VerdictBanner({
   const { t } = useT();
   const style = VERDICT_STYLES[verdict] ?? VERDICT_STYLES.grey;
   const Icon = VERDICT_ICONS[verdict] ?? HelpCircle;
+  const noticeVariantClass =
+    NOTICE_VARIANT_CLASSES[verdict] ?? NOTICE_VARIANT_CLASSES.grey;
 
   const fallbackTitle = t.verdicts[verdict] ?? t.verdicts.grey;
   const trimmedHeadline = headline?.trim() ?? "";
@@ -56,28 +66,21 @@ export function VerdictBanner({
     <div
       role="status"
       className={cn(
-        "flex min-w-0 gap-3 rounded-xl border-2 px-4 py-3.5 shadow-xs sm:gap-4 sm:px-5 sm:py-4",
-        resolvedSubtitle ? "items-start" : "items-center",
-        style.bannerClass,
+        "ui-notice flex min-w-0 items-start gap-2.5",
+        noticeVariantClass,
         className
       )}
     >
-      <div
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-xs sm:size-11",
-          style.iconColorClass
-        )}
-      >
-        <Icon className="size-5 sm:size-6" />
-      </div>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-lg font-bold tracking-tight break-words sm:text-xl">
-            {title}
-          </span>
+      <Icon
+        aria-hidden="true"
+        className={cn("mt-0.5 size-4 shrink-0", style.iconColorClass)}
+      />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="text-[15px] font-semibold leading-snug text-foreground break-words">
+          {title}
         </div>
         {resolvedSubtitle && (
-          <p className="text-sm font-medium leading-relaxed break-words opacity-90 sm:text-base">
+          <p className="text-[13px] leading-5 text-muted-foreground break-words">
             {resolvedSubtitle}
           </p>
         )}

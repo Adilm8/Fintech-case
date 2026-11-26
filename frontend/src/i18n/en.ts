@@ -109,7 +109,7 @@ export const en: Dictionary = {
   queue: {
     title: "Payments to Sign",
     description:
-      "Select a payment to review recipient details and payment history before signing.",
+      "Select a payment to review details comparison and payment history.",
     totalInQueue: "In queue: {count}",
     shownOfTotal: "Showing {shown} of {total}",
     loadErrorEmpty:
@@ -229,7 +229,7 @@ export const en: Dictionary = {
       "Choose which details to use above (from invoice or history) before checking.",
   },
   explain: {
-    button: "Explain in plain words",
+    button: "Short summary",
     loading: "Preparing the explanation...",
     error: "Could not get the explanation. Please try again.",
     templateNote: "A short restatement of the check result.",
@@ -472,7 +472,7 @@ export const en: Dictionary = {
   attack: {
     title: "Attack Console",
     intro:
-      "Edit payment details or click a ready-made attack — the system will re-check it on the fly",
+      "Edit payment details or select a spoofing scenario to re-check the payment.",
     basePaymentLabel: "Base demo payment",
     quickAttacksTitle: "Quick attacks",
     btnHomoglyph: "Replace letter with Latin",
@@ -515,8 +515,7 @@ export const en: Dictionary = {
   },
   shortcuts: {
     title: "Keyboard shortcuts",
-    description:
-      "Navigate Business Shield quickly without leaving the keyboard.",
+    description: "Quick access keys",
     searchDesc: "Focus search input",
     newPaymentDesc: "Open New Payment dialog",
     closeDialogDesc: "Close open dialog or clear search",
@@ -717,8 +716,7 @@ export const en: Dictionary = {
     },
     payments: {
       title: "Payments to Sign",
-      subtitle:
-        "Payment orders queue with automated details verification, 1C/CSV batch import, and server-side signing control.",
+      subtitle: "Payment orders queue and details verification results",
       tabs: {
         toSign: "To sign",
         pendingApproval: "With director",

@@ -83,7 +83,7 @@ export interface InfoNavLinksProps {
   /**
    * "header" renders links matching AppHeader/ProdHeader nav tabs (for inserting into header/menu).
    * "bar" renders a self-contained horizontal navigation bar with a back-to-app link for (info)/layout.tsx.
-   * "inline" renders compact pill links suitable for quick-link cards.
+   * "inline" renders compact rectangular links suitable for quick-link sections.
    */
   variant?: "header" | "bar" | "inline";
   includeLegal?: boolean;
@@ -108,13 +108,13 @@ export function InfoNavLinks({
     return (
       <div
         className={cn(
-          "flex flex-col gap-2.5 rounded-2xl border border-border bg-card px-3 py-2.5 shadow-[0_1px_2px_rgba(29,29,30,0.03)] sm:flex-row sm:items-center sm:justify-between sm:px-4",
+          "flex flex-col gap-2 border-b border-border sm:flex-row sm:items-center sm:justify-between sm:gap-4",
           className
         )}
       >
         <Link
           href={appHomeHref}
-          className="inline-flex min-h-10 shrink-0 items-center gap-1.5 self-start rounded-xl px-2.5 py-1.5 text-sm font-medium text-[var(--brand-text)] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+          className="inline-flex min-h-10 shrink-0 items-center gap-1.5 self-start rounded-[6px] text-sm font-medium text-[var(--brand-text)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
           <span>{info.common.backToApp}</span>
@@ -122,10 +122,9 @@ export function InfoNavLinks({
 
         <nav
           aria-label={info.common.sectionNavAria}
-          className="no-scrollbar -mx-1 flex items-center gap-1 overflow-x-auto px-1 py-0.5 sm:mx-0 sm:px-0"
+          className="ui-tabs no-scrollbar border-b-0"
         >
           {visibleItems.map((item) => {
-            const Icon = item.icon;
             const active =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -133,20 +132,8 @@ export function InfoNavLinks({
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={cn(
-                  "inline-flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9",
-                  active
-                    ? "bg-accent font-semibold text-accent-foreground"
-                    : "font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                )}
+                className="ui-tab mb-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Icon
-                  aria-hidden="true"
-                  className={cn(
-                    "size-4 shrink-0",
-                    active ? "text-[var(--brand-text)]" : "text-muted-foreground"
-                  )}
-                />
                 <span>{info.nav[item.key]}</span>
               </Link>
             );
@@ -163,7 +150,6 @@ export function InfoNavLinks({
         className={cn("flex flex-wrap gap-2", className)}
       >
         {visibleItems.map((item) => {
-          const Icon = item.icon;
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
@@ -172,19 +158,12 @@ export function InfoNavLinks({
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9",
+                "inline-flex min-h-10 items-center rounded-[6px] border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8 sm:text-xs",
                 active
-                  ? "border-primary/35 bg-accent font-semibold text-accent-foreground"
-                  : "border-border bg-background font-medium text-foreground hover:bg-muted"
+                  ? "border-foreground bg-muted text-foreground"
+                  : "border-border bg-card text-[var(--text-secondary)] hover:bg-muted hover:text-foreground"
               )}
             >
-              <Icon
-                aria-hidden="true"
-                className={cn(
-                  "size-4 shrink-0",
-                  active ? "text-[var(--brand-text)]" : "text-muted-foreground"
-                )}
-              />
               <span>{info.nav[item.key]}</span>
             </Link>
           );
@@ -196,12 +175,11 @@ export function InfoNavLinks({
   return (
     <div
       className={cn(
-        "flex items-center gap-1 border-l border-border/80 pl-2",
+        "ui-tabs no-scrollbar border-b-0 border-l border-border pl-3",
         className
       )}
     >
       {visibleItems.map((item) => {
-        const Icon = item.icon;
         const active =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
@@ -209,27 +187,9 @@ export function InfoNavLinks({
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={cn(
-              "relative inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:py-1.5",
-              active
-                ? "bg-accent font-semibold text-accent-foreground"
-                : "font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-            )}
+            className="ui-tab mb-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Icon
-              aria-hidden="true"
-              className={cn(
-                "size-4 shrink-0",
-                active ? "text-[var(--brand-text)]" : "text-muted-foreground"
-              )}
-            />
             <span>{info.nav[item.key]}</span>
-            {active && (
-              <span
-                aria-hidden="true"
-                className="absolute inset-x-3 -bottom-1.5 h-0.5 rounded-full bg-primary"
-              />
-            )}
           </Link>
         );
       })}

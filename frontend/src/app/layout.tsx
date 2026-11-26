@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { AppShell } from "@/components/AppShell";
 import { ProdShell } from "@/components/prod/ProdShell";
 import { Toaster } from "@/components/ui/sonner";
@@ -8,12 +7,6 @@ import { LangProvider } from "@/i18n";
 import { ru } from "@/i18n/ru";
 import { IS_PROD } from "@/lib/mode";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin", "cyrillic", "cyrillic-ext"],
-  variable: "--font-inter",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: ru.brand.name,
@@ -30,7 +23,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="ru"
-      className={`${inter.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">

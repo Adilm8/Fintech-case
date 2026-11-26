@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <path d="M512 154L224 268V496C224 684 346 838 512 886C564 871 612 846 654 812" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M512 154L800 268V496C800 544 792 590 778 632" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" />
+  <line x1="368" y1="384" x2="656" y2="384" stroke="#FFFFFF" stroke-width="60" stroke-linecap="round" />
+  <line x1="368" y1="504" x2="656" y2="504" stroke="#FFFFFF" stroke-width="60" stroke-linecap="round" />
+  <line x1="368" y1="624" x2="520" y2="624" stroke="#FFFFFF" stroke-width="60" stroke-linecap="round" />
+  <path d="M616 704L684 772L824 632" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

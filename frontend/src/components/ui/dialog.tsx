@@ -32,7 +32,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px] transition-opacity duration-150",
+        "fixed inset-0 z-50 bg-black/40 transition-opacity duration-150",
         className
       )}
       {...props}
@@ -58,10 +58,10 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed z-[60] grid overflow-y-auto overscroll-contain border border-border bg-card text-sm text-foreground shadow-xl outline-none",
+          "fixed z-[60] grid overflow-y-auto overscroll-contain border border-border bg-card text-sm text-foreground shadow-[var(--shadow-overlay)] outline-none",
           mobileSheet
-            ? "inset-x-0 bottom-0 max-h-[92dvh] w-full gap-4 rounded-t-2xl rounded-b-none p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[calc(100dvh-2rem)] sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6"
-            : "top-1/2 left-1/2 max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl p-4 sm:w-full sm:p-6",
+            ? "inset-x-0 bottom-0 max-h-[92dvh] w-full gap-4 rounded-t-[10px] rounded-b-none p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[calc(100dvh-2rem)] sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[8px] sm:p-5"
+            : "top-1/2 left-1/2 max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[8px] p-4 sm:w-full sm:p-5",
           className
         )}
         {...props}
@@ -91,7 +91,10 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-1.5 pr-10 text-left sm:pr-6", className)}
+      className={cn(
+        "flex flex-col gap-1 border-b border-border pb-3 pr-10 text-left sm:pr-8",
+        className
+      )}
       {...props}
     />
   )
@@ -111,7 +114,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-border bg-background/80 px-4 py-3.5 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6 sm:py-4",
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-[8px] border-t border-border bg-card px-4 py-3 sm:-mx-5 sm:-mb-5 sm:flex-row sm:justify-end sm:px-5",
         className
       )}
       {...props}
@@ -131,7 +134,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-snug font-semibold text-foreground",
+        "font-heading text-[15px] leading-[1.375rem] font-semibold text-foreground",
         className
       )}
       {...props}
@@ -147,7 +150,7 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm leading-relaxed text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        "text-[13px] leading-5 text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
         className
       )}
       {...props}

@@ -1,5 +1,6 @@
 "use client";
 
+import { isInfoPathname } from "@/components/info/InfoNavLinks";
 import { SiteFooter } from "@/components/info/SiteFooter";
 
 import {
@@ -535,11 +536,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           onOpenShortcuts={() => setShortcutsOpen(true)}
         />
 
-        <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-5 sm:px-6 sm:py-6 sm:space-y-6">
+        <main className="mx-auto w-full max-w-[1248px] flex-1 px-4 py-4 space-y-4 sm:px-6 sm:py-5 sm:space-y-5">
           {apiErrorState && (
             <Alert
               variant="destructive"
-              className="rounded-2xl bg-red-50/90 border-red-300 px-3.5 py-3 pr-3.5 sm:pr-32"
+              className="ui-notice ui-notice-danger px-3.5 py-3 pr-3.5 sm:pr-32"
             >
               <AlertTriangle className="size-4" />
               <AlertTitle>{t.common.serverErrorTitle}</AlertTitle>
@@ -552,7 +553,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   variant="outline"
                   size="sm"
                   onClick={() => void loadData(true)}
-                  className="min-h-11 w-full gap-1.5 border-red-300 bg-white text-red-900 hover:bg-red-50 sm:min-h-8 sm:w-auto"
+                  className="min-h-11 w-full gap-1.5 sm:min-h-8 sm:w-auto"
                 >
                   <RefreshCw className="size-3.5" />
                   <span>{t.common.retry}</span>
@@ -563,7 +564,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {children}
         </main>
-        <SiteFooter />
+        {!isInfoPathname(pathname) && <SiteFooter />}
         <ShortcutsHelpDialog
           open={shortcutsOpen}
           onOpenChange={setShortcutsOpen}

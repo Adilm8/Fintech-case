@@ -57,13 +57,13 @@ function Toaster({ position, ...props }: ToasterProps) {
       toastOptions={{
         classNames: {
           toast:
-            "group toast rounded-2xl border border-border bg-card text-foreground shadow-[0_8px_24px_rgba(29,29,30,0.10)] font-sans",
+            "group toast rounded-[8px] border border-border bg-card text-foreground shadow-[var(--shadow-overlay)] font-sans",
           title: "text-sm font-semibold text-foreground",
           description: "text-xs text-muted-foreground leading-relaxed",
           actionButton:
-            "bg-primary text-primary-foreground hover:bg-[var(--brand-hover)] rounded-lg text-xs font-medium",
+            "bg-primary text-primary-foreground hover:bg-[var(--brand-hover)] rounded-[6px] text-xs font-medium",
           cancelButton:
-            "bg-muted text-muted-foreground hover:text-foreground rounded-lg text-xs font-medium",
+            "bg-muted text-muted-foreground hover:text-foreground rounded-[6px] text-xs font-medium",
           closeButton:
             "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
         },

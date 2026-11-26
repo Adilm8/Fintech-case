@@ -3,19 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BadgeCheck,
-  BarChart3,
-  Building2,
-  ClipboardCheck,
-  FileText,
-  History,
-  Keyboard,
-  Loader2,
-  Radar,
-  RotateCcw,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Keyboard, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -76,45 +64,40 @@ export function AppHeader({
     {
       href: "/",
       label: t.nav.payments,
-      icon: FileText,
       active: pathname === "/" || pathname.startsWith("/check"),
       badge: null as number | null,
     },
     {
       href: "/approvals",
       label: t.nav.approvals,
-      icon: ClipboardCheck,
       active: pathname.startsWith("/approvals"),
       badge: pendingCount,
     },
     {
       href: "/history",
       label: t.nav.history,
-      icon: History,
       active: pathname.startsWith("/history"),
       badge: null as number | null,
     },
     {
       href: "/attack",
       label: t.nav.attack,
-      icon: Radar,
       active: pathname.startsWith("/attack"),
       badge: null as number | null,
     },
     {
       href: "/metrics",
       label: t.nav.metrics,
-      icon: BarChart3,
       active: pathname.startsWith("/metrics"),
       badge: null as number | null,
     },
   ];
 
   return (
-    <header className="relative z-30 border-b border-border bg-card/95 shadow-[0_1px_2px_rgba(29,29,30,0.03)] backdrop-blur supports-[backdrop-filter]:bg-card/90 md:sticky md:top-0">
+    <header className="relative z-30 border-b border-border bg-card md:sticky md:top-0">
       <div className="mx-auto w-full max-w-[1248px] px-4 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.5 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <Link
               href="/"
               onClick={() => {
@@ -122,34 +105,31 @@ export function AppHeader({
                   onHomeReset?.();
                 }
               }}
-              className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-lg text-left transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10 shrink-0"
+              className="flex min-h-11 min-w-0 shrink-0 items-center gap-2 rounded-[6px] text-left transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-[0_2px_8px_rgba(0,171,117,0.28)]">
-                <BadgeCheck className="size-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold tracking-tight text-foreground leading-tight sm:text-base">
-                  {t.brand.name}
-                </div>
-                <div className="hidden text-xs leading-snug text-muted-foreground sm:block">
-                  {t.brand.subtitle}
-                </div>
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.svg"
+                alt=""
+                width={28}
+                height={28}
+                className="h-7 w-7 shrink-0"
+              />
+              <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">
+                {t.brand.name}
+              </span>
             </Link>
 
-            <div className="hidden min-w-0 items-center border-l border-border pl-4 md:flex">
-              <div className="inline-flex max-w-full min-w-0 items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 text-sm">
-                <Building2 className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate font-medium text-foreground">
-                  {t.brand.companyName}
-                </span>
-              </div>
+            <div className="hidden min-w-0 items-center border-l border-border pl-3 md:flex">
+              <span className="truncate text-[13px] text-muted-foreground">
+                {t.brand.companyName}
+              </span>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+          <div className="flex shrink-0 items-center gap-2">
             <div
-              className="inline-flex items-center rounded-xl border border-border bg-background p-0.5"
+              className="inline-flex items-center rounded-[6px] border border-border bg-muted p-0.5"
               role="group"
               aria-label={t.nav.langAriaLabel}
             >
@@ -162,10 +142,10 @@ export function AppHeader({
                     aria-pressed={isSelected}
                     onClick={() => setLang(option.code)}
                     className={cn(
-                      "inline-flex min-h-9 w-[42px] items-center justify-center rounded-[10px] text-xs font-semibold tracking-wide transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
+                      "inline-flex min-h-9 w-[40px] items-center justify-center rounded-[4px] border text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-7",
                       isSelected
-                        ? "bg-card text-[var(--brand-text)] shadow-xs ring-1 ring-border/70"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "border-border bg-card text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
                     )}
                   >
                     {option.label}
@@ -185,7 +165,7 @@ export function AppHeader({
                       onClick={onOpenShortcuts}
                       aria-label={t.nav.shortcutsTooltip}
                       title={t.nav.shortcutsTooltip}
-                      className="hidden size-9 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:inline-flex"
+                      className="hidden size-8 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:inline-flex"
                     />
                   }
                 >
@@ -208,7 +188,7 @@ export function AppHeader({
                     disabled={isResetting}
                     aria-label={resetLabel}
                     title={resetLabel}
-                    className="size-11 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:size-9"
+                    className="size-11 shrink-0 p-0 text-muted-foreground hover:text-foreground sm:size-8"
                   />
                 }
               >
@@ -221,72 +201,41 @@ export function AppHeader({
           </div>
 
           <div className="flex w-full min-w-0 items-center md:hidden">
-            <div className="inline-flex max-w-full min-w-0 items-center gap-2 rounded-xl border border-border bg-background px-2.5 py-1 text-xs">
-              <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate font-medium text-foreground">
-                {t.brand.companyName}
-              </span>
-            </div>
+            <span className="truncate text-xs text-muted-foreground">
+              {t.brand.companyName}
+            </span>
           </div>
         </div>
 
         <nav
           aria-label={t.nav.ariaLabel}
-          className="no-scrollbar -mx-4 flex items-center gap-1 overflow-x-auto border-t border-border/70 px-4 py-1.5 sm:mx-0 sm:px-0"
+          className="ui-tabs no-scrollbar -mx-4 border-t border-border border-b-0 px-4 sm:mx-0 sm:px-0"
         >
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                ref={item.active ? activeTabRef : undefined}
-                href={item.href}
-                aria-current={item.active ? "page" : undefined}
-                onClick={() => {
-                  if (item.href === "/" && pathname === "/") {
-                    onHomeReset?.();
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              ref={item.active ? activeTabRef : undefined}
+              href={item.href}
+              aria-current={item.active ? "page" : undefined}
+              onClick={() => {
+                if (item.href === "/" && pathname === "/") {
+                  onHomeReset?.();
+                }
+              }}
+              className="ui-tab mb-0 min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-10"
+            >
+              <span>{item.label}</span>
+              {item.badge !== null && (
+                <span
+                  className={
+                    item.badge > 0 ? "ui-tag tabular-nums" : "ui-tab-count"
                   }
-                }}
-                className={cn(
-                  "relative inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9 sm:py-1.5",
-                  item.active
-                    ? "bg-accent text-accent-foreground font-semibold"
-                    : "text-muted-foreground font-medium hover:bg-muted/80 hover:text-foreground"
-                )}
-              >
-                <Icon
-                  className={cn(
-                    "size-4 shrink-0",
-                    item.active
-                      ? "text-[var(--brand-text)]"
-                      : "text-muted-foreground"
-                  )}
-                />
-                <span>{item.label}</span>
-                {item.badge !== null && (
-                  <Badge
-                    variant={item.badge > 0 ? "default" : "secondary"}
-                    className={cn(
-                      "h-auto min-h-5 min-w-5 px-1.5 py-0.5 text-xs tabular-nums",
-                      item.badge > 0
-                        ? "bg-amber-500 text-white border-transparent hover:bg-amber-500"
-                        : item.active
-                          ? "bg-primary/15 text-accent-foreground border-transparent"
-                          : "bg-background text-muted-foreground border-border"
-                    )}
-                  >
-                    {item.badge}
-                  </Badge>
-                )}
-                {item.active && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute inset-x-3 -bottom-1.5 h-0.5 rounded-full bg-primary"
-                  />
-                )}
-              </Link>
-            );
-          })}
+                >
+                  {item.badge}
+                </span>
+              )}
+            </Link>
+          ))}
         </nav>
       </div>
 
@@ -328,10 +277,7 @@ export function AppHeader({
                   <span>{t.nav.resetting}</span>
                 </>
               ) : (
-                <>
-                  <RotateCcw className="size-4" />
-                  <span>{t.nav.resetConfirmAction}</span>
-                </>
+                <span>{t.nav.resetConfirmAction}</span>
               )}
             </Button>
           </DialogFooter>

@@ -10,16 +10,19 @@ export const APPROVAL_STATUS_STYLES: Record<
   }
 > = {
   pending: {
-    badgeClass: "border-amber-300/80 bg-amber-50 text-amber-900",
-    bannerClass: "border-amber-300 bg-amber-50/90 text-amber-950",
+    badgeClass:
+      "border-transparent bg-transparent text-[var(--status-warn-text)]",
+    bannerClass: "ui-notice ui-notice-warn",
   },
   approved: {
-    badgeClass: "border-[#00AB75]/35 bg-[#E8F8F2] text-[#006B49]",
-    bannerClass: "border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]",
+    badgeClass:
+      "border-transparent bg-transparent text-[var(--status-ok-text)]",
+    bannerClass: "ui-notice ui-notice-ok",
   },
   rejected: {
-    badgeClass: "border-red-300/80 bg-red-50 text-red-800",
-    bannerClass: "border-red-300 bg-red-50/90 text-red-950",
+    badgeClass:
+      "border-transparent bg-transparent text-[var(--status-danger-text)]",
+    bannerClass: "ui-notice ui-notice-danger",
   },
 };
 

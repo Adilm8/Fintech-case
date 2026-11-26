@@ -369,39 +369,44 @@ export interface VerdictStyle {
 export const VERDICT_STYLES: Record<Verdict, VerdictStyle> = {
   green: {
     verdict: "green",
-    badgeClass: "border-[#00AB75]/30 bg-[#00AB75]/10 text-[#006B49]",
-    bannerClass: "border-[#00AB75]/35 bg-[#E8F8F2] text-[#064A34]",
-    dotClass: "bg-[#00AB75]",
-    iconColorClass: "text-[var(--brand-text)]",
+    badgeClass: "border-transparent bg-transparent text-foreground",
+    bannerClass: "ui-notice ui-notice-ok",
+    dotClass: "ui-dot-ok",
+    iconColorClass: "text-[var(--status-ok-text)]",
   },
   yellow: {
     verdict: "yellow",
-    badgeClass: "border-amber-300/80 bg-amber-50 text-amber-900",
-    bannerClass: "border-amber-300 bg-amber-50/95 text-amber-950",
-    dotClass: "bg-amber-500",
-    iconColorClass: "text-amber-700",
+    badgeClass: "border-transparent bg-transparent text-foreground",
+    bannerClass: "ui-notice ui-notice-warn",
+    dotClass: "ui-dot-warn",
+    iconColorClass: "text-[var(--status-warn-text)]",
   },
   red: {
     verdict: "red",
-    badgeClass: "border-red-300/80 bg-red-50 text-red-800",
-    bannerClass: "border-red-300 bg-red-50/95 text-red-950",
-    dotClass: "bg-red-600",
-    iconColorClass: "text-red-600",
-    actionButtonClass: "bg-red-600 text-white hover:bg-red-700",
+    badgeClass:
+      "border-transparent bg-transparent text-[var(--status-danger-text)]",
+    bannerClass: "ui-notice ui-notice-danger",
+    dotClass: "ui-dot-danger",
+    iconColorClass: "text-[var(--status-danger-text)]",
+    actionButtonClass:
+      "border-[#E5A3A3] bg-card text-[#B91C1C] hover:bg-[#FEF2F2]",
   },
   grey: {
     verdict: "grey",
-    badgeClass: "border-[#DCDCE2] bg-[#F0F0F5] text-[#4A4A4E]",
-    bannerClass: "border-[#DCDCE2] bg-[#F0F0F5] text-[#1D1D1E]",
-    dotClass: "bg-[#737376]",
-    iconColorClass: "text-[#57575A]",
+    badgeClass:
+      "border-transparent bg-transparent text-[var(--status-neutral-text)]",
+    bannerClass: "ui-notice ui-notice-neutral",
+    dotClass: "ui-dot-neutral",
+    iconColorClass: "text-[var(--status-neutral-text)]",
   },
   invalid: {
     verdict: "invalid",
-    badgeClass: "border-rose-300 bg-rose-50 text-rose-950",
-    bannerClass: "border-rose-400/80 bg-rose-50/95 text-rose-950",
-    dotClass: "bg-rose-900",
-    iconColorClass: "text-rose-900",
-    actionButtonClass: "bg-rose-900 text-white hover:bg-rose-950",
+    badgeClass:
+      "border-transparent bg-transparent text-[var(--status-invalid-text)]",
+    bannerClass: "ui-notice ui-notice-invalid",
+    dotClass: "ui-dot-invalid",
+    iconColorClass: "text-[var(--status-invalid-text)]",
+    actionButtonClass:
+      "border-[#E5A3A3] bg-card text-[#B91C1C] hover:bg-[#FEF2F2]",
   },
 };
