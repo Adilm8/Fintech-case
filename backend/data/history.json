@@ -3,7 +3,7 @@
     "payer_id": "client-technostroy",
     "name": "ТОО «ТехноСтрой Астана»",
     "bin": "170346704876",
-    "iik": "KZ51125KZT1721175500",
+    "iik": "KZ12856KZT1721175500",
     "bik": "KCJBKZKX"
   },
   "payments": [
@@ -35,7 +35,7 @@
       "paid_at": "2025-11-07",
       "recipient_name": "ТОО «СтепьЭнергоСервис»",
       "recipient_bin": "151144817419",
-      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_iik": "KZ55856KZT5935868570",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 545000,
       "purpose": "Оплата электромонтажных материалов по счёту № 114"
@@ -57,7 +57,7 @@
       "paid_at": "2025-11-17",
       "recipient_name": "ТОО «АлматыОфисТрейд»",
       "recipient_bin": "190747359118",
-      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_iik": "KZ32856KZT9661713965",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 325000,
       "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 126"
@@ -90,7 +90,7 @@
       "paid_at": "2025-12-07",
       "recipient_name": "ТОО «СтепьЭнергоСервис»",
       "recipient_bin": "151144817419",
-      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_iik": "KZ55856KZT5935868570",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 560000,
       "purpose": "Оплата электромонтажных материалов по счёту № 115"
@@ -112,7 +112,7 @@
       "paid_at": "2025-12-20",
       "recipient_name": "ТОО «АлматыОфисТрейд»",
       "recipient_bin": "190747359118",
-      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_iik": "KZ32856KZT9661713965",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 285000,
       "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 127"
@@ -145,7 +145,7 @@
       "paid_at": "2026-01-06",
       "recipient_name": "ТОО «СтепьЭнергоСервис»",
       "recipient_bin": "151144817419",
-      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_iik": "KZ55856KZT5935868570",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 525000,
       "purpose": "Оплата электромонтажных материалов по счёту № 116"
@@ -178,7 +178,7 @@
       "paid_at": "2026-01-22",
       "recipient_name": "ТОО «АлматыОфисТрейд»",
       "recipient_bin": "190747359118",
-      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_iik": "KZ32856KZT9661713965",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 310000,
       "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 128"
@@ -200,7 +200,7 @@
       "paid_at": "2026-02-05",
       "recipient_name": "ТОО «СтепьЭнергоСервис»",
       "recipient_bin": "151144817419",
-      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_iik": "KZ55856KZT5935868570",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 510000,
       "purpose": "Оплата электромонтажных материалов по счёту № 117"
@@ -233,7 +233,7 @@
       "paid_at": "2026-02-24",
       "recipient_name": "ТОО «АлматыОфисТрейд»",
       "recipient_bin": "190747359118",
-      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_iik": "KZ32856KZT9661713965",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 300000,
       "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 129"
@@ -255,7 +255,7 @@
       "paid_at": "2026-03-07",
       "recipient_name": "ТОО «СтепьЭнергоСервис»",
       "recipient_bin": "151144817419",
-      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_iik": "KZ55856KZT5935868570",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 535000,
       "purpose": "Оплата электромонтажных материалов по счёту № 118"
@@ -288,7 +288,7 @@
       "paid_at": "2026-03-29",
       "recipient_name": "ТОО «АлматыОфисТрейд»",
       "recipient_bin": "190747359118",
-      "recipient_iik": "KZ71125KZT9661713965",
+      "recipient_iik": "KZ32856KZT9661713965",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 340000,
       "purpose": "Оплата канцелярских и хозяйственных товаров по счёту № 130"
@@ -310,7 +310,7 @@
       "paid_at": "2026-04-06",
       "recipient_name": "ТОО «СтепьЭнергоСервис»",
       "recipient_bin": "151144817419",
-      "recipient_iik": "KZ94125KZT5935868570",
+      "recipient_iik": "KZ55856KZT5935868570",
       "recipient_bik": "KCJBKZKX",
       "amount_kzt": 580000,
       "purpose": "Оплата электромонтажных материалов по счёту № 119"

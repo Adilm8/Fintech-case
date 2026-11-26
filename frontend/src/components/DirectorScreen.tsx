@@ -31,10 +31,15 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ApiError,
   decideApproval,
   getErrorMessage,
   isNetworkUnreachableError,
 } from "@/lib/api";
+import {
+  canTrustApproval,
+  MIN_DIRECTOR_COMMENT_LENGTH,
+} from "@/lib/approvals";
 import { formatDateRu, formatKzt } from "@/lib/format";
 import type { Approval, ApprovalDecision } from "@/lib/types";
 import { cn } from "cn";
@@ -87,12 +92,14 @@ function getApprovalSummary(approval: Approval) {
 interface PendingApprovalCardProps {
   approval: Approval;
   onDecided: (decision: ApprovalDecision, recipientName: string) => Promise<void>;
+  onConflictError: (message: string) => Promise<void>;
   onNetworkError: (message: string) => void;
 }
 
 function PendingApprovalCard({
   approval,
   onDecided,
+  onConflictError,
   onNetworkError,
 }: PendingApprovalCardProps) {
   const [comment, setComment] = useState("");
@@ -103,8 +110,15 @@ function PendingApprovalCard({
 
   const summary = getApprovalSummary(approval);
   const isRed = approval.check.verdict === "red";
-  const isApproveDisabled =
-    submittingDecision !== null || (isRed && comment.trim().length === 0);
+  const allowTrust = canTrustApproval(approval);
+  const effectiveTrust = allowTrust && trustAccount;
+  const trimmedComment = comment.trim();
+  const commentRequiredForApprove = isRed || effectiveTrust;
+  const commentTooShort =
+    commentRequiredForApprove &&
+    trimmedComment.length < MIN_DIRECTOR_COMMENT_LENGTH;
+
+  const isApproveDisabled = submittingDecision !== null || commentTooShort;
 
   const handleDecision = async (decision: ApprovalDecision) => {
     setCardError(null);
@@ -112,13 +126,16 @@ function PendingApprovalCard({
     try {
       await decideApproval(approval.id, {
         decision,
-        director_comment: comment.trim(),
-        trust_account: decision === "approved" ? trustAccount : false,
+        director_comment: trimmedComment,
+        trust_account: decision === "approved" ? effectiveTrust : false,
       });
       await onDecided(decision, summary.recipientName);
     } catch (err) {
       if (isNetworkUnreachableError(err)) {
         onNetworkError(getErrorMessage(err));
+      } else if (err instanceof ApiError && err.status === 409) {
+        setCardError(err.message);
+        await onConflictError(err.message);
       } else {
         setCardError(getErrorMessage(err));
       }
@@ -148,6 +165,12 @@ function PendingApprovalCard({
                   {summary.purpose}
                 </div>
               )}
+              {approval.check.history?.compared_with && (
+                <div className="inline-block rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                  Сравнение с похожим поставщиком:{" "}
+                  {approval.check.history.compared_with}
+                </div>
+              )}
             </CardDescription>
           </div>
           <div className="text-left sm:text-right space-y-1">
@@ -165,7 +188,10 @@ function PendingApprovalCard({
           headlineRu={approval.check.headline_ru}
         />
 
-        <ComparisonTable comparison={approval.check.comparison} />
+        <ComparisonTable
+          comparison={approval.check.comparison}
+          trusted={Boolean(approval.check.trusted)}
+        />
 
         <ReasonsList
           signals={approval.check.signals}
@@ -190,7 +216,7 @@ function PendingApprovalCard({
           {cardError && (
             <Alert variant="destructive" className="bg-red-50/90 border-red-300">
               <AlertCircle className="size-4" />
-              <AlertTitle>Ошибка при сохранении решения</AlertTitle>
+              <AlertTitle>Не удалось сохранить решение</AlertTitle>
               <AlertDescription>{cardError}</AlertDescription>
             </Alert>
           )}
@@ -199,23 +225,30 @@ function PendingApprovalCard({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label htmlFor={`director-comment-${approval.id}`}>
                 Комментарий директора
-                {isRed && (
+                {commentRequiredForApprove && (
                   <span className="ml-1 text-red-600 font-semibold">*</span>
                 )}
               </Label>
-              {isRed && (
-                <span className="text-xs font-medium text-red-700">
-                  Обязательно для платежа с высоким риском
+              {commentRequiredForApprove && (
+                <span
+                  className={cn(
+                    "text-xs font-medium tabular-nums",
+                    commentTooShort ? "text-red-700" : "text-emerald-700"
+                  )}
+                >
+                  {isRed
+                    ? `Обязательно для одобрения (минимум ${MIN_DIRECTOR_COMMENT_LENGTH} символов: ${trimmedComment.length}/${MIN_DIRECTOR_COMMENT_LENGTH})`
+                    : `Обязательно для доверенного счёта (минимум ${MIN_DIRECTOR_COMMENT_LENGTH} символов: ${trimmedComment.length}/${MIN_DIRECTOR_COMMENT_LENGTH})`}
                 </span>
               )}
             </div>
             <Textarea
               id={`director-comment-${approval.id}`}
               rows={3}
-              aria-required={isRed}
+              aria-required={commentRequiredForApprove}
               placeholder={
-                isRed
-                  ? "Укажите причину одобрения или отклонения (обязательно для красного статуса)..."
+                commentRequiredForApprove
+                  ? `Укажите причину одобрения (не менее ${MIN_DIRECTOR_COMMENT_LENGTH} символов). Для отклонения комментарий не обязателен.`
                   : "Комментарий руководителя (необязательно)..."
               }
               value={comment}
@@ -224,28 +257,39 @@ function PendingApprovalCard({
                 if (cardError) setCardError(null);
               }}
             />
+            {commentRequiredForApprove && (
+              <p className="text-xs text-muted-foreground">
+                Для отклонения платёжной заявки комментарий не требуется.
+              </p>
+            )}
           </div>
 
-          <div className="flex items-start gap-2.5 rounded-lg border border-border bg-background px-3.5 py-2.5">
-            <Checkbox
-              id={`trust-account-${approval.id}`}
-              checked={trustAccount}
-              onCheckedChange={(checked) => setTrustAccount(Boolean(checked))}
-              className="mt-0.5"
-            />
-            <div className="space-y-0.5">
-              <Label
-                htmlFor={`trust-account-${approval.id}`}
-                className="cursor-pointer font-medium text-foreground"
-              >
-                Доверять этому счёту
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                После одобрения счёт будет добавлен в доверенные реквизиты
-                поставщика для будущих платежей.
-              </p>
+          {allowTrust && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-border bg-background px-3.5 py-2.5">
+              <Checkbox
+                id={`trust-account-${approval.id}`}
+                checked={trustAccount}
+                onCheckedChange={(checked) => {
+                  setTrustAccount(Boolean(checked));
+                  if (cardError) setCardError(null);
+                }}
+                className="mt-0.5"
+              />
+              <div className="space-y-0.5">
+                <Label
+                  htmlFor={`trust-account-${approval.id}`}
+                  className="cursor-pointer font-medium text-foreground"
+                >
+                  Доверять этому счёту
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  После одобрения счёт будет добавлен в доверенные реквизиты
+                  поставщика для будущих платежей (требуется комментарий от{" "}
+                  {MIN_DIRECTOR_COMMENT_LENGTH} символов).
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button
@@ -305,6 +349,7 @@ export function DirectorScreen({
     decision: ApprovalDecision;
     recipientName: string;
   } | null>(null);
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   const pendingApprovals = approvals.filter((a) => a.status === "pending");
   const resolvedApprovals = approvals.filter((a) => a.status !== "pending");
@@ -313,7 +358,14 @@ export function DirectorScreen({
     decision: ApprovalDecision,
     recipientName: string
   ) => {
+    setScreenError(null);
     setFeedback({ decision, recipientName });
+    await onRefresh();
+  };
+
+  const handleConflictError = async (message: string) => {
+    setFeedback(null);
+    setScreenError(message);
     await onRefresh();
   };
 
@@ -342,6 +394,25 @@ export function DirectorScreen({
           <span>Обновить</span>
         </Button>
       </div>
+
+      {screenError && (
+        <Alert
+          variant="destructive"
+          className="bg-red-50/90 border-red-300 pr-10"
+        >
+          <AlertCircle className="size-4" />
+          <AlertTitle>Заявка обновлена</AlertTitle>
+          <AlertDescription>{screenError}</AlertDescription>
+          <button
+            type="button"
+            aria-label="Закрыть уведомление"
+            onClick={() => setScreenError(null)}
+            className="absolute top-2.5 right-2.5 rounded p-1 opacity-70 hover:opacity-100"
+          >
+            <X className="size-4" />
+          </button>
+        </Alert>
+      )}
 
       {feedback && (
         <Alert
@@ -405,6 +476,7 @@ export function DirectorScreen({
               key={approval.id}
               approval={approval}
               onDecided={handleDecided}
+              onConflictError={handleConflictError}
               onNetworkError={onNetworkError}
             />
           ))}

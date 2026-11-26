@@ -40,6 +40,7 @@ export default function Home() {
   const [isLoadingQueue, setIsLoadingQueue] = useState(true);
   const [isResetting, setIsResetting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [resetCounter, setResetCounter] = useState(0);
 
   const loadData = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoadingQueue(true);
@@ -108,7 +109,11 @@ export default function Home() {
     setIsResetting(true);
     try {
       await resetDemo();
+      setRole("accountant");
       setSelectedPayment(null);
+      setPrefillRequest(null);
+      setApiError(null);
+      setResetCounter((count) => count + 1);
       await loadData(true);
     } catch (err) {
       setApiError(getErrorMessage(err));
@@ -155,6 +160,7 @@ export default function Home() {
 
         {role === "director" ? (
           <DirectorScreen
+            key={`director-${resetCounter}`}
             approvals={approvals}
             isLoading={isLoadingQueue}
             onRefresh={() => loadData(false)}
@@ -162,8 +168,10 @@ export default function Home() {
           />
         ) : selectedPayment ? (
           <CheckScreen
+            key={`check-${resetCounter}-${selectedPayment.request.recipient_bin}-${selectedPayment.request.recipient_iik}-${selectedPayment.request.amount_kzt}`}
             request={selectedPayment.request}
             result={selectedPayment.result}
+            approvals={approvals}
             onBack={() => {
               setSelectedPayment(null);
               void loadData(false);
@@ -178,16 +186,30 @@ export default function Home() {
               );
               void loadData(false);
             }}
-            onApprovalCreated={() => {
+            onApprovalCreated={(createdApproval) => {
+              setApprovals((prev) => {
+                const exists = prev.some(
+                  (item) => item.id === createdApproval.id
+                );
+                return exists
+                  ? prev.map((item) =>
+                      item.id === createdApproval.id ? createdApproval : item
+                    )
+                  : [...prev, createdApproval];
+              });
               void refreshApprovalsOnly();
             }}
             onNetworkError={(message) => setApiError(message)}
           />
         ) : (
           <PaymentQueueScreen
-            key={prefillRequest ? JSON.stringify(prefillRequest) : "queue-default"}
+            key={`queue-${resetCounter}-${
+              prefillRequest ? JSON.stringify(prefillRequest) : "empty"
+            }`}
             queue={queue}
+            approvals={approvals}
             isLoading={isLoadingQueue}
+            hasError={Boolean(apiError)}
             prefillRequest={prefillRequest}
             onSelectPayment={(request, result) => {
               setPrefillRequest(null);

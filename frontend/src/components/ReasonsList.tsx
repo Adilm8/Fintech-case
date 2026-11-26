@@ -10,7 +10,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { formatDateRu } from "@/lib/format";
+import { formatDateRu, SIGNAL_RULE_LABELS } from "@/lib/format";
 import type { Signal, SignalSeverity } from "@/lib/types";
 import { cn } from "cn";
 
@@ -37,8 +37,9 @@ const SEVERITY_LABEL_RU: Record<SignalSeverity, string> = {
 export function ReasonsList({ signals, score, className }: ReasonsListProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const sortedSignals = [...signals].sort((a, b) => b.points - a.points);
-  const topReasons = sortedSignals.slice(0, 4);
+  const orderedSignals = signals ?? [];
+  const topReasons = orderedSignals.slice(0, 4);
+  const hiddenCount = Math.max(0, orderedSignals.length - topReasons.length);
 
   return (
     <Card className={cn("border-border shadow-xs", className)}>
@@ -52,25 +53,30 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
           </p>
         ) : (
           <ul className="space-y-2.5">
-            {topReasons.map((signal, idx) => (
-              <li
-                key={`${signal.rule_id}-${idx}`}
-                className="flex items-start gap-3 text-sm leading-relaxed text-foreground"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "mt-2 size-2 shrink-0 rounded-full",
-                    SEVERITY_DOT_CLASS[signal.severity] ?? "bg-slate-400"
-                  )}
-                />
-                <span>{signal.reason_ru}</span>
-              </li>
-            ))}
+            {topReasons.map((signal, idx) => {
+              const isTrustedSignal = signal.rule_id === "trusted_account";
+              return (
+                <li
+                  key={`${signal.rule_id}-${idx}`}
+                  className="flex items-start gap-3 text-sm leading-relaxed text-foreground"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "mt-2 size-2 shrink-0 rounded-full",
+                      isTrustedSignal
+                        ? "bg-emerald-600"
+                        : SEVERITY_DOT_CLASS[signal.severity] ?? "bg-slate-400"
+                    )}
+                  />
+                  <span>{signal.reason_ru}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
 
-        {sortedSignals.length > 0 && (
+        {orderedSignals.length > 0 && (
           <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
             <CollapsibleTrigger
               render={
@@ -82,7 +88,11 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
                 />
               }
             >
-              <span>Подробнее</span>
+              <span>
+                {hiddenCount > 0
+                  ? `Подробнее (ещё ${hiddenCount})`
+                  : "Подробнее"}
+              </span>
               <ChevronDown
                 className={cn(
                   "size-3.5 transition-transform duration-150",
@@ -104,59 +114,87 @@ export function ReasonsList({ signals, score, className }: ReasonsListProps) {
               )}
 
               <div className="space-y-2.5">
-                {sortedSignals.map((signal, idx) => (
-                  <div
-                    key={`${signal.rule_id}-detail-${idx}`}
-                    className="rounded-md border border-border bg-card p-3 text-xs space-y-1.5"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className="font-mono text-[11px] px-1.5 py-0"
-                        >
-                          {signal.rule_id}
-                        </Badge>
-                        <span className="text-muted-foreground">
-                          {SEVERITY_LABEL_RU[signal.severity] ?? signal.severity}
+                {orderedSignals.map((signal, idx) => {
+                  const ruleLabel = SIGNAL_RULE_LABELS[signal.rule_id];
+                  const isExtra = idx >= 4;
+                  return (
+                    <div
+                      key={`${signal.rule_id}-detail-${idx}`}
+                      className="rounded-md border border-border bg-card p-3 text-xs space-y-1.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className="font-mono text-[11px] px-1.5 py-0"
+                          >
+                            {signal.rule_id}
+                          </Badge>
+                          {ruleLabel && (
+                            <span className="font-medium text-foreground">
+                              {ruleLabel}
+                            </span>
+                          )}
+                          <span className="text-muted-foreground">
+                            {SEVERITY_LABEL_RU[signal.severity] ??
+                              signal.severity}
+                          </span>
+                          {isExtra && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0"
+                            >
+                              Дополнительно
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="font-mono font-semibold text-foreground">
+                          {signal.points > 0
+                            ? `+${signal.points}`
+                            : signal.points}{" "}
+                          б.
                         </span>
                       </div>
-                      <span className="font-mono font-semibold text-foreground">
-                        {signal.points > 0 ? `+${signal.points}` : signal.points}{" "}
-                        б.
-                      </span>
-                    </div>
 
-                    <p className="text-sm text-foreground">{signal.reason_ru}</p>
+                      <p className="text-sm text-foreground">
+                        {signal.reason_ru}
+                      </p>
 
-                    {signal.evidence && (
-                      <div className="grid grid-cols-1 gap-1 rounded bg-muted/50 px-2.5 py-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
-                        <div>
-                          <span className="text-foreground/70">Поле: </span>
-                          {signal.evidence.field}
-                        </div>
-                        {signal.evidence.since && (
+                      {signal.evidence && (
+                        <div className="grid grid-cols-1 gap-1 rounded bg-muted/50 px-2.5 py-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
                           <div>
-                            <span className="text-foreground/70">С даты: </span>
-                            {formatDateRu(signal.evidence.since)}
+                            <span className="text-foreground/70">Поле: </span>
+                            {signal.evidence.field}
                           </div>
-                        )}
-                        {signal.evidence.expected !== null && (
-                          <div className="break-all">
-                            <span className="text-foreground/70">Ожидалось: </span>
-                            {signal.evidence.expected}
-                          </div>
-                        )}
-                        {signal.evidence.actual !== null && (
-                          <div className="break-all">
-                            <span className="text-foreground/70">Получено: </span>
-                            {signal.evidence.actual}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                          {signal.evidence.since && (
+                            <div>
+                              <span className="text-foreground/70">
+                                С даты:{" "}
+                              </span>
+                              {formatDateRu(signal.evidence.since)}
+                            </div>
+                          )}
+                          {signal.evidence.expected !== null && (
+                            <div className="break-all">
+                              <span className="text-foreground/70">
+                                Ожидалось:{" "}
+                              </span>
+                              {signal.evidence.expected}
+                            </div>
+                          )}
+                          {signal.evidence.actual !== null && (
+                            <div className="break-all">
+                              <span className="text-foreground/70">
+                                Получено:{" "}
+                              </span>
+                              {signal.evidence.actual}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </CollapsibleContent>
           </Collapsible>

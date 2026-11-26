@@ -9,14 +9,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { isLatinInCyrillic, resolveComparisonDiff } from "@/lib/diff";
 import { FIELD_LABELS, formatDateRu, formatKzt } from "@/lib/format";
 import type { ComparisonField, ComparisonRow } from "@/lib/types";
 import { cn } from "cn";
 
 interface ComparisonTableProps {
   comparison: ComparisonRow[];
+  trusted?: boolean;
   className?: string;
 }
+
+const MONOSPACE_FIELDS = new Set<ComparisonField>(["iik", "bin", "bik"]);
 
 function formatCellValue(field: ComparisonField, value: string): string {
   if (field === "amount") {
@@ -32,33 +36,68 @@ function HighlightedDiffChars({
   value,
   diffPositions,
   variant,
+  monospace,
 }: {
   value: string;
   diffPositions: number[];
   variant: "invoice" | "history";
+  monospace: boolean;
 }) {
   const diffSet = new Set(diffPositions);
   const chars = Array.from(value);
 
   return (
-    <span className="font-mono text-sm tracking-wider sm:text-[15px] break-all">
+    <span
+      className={cn(
+        monospace
+          ? "font-mono text-sm tracking-wider sm:text-[15px] break-all"
+          : "text-sm sm:text-[15px] leading-relaxed break-words"
+      )}
+    >
       {chars.map((char, idx) => {
         const isDiff = diffSet.has(idx);
         if (!isDiff) {
           return <span key={idx}>{char}</span>;
         }
+
+        const isLatinHomoglyph = isLatinInCyrillic(char, value);
         return (
-          <span
+          <mark
             key={idx}
+            title={
+              isLatinHomoglyph
+                ? "Латинская буква внутри кириллического названия"
+                : undefined
+            }
             className={cn(
-              "inline-block rounded-[3px] px-[3px] py-[1px] mx-[0.5px] font-bold",
+              "inline-flex items-baseline gap-0.5 rounded-[3px] px-[3px] py-[1px] mx-[0.5px] font-bold",
               variant === "invoice"
-                ? "bg-red-600 text-white underline decoration-white decoration-2 underline-offset-2 shadow-xs"
-                : "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300"
+                ? "bg-red-600 text-white shadow-xs"
+                : "bg-emerald-100 text-emerald-950 ring-1 ring-emerald-400"
             )}
           >
-            {char}
-          </span>
+            <span
+              className={cn(
+                variant === "invoice" &&
+                  "underline decoration-white decoration-2 underline-offset-2"
+              )}
+            >
+              {char}
+            </span>
+            {isLatinHomoglyph && (
+              <span
+                title="Латинская буква внутри кириллического названия"
+                className={cn(
+                  "ml-0.5 inline-block -translate-y-0.5 rounded px-1 py-[1px] text-[10px] font-semibold leading-none tracking-normal",
+                  variant === "invoice"
+                    ? "bg-amber-300 text-red-950"
+                    : "bg-amber-200 text-amber-950"
+                )}
+              >
+                лат.
+              </span>
+            )}
+          </mark>
         );
       })}
     </span>
@@ -67,6 +106,7 @@ function HighlightedDiffChars({
 
 export function ComparisonTable({
   comparison,
+  trusted = false,
   className,
 }: ComparisonTableProps) {
   return (
@@ -94,11 +134,16 @@ export function ComparisonTable({
             </TableHeader>
             <TableBody>
               {comparison.map((row) => {
-                const hasDiffPositions =
-                  Array.isArray(row.diff_positions) &&
-                  row.diff_positions.length > 0;
-                const useCharDiff =
-                  hasDiffPositions || (row.field === "iik" && row.differs);
+                const showDiff = !trusted && row.differs;
+                const resolvedDiff = trusted
+                  ? { invoicePositions: [], historyPositions: [] }
+                  : resolveComparisonDiff(row);
+                const hasInvoiceDiff =
+                  resolvedDiff.invoicePositions.length > 0;
+                const hasHistoryDiff =
+                  resolvedDiff.historyPositions.length > 0;
+                const isMonospace = MONOSPACE_FIELDS.has(row.field);
+
                 const formattedInvoice = formatCellValue(
                   row.field,
                   row.in_invoice
@@ -111,14 +156,14 @@ export function ComparisonTable({
                   <TableRow
                     key={row.field}
                     className={cn(
-                      row.differs &&
+                      showDiff &&
                         "bg-red-50/70 hover:bg-red-50/90 border-l-4 border-l-red-500"
                     )}
                   >
                     <TableCell className="pl-5 py-3.5 font-medium text-foreground whitespace-normal">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span>{FIELD_LABELS[row.field] ?? row.field}</span>
-                        {row.differs && (
+                        {showDiff && (
                           <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
                             Отличается
                           </span>
@@ -127,21 +172,20 @@ export function ComparisonTable({
                     </TableCell>
 
                     <TableCell className="py-3.5 whitespace-normal">
-                      {useCharDiff && hasDiffPositions ? (
+                      {hasInvoiceDiff ? (
                         <HighlightedDiffChars
                           value={row.in_invoice}
-                          diffPositions={row.diff_positions}
+                          diffPositions={resolvedDiff.invoicePositions}
                           variant="invoice"
+                          monospace={isMonospace}
                         />
                       ) : (
                         <span
                           className={cn(
-                            row.field === "iik" ||
-                              row.field === "bin" ||
-                              row.field === "bik"
+                            isMonospace
                               ? "font-mono text-sm tracking-wider"
                               : "text-sm",
-                            row.differs
+                            showDiff
                               ? "font-semibold text-red-900"
                               : "text-foreground"
                           )}
@@ -155,18 +199,17 @@ export function ComparisonTable({
                       {formattedHistory ? (
                         <div className="space-y-1">
                           <div>
-                            {useCharDiff && hasDiffPositions ? (
+                            {hasHistoryDiff ? (
                               <HighlightedDiffChars
                                 value={row.in_history ?? ""}
-                                diffPositions={row.diff_positions}
+                                diffPositions={resolvedDiff.historyPositions}
                                 variant="history"
+                                monospace={isMonospace}
                               />
                             ) : (
                               <span
                                 className={cn(
-                                  row.field === "iik" ||
-                                    row.field === "bin" ||
-                                    row.field === "bik"
+                                  isMonospace
                                     ? "font-mono text-sm tracking-wider"
                                     : "text-sm",
                                   "text-foreground"

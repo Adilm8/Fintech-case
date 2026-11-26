@@ -45,6 +45,12 @@ class TestGeneratedDatasets:
             assert regenerated == committed, f"Non-deterministic output for {path.name}"
 
     def test_all_bins_and_iiks_pass_validation_and_bank_consistency(self) -> None:
+        banks_raw = _load_json("banks.json")
+        assert "verify against NB RK" in banks_raw["note"]
+        assert BCC_BANK_CODE == "856"
+        assert any(b["code"] == "856" and b["bik"] == "KCJBKZKX" for b in banks_raw["banks"])
+        assert any(b["code"] == "125" and b["bik"] == "NBRKKZKX" for b in banks_raw["banks"])
+
         registry: dict[str, str] = _load_json("registry.json")
         bcc_accounts: dict[str, dict[str, str]] = _load_json("bcc_accounts.json")
         history: dict = _load_json("history.json")

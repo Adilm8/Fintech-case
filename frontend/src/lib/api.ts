@@ -49,11 +49,45 @@ export function getErrorMessage(
   return fallback;
 }
 
-function extractValidationMessage(detail: unknown): string | null {
+function mapLocToRussianMessage(loc: unknown): string {
+  if (!Array.isArray(loc)) {
+    return "Проверьте введённые данные";
+  }
+  const joined = loc.map((part) => String(part).toLowerCase()).join(".");
+  if (joined.includes("amount")) return "Проверьте сумму платежа";
+  if (joined.includes("iik")) return "Проверьте ИИК (IBAN)";
+  if (joined.includes("bin")) return "Проверьте БИН/ИИН получателя";
+  if (joined.includes("bik")) return "Проверьте БИК банка";
+  if (joined.includes("name")) return "Укажите название получателя";
+  return "Проверьте введённые данные";
+}
+
+function extractValidationMessage(
+  detail: unknown,
+  status?: number
+): string | null {
   if (typeof detail === "string" && detail.trim()) {
     return detail.trim();
   }
   if (Array.isArray(detail) && detail.length > 0) {
+    if (status === 422) {
+      const seen = new Set<string>();
+      const mapped: string[] = [];
+      for (const item of detail) {
+        const msg =
+          item && typeof item === "object" && "loc" in item
+            ? mapLocToRussianMessage((item as { loc: unknown }).loc)
+            : "Проверьте введённые данные";
+        if (!seen.has(msg)) {
+          seen.add(msg);
+          mapped.push(msg);
+        }
+      }
+      if (mapped.length > 0) {
+        return mapped.join("; ");
+      }
+    }
+
     const messages = detail
       .map((item) => {
         if (typeof item === "string") return item;
@@ -82,13 +116,19 @@ async function requestJson<T>(
   const url = `${API_BASE_URL}${path}`;
   let response: Response;
 
+  const headers = new Headers(init?.headers);
+  if (
+    init?.body !== undefined &&
+    init?.body !== null &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set("Content-Type", "application/json");
+  }
+
   try {
     response = await fetch(url, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
+      headers,
       cache: "no-store",
     });
   } catch {
@@ -123,17 +163,15 @@ async function requestJson<T>(
         : body;
 
     if (response.status === 422) {
-      const validationMessage = extractValidationMessage(detail);
+      const validationMessage = extractValidationMessage(detail, 422);
       throw new ApiError({
         status: 422,
         detail,
-        message:
-          validationMessage ||
-          "Проверьте корректность заполненных данных (ошибка 422).",
+        message: validationMessage || "Проверьте введённые данные",
       });
     }
 
-    const parsedMessage = extractValidationMessage(detail);
+    const parsedMessage = extractValidationMessage(detail, response.status);
     throw new ApiError({
       status: response.status,
       detail,
@@ -167,6 +205,7 @@ export async function getQueue(): Promise<QueueItem[]> {
   return raw.map((item) => ({
     id: item.id,
     request: {
+      ...(item.payer_id !== undefined ? { payer_id: item.payer_id } : {}),
       recipient_name: item.recipient_name,
       recipient_bin: item.recipient_bin,
       recipient_iik: item.recipient_iik,
@@ -183,38 +222,88 @@ export async function getHistory(): Promise<HistoryEntry[]> {
     { payments: (HistoryEntry & { paid_at?: string })[] } | HistoryEntry[]
   >("/api/history", { method: "GET" });
   const list = Array.isArray(raw) ? raw : raw.payments;
-  return list.map((p) => ({ ...p, date: p.date ?? (p as { paid_at?: string }).paid_at }));
+  return list.map((p) => ({
+    ...p,
+    date: p.date ?? (p as { paid_at?: string }).paid_at,
+  }));
+}
+
+interface RawApproval extends Omit<Approval, "request"> {
+  request?: CheckRequest;
+  check_request?: CheckRequest;
+}
+
+function adaptApproval(raw: RawApproval): Approval {
+  const request = raw.request ?? raw.check_request;
+  return {
+    id: raw.id,
+    ...(request ? { request } : {}),
+    check: raw.check,
+    status: raw.status,
+    accountant_note: raw.accountant_note,
+    director_comment: raw.director_comment,
+    trust_account: raw.trust_account,
+    decided_at: raw.decided_at,
+    ...(raw.created_at !== undefined ? { created_at: raw.created_at } : {}),
+  };
 }
 
 export async function createApproval(
   payload: CreateApprovalRequest
 ): Promise<Approval> {
-  return requestJson<Approval>("/api/approvals", {
+  const raw = await requestJson<RawApproval>("/api/approvals", {
     method: "POST",
     body: JSON.stringify({
       check_request: payload.request,
       accountant_note: payload.accountant_note,
     }),
   });
+  return adaptApproval(raw);
 }
 
 export async function getApprovals(): Promise<Approval[]> {
-  return requestJson<Approval[]>("/api/approvals", {
+  const raw = await requestJson<RawApproval[]>("/api/approvals", {
     method: "GET",
   });
+  return raw.map(adaptApproval);
 }
 
 export async function decideApproval(
   id: string,
   payload: DecisionRequest
 ): Promise<Approval> {
-  return requestJson<Approval>(
-    `/api/approvals/${encodeURIComponent(id)}/decision`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
+  try {
+    const raw = await requestJson<RawApproval>(
+      `/api/approvals/${encodeURIComponent(id)}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+    return adaptApproval(raw);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err.status === 409) {
+        throw new ApiError({
+          status: 409,
+          detail: err.detail,
+          message: "Заявка уже обработана",
+        });
+      }
+      if (err.status === 422) {
+        const detailText =
+          typeof err.detail === "string" && err.detail.trim()
+            ? err.detail.trim()
+            : "Это действие недоступно для данной заявки";
+        throw new ApiError({
+          status: 422,
+          detail: err.detail,
+          message: detailText,
+        });
+      }
     }
-  );
+    throw err;
+  }
 }
 
 export async function resetDemo(): Promise<void> {

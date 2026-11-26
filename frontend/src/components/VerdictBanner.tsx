@@ -14,6 +14,7 @@ import { cn } from "cn";
 interface VerdictBannerProps {
   verdict: Verdict;
   headlineRu: string;
+  subtitle?: string | null;
   className?: string;
 }
 
@@ -25,19 +26,37 @@ const VERDICT_ICONS = {
   invalid: XCircle,
 } as const;
 
+function normalizeText(value: string): string {
+  return value.trim().toLowerCase().replace(/[.!\s]+$/g, "");
+}
+
 export function VerdictBanner({
   verdict,
   headlineRu,
+  subtitle,
   className,
 }: VerdictBannerProps) {
   const meta = VERDICT_META[verdict] ?? VERDICT_META.grey;
   const Icon = VERDICT_ICONS[verdict] ?? HelpCircle;
 
+  const title = meta.labelRu;
+  const trimmedHeadline = headlineRu?.trim() ?? "";
+  const trimmedSubtitle = subtitle?.trim() ?? "";
+
+  const normalizedTitle = normalizeText(title);
+  const resolvedSubtitle =
+    trimmedHeadline && normalizeText(trimmedHeadline) !== normalizedTitle
+      ? trimmedHeadline
+      : trimmedSubtitle && normalizeText(trimmedSubtitle) !== normalizedTitle
+        ? trimmedSubtitle
+        : null;
+
   return (
     <div
       role="status"
       className={cn(
-        "flex items-start gap-4 rounded-xl border-2 px-5 py-4 shadow-xs",
+        "flex gap-4 rounded-xl border-2 px-5 py-4 shadow-xs",
+        resolvedSubtitle ? "items-start" : "items-center",
         meta.bannerClass,
         className
       )}
@@ -53,12 +72,14 @@ export function VerdictBanner({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="text-lg font-bold tracking-tight sm:text-xl">
-            {meta.labelRu}
+            {title}
           </span>
         </div>
-        <p className="text-sm font-medium leading-relaxed opacity-90 sm:text-base">
-          {headlineRu}
-        </p>
+        {resolvedSubtitle && (
+          <p className="text-sm font-medium leading-relaxed opacity-90 sm:text-base">
+            {resolvedSubtitle}
+          </p>
+        )}
       </div>
     </div>
   );

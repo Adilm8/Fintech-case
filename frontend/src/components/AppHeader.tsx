@@ -3,7 +3,6 @@
 import { Building2, RotateCcw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import type { UserRole } from "@/lib/types";
 import { cn } from "cn";
 
@@ -24,6 +23,7 @@ export function AppHeader({
   isResetting,
   onLogoClick,
 }: AppHeaderProps) {
+  const isAccountant = role === "accountant";
   const isDirector = role === "director";
 
   return (
@@ -58,41 +58,35 @@ export function AppHeader({
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3.5">
           <div
-            className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-1.5"
+            className="inline-flex items-center rounded-lg border border-border bg-muted p-1 gap-1"
             role="group"
             aria-label="Переключатель роли"
           >
             <button
               type="button"
+              aria-pressed={isAccountant}
               onClick={() => onRoleChange("accountant")}
               className={cn(
-                "text-sm transition-colors cursor-pointer",
-                !isDirector
-                  ? "font-semibold text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                "inline-flex items-center justify-center rounded-md px-3.5 py-1.5 text-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                isAccountant
+                  ? "bg-[var(--brand)] text-[var(--brand-foreground)] font-semibold shadow-xs"
+                  : "text-muted-foreground font-medium hover:bg-background/70 hover:text-foreground"
               )}
             >
               Бухгалтер
             </button>
 
-            <Switch
-              aria-label="Переключить роль между Бухгалтер и Директор"
-              checked={isDirector}
-              onCheckedChange={(checked) =>
-                onRoleChange(checked ? "director" : "accountant")
-              }
-            />
-
             <button
               type="button"
+              aria-pressed={isDirector}
               onClick={() => onRoleChange("director")}
               className={cn(
-                "flex items-center gap-1.5 text-sm transition-colors cursor-pointer",
+                "inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 isDirector
-                  ? "font-semibold text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-[var(--brand)] text-[var(--brand-foreground)] font-semibold shadow-xs"
+                  : "text-muted-foreground font-medium hover:bg-background/70 hover:text-foreground"
               )}
             >
               <span>Директор</span>
@@ -100,8 +94,11 @@ export function AppHeader({
                 variant={pendingCount > 0 ? "default" : "secondary"}
                 className={cn(
                   "h-5 min-w-5 px-1.5 text-xs tabular-nums",
-                  pendingCount > 0 &&
-                    "bg-amber-500 text-white hover:bg-amber-600"
+                  pendingCount > 0
+                    ? "bg-amber-500 text-white border-transparent hover:bg-amber-500"
+                    : isDirector
+                      ? "bg-white/20 text-white border-transparent"
+                      : "bg-background text-muted-foreground border-border"
                 )}
               >
                 {pendingCount}

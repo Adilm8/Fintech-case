@@ -2,11 +2,6 @@
   "note": "Synthetic reference directory of Kazakhstan banks (to verify against NB RK reference).",
   "banks": [
     {
-      "code": "125",
-      "bik": "KCJBKZKX",
-      "name": "АО «Банк ЦентрКредит»"
-    },
-    {
       "code": "601",
       "bik": "HSBKKZKX",
       "name": "АО «Народный Банк Казахстана»"
@@ -27,24 +22,19 @@
       "name": "АО «First Heartland Jusan Bank»"
     },
     {
+      "code": "856",
+      "bik": "KCJBKZKX",
+      "name": "АО «Банк ЦентрКредит»"
+    },
+    {
+      "code": "551",
+      "bik": "KSNVKZKA",
+      "name": "АО «Фридом Банк Казахстан»"
+    },
+    {
       "code": "948",
       "bik": "EURIKZKA",
       "name": "АО «Евразийский банк»"
-    },
-    {
-      "code": "914",
-      "bik": "BRKEKZKA",
-      "name": "АО «Bereke Bank»"
-    },
-    {
-      "code": "949",
-      "bik": "ATYNKZKA",
-      "name": "АО «Altyn Bank»"
-    },
-    {
-      "code": "972",
-      "bik": "HCSKKZKA",
-      "name": "АО «Отбасы банк»"
     },
     {
       "code": "821",
@@ -52,9 +42,19 @@
       "name": "АО «Bank RBK»"
     },
     {
-      "code": "551",
-      "bik": "KSNVKZKA",
-      "name": "АО «Фридом Банк Казахстан»"
+      "code": "250",
+      "bik": "HCSKKZKA",
+      "name": "АО «Отбасы банк»"
+    },
+    {
+      "code": "886",
+      "bik": "INLMKZKA",
+      "name": "АО «Home Credit Bank»"
+    },
+    {
+      "code": "125",
+      "bik": "NBRKKZKX",
+      "name": "РГУ «Национальный Банк Республики Казахстан»"
     }
   ]
 }

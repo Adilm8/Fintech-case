@@ -19,6 +19,7 @@ export type ApprovalDecision = "approved" | "rejected";
 export type UserRole = "accountant" | "director";
 
 export interface CheckRequest {
+  payer_id?: string;
   recipient_name: string;
   recipient_bin: string;
   recipient_iik: string;
@@ -61,6 +62,12 @@ export interface History {
   payments_count: number;
   last_payment_date: string | null;
   median_amount_kzt: number | null;
+  compared_with?: string | null;
+}
+
+export interface TrustedInfo {
+  decided_at: string | null;
+  director_comment: string | null;
 }
 
 export interface CheckResult {
@@ -72,6 +79,8 @@ export interface CheckResult {
   comparison: ComparisonRow[];
   next_action: NextAction;
   history: History;
+  trusted?: boolean;
+  trusted_info?: TrustedInfo | null;
 }
 
 export interface QueueItem {
@@ -106,6 +115,7 @@ export interface Approval {
   director_comment: string | null;
   trust_account: boolean;
   decided_at: string | null;
+  created_at?: string | null;
 }
 
 export interface DecisionRequest {

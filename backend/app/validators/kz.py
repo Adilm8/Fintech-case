@@ -64,8 +64,16 @@ def make_bin_iin(prefix11: str) -> str:
 
 
 def bin_iin_checksum_ok(value: str) -> bool:
-    """Return True if value is a 12-digit KZ BIN or IIN with a valid checksum."""
+    """Return True if value is a valid 12-digit KZ BIN or IIN.
+
+    Rejects all-zero values (000000000000), invalid months outside 01..12, and bad checksums.
+    """
     if not isinstance(value, str) or len(value) != 12 or not _is_ascii_digits(value):
+        return False
+    if value == "000000000000":
+        return False
+    month = int(value[2:4])
+    if not (1 <= month <= 12):
         return False
     expected = compute_bin_iin_check_digit(value[:11])
     return expected is not None and int(value[11]) == expected
@@ -139,11 +147,17 @@ def make_iik(bank_code: str, account_body: str) -> str:
     return f"KZ{check}{bank_code}{account_body}"
 
 
-def iik_ok(value: str) -> tuple[bool, str | None]:
+def iik_ok(
+    value: str,
+    *,
+    check_bank_code: bool = True,
+    banks_path: Path | None = None,
+) -> tuple[bool, str | None]:
     """Validate a Kazakhstan IIK (20-char KZ IBAN).
 
     Returns (True, None) when valid, or (False, plain_russian_error_message).
-    Explicitly detects Cyrillic lookalike characters with a clear message.
+    Explicitly detects Cyrillic lookalike characters and validates bank code digits
+    and membership in banks.json (M4) when check_bank_code is True.
     """
     if not isinstance(value, str) or not value:
         return False, "Укажите ИИК счёта."
@@ -178,6 +192,16 @@ def iik_ok(value: str) -> tuple[bool, str | None]:
     if iban_mod97(value) != 1:
         return False, "В ИИК ошибка контрольной суммы — такого счёта не существует."
 
+    code = value[4:7]
+    if not _is_ascii_digits(code):
+        return False, "В ИИК указан неверный код банка — символы 5–7 должны быть цифрами."
+
+    if check_bank_code and get_bank_by_code(code, path=banks_path) is None:
+        return (
+            False,
+            f"Неизвестный код банка ({code}) в ИИК — такого счёта не существует.",
+        )
+
     return True, None
 
 
@@ -205,6 +229,11 @@ def _load_banks_cached(resolved_path: Path) -> tuple[BankRecord, ...]:
             )
         )
     return tuple(records)
+
+
+def clear_banks_cache() -> None:
+    """Clear the cached bank directory (used after regenerating banks.json)."""
+    _load_banks_cached.cache_clear()
 
 
 def load_banks(path: Path | None = None) -> list[BankRecord]:

@@ -28,6 +28,7 @@ from app.validators.kz import (
     bik_matches_iik,
     bin_iin_checksum_ok,
     bin_kind,
+    clear_banks_cache,
     compute_bin_iin_check_digit,
     iik_ok,
     make_iik,
@@ -44,17 +45,17 @@ BANKS_NOTE = (
 )
 
 BANKS_CATALOG: list[BankRecord] = [
-    {"code": "125", "bik": "KCJBKZKX", "name": "АО «Банк ЦентрКредит»"},
     {"code": "601", "bik": "HSBKKZKX", "name": "АО «Народный Банк Казахстана»"},
     {"code": "722", "bik": "CASPKZKA", "name": "АО «Kaspi Bank»"},
     {"code": "965", "bik": "IRTYKZKA", "name": "АО «ForteBank»"},
     {"code": "998", "bik": "TSESKZKA", "name": "АО «First Heartland Jusan Bank»"},
-    {"code": "948", "bik": "EURIKZKA", "name": "АО «Евразийский банк»"},
-    {"code": "914", "bik": "BRKEKZKA", "name": "АО «Bereke Bank»"},
-    {"code": "949", "bik": "ATYNKZKA", "name": "АО «Altyn Bank»"},
-    {"code": "972", "bik": "HCSKKZKA", "name": "АО «Отбасы банк»"},
-    {"code": "821", "bik": "KINCKZKA", "name": "АО «Bank RBK»"},
+    {"code": "856", "bik": "KCJBKZKX", "name": "АО «Банк ЦентрКредит»"},
     {"code": "551", "bik": "KSNVKZKA", "name": "АО «Фридом Банк Казахстан»"},
+    {"code": "948", "bik": "EURIKZKA", "name": "АО «Евразийский банк»"},
+    {"code": "821", "bik": "KINCKZKA", "name": "АО «Bank RBK»"},
+    {"code": "250", "bik": "HCSKKZKA", "name": "АО «Отбасы банк»"},
+    {"code": "886", "bik": "INLMKZKA", "name": "АО «Home Credit Bank»"},
+    {"code": "125", "bik": "NBRKKZKX", "name": "РГУ «Национальный Банк Республики Казахстан»"},
 ]
 
 BIK_BY_CODE: dict[str, str] = {bank["code"]: bank["bik"] for bank in BANKS_CATALOG}
@@ -116,6 +117,7 @@ def generate_iik(
     bank_code: str,
     *,
     prefix: str = "KZT",
+    banks_path: Path | None = None,
 ) -> str:
     """Generate a valid synthetic 20-char KZ IIK for the given 3-digit bank code."""
     if len(prefix) > 13 or not all(ch in string.ascii_uppercase + string.digits for ch in prefix):
@@ -123,7 +125,7 @@ def generate_iik(
     digits_needed = 13 - len(prefix)
     tail = "".join(rng.choices(string.digits, k=digits_needed))
     iik = make_iik(bank_code, f"{prefix}{tail}")
-    ok, err = iik_ok(iik)
+    ok, err = iik_ok(iik, check_bank_code=banks_path is not None, banks_path=banks_path)
     assert ok, f"Generated invalid IIK {iik}: {err}"
     return iik
 
@@ -155,11 +157,12 @@ def write_banks_json(output_dir: Path = DATA_DIR) -> Path:
         "banks": BANKS_CATALOG,
     }
     banks_path = _write_json(output_dir / "banks.json", payload)
+    clear_banks_cache()
 
     # Sanity-check bank code / BIK consistency against a sample IIK for each bank.
     rng = random.Random(SEED)
     for bank in BANKS_CATALOG:
-        sample_iik = generate_iik(rng, bank["code"])
+        sample_iik = generate_iik(rng, bank["code"], banks_path=banks_path)
         assert bik_matches_iik(bank["bik"], sample_iik, path=banks_path)
 
     return banks_path

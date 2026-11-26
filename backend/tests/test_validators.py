@@ -26,8 +26,15 @@ from app.validators.kz import (
 )
 from scripts.generate_data import generate_bin, generate_iik, generate_iin
 
-BCC_SAMPLE_IIK = "KZ86125KZT5004100100"
+MOD97_SAMPLE_IIK = "KZ86125KZT5004100100"
 BANKS_JSON_PATH = Path(__file__).resolve().parents[1] / "data" / "banks.json"
+
+
+def _make_raw_iban_with_custom_code(code3: str, body13: str) -> str:
+    """Build a 20-char KZ IBAN with valid mod-97 even for non-digit/unknown bank codes."""
+    rem = iban_mod97(f"KZ00{code3}{body13}")
+    check = 98 - rem
+    return f"KZ{check:02d}{code3}{body13}"
 
 
 class TestBinIin:
@@ -53,10 +60,18 @@ class TestBinIin:
         with pytest.raises(ValueError):
             make_bin_iin("20014202000")
 
+    def test_l1_rejects_all_zeros_and_invalid_months(self) -> None:
+        assert bin_iin_checksum_ok("000000000000") is False
+        # Even with a valid mod-11 check digit, months 00, 13, 99 must be rejected
+        assert bin_iin_checksum_ok(make_bin_iin("20004000001")) is False
+        assert bin_iin_checksum_ok(make_bin_iin("20134000001")) is False
+        assert bin_iin_checksum_ok(make_bin_iin("20994000001")) is False
+
     @pytest.mark.parametrize(
         "bad_value",
         [
             "",
+            "000000000000",
             "20014000000",  # 11 digits
             "2001400000040",  # 13 digits
             "200140000005",  # wrong check digit
@@ -106,12 +121,29 @@ class TestBinIin:
 
 
 class TestIik:
-    def test_bcc_example_passes_mod97(self) -> None:
-        assert iban_mod97(BCC_SAMPLE_IIK) == 1
-        assert make_iik("125", "KZT5004100100") == BCC_SAMPLE_IIK
-        ok, err = iik_ok(BCC_SAMPLE_IIK)
+    def test_kz86125_sample_passes_pure_mod97_checksum(self) -> None:
+        # Pure IBAN mod-97 checksum test (without bank-code assertion).
+        assert iban_mod97(MOD97_SAMPLE_IIK) == 1
+        assert make_iik("125", "KZT5004100100") == MOD97_SAMPLE_IIK
+        ok, err = iik_ok(MOD97_SAMPLE_IIK, check_bank_code=False)
         assert ok is True
         assert err is None
+
+    def test_m4_rejects_non_digit_and_unknown_bank_codes_in_iik(self) -> None:
+        # Non-digit chars in positions 5..7 despite valid mod-97 -> invalid
+        alpha_code_iik = _make_raw_iban_with_custom_code("ABC", "KZT5004100100")
+        assert iban_mod97(alpha_code_iik) == 1
+        ok_alpha, err_alpha = iik_ok(alpha_code_iik)
+        assert ok_alpha is False
+        assert err_alpha is not None
+
+        # Unknown 3-digit bank code despite valid mod-97 -> invalid
+        unknown_code_iik = make_iik("999", "KZT5004100100")
+        assert iban_mod97(unknown_code_iik) == 1
+        ok_unknown, err_unknown = iik_ok(unknown_code_iik)
+        assert ok_unknown is False
+        assert err_unknown is not None
+        assert "999" in err_unknown
 
     def test_invalid_checksum_rejected(self) -> None:
         ok, err = iik_ok("KZ86125KZT5004100101")
@@ -153,39 +185,57 @@ class TestIik:
         assert err is not None
 
     def test_iik_bank_code(self) -> None:
-        assert iik_bank_code(BCC_SAMPLE_IIK) == "125"
+        assert iik_bank_code(MOD97_SAMPLE_IIK) == "125"
+        assert iik_bank_code("KZ00856KZT0000000000") == "856"
         assert iik_bank_code("KZ006010000000000000") == "601"
         assert iik_bank_code("KZ86") is None
         assert iik_bank_code("KZ86ABC0000000000000") is None
 
 
 class TestBanksAndBik:
-    def test_banks_json_exists_and_marked(self) -> None:
+    def test_l4_banks_json_codes_biks_and_note(self) -> None:
         assert BANKS_JSON_PATH.exists()
         raw = json.loads(BANKS_JSON_PATH.read_text(encoding="utf-8"))
-        assert "to verify against NB RK reference" in raw["note"]
+        assert "verify against NB RK" in raw["note"]
         banks = load_banks()
-        assert len(banks) >= 10
-        bcc = get_bank_by_code("125")
-        assert bcc is not None
-        assert bcc["bik"] == "KCJBKZKX"
-        for bank in banks:
-            assert len(bank["bik"]) == 8
-            assert len(bank["code"]) == 3
+        by_code = {bank["code"]: bank["bik"] for bank in banks}
+        expected = {
+            "601": "HSBKKZKX",
+            "722": "CASPKZKA",
+            "965": "IRTYKZKA",
+            "998": "TSESKZKA",
+            "856": "KCJBKZKX",
+            "551": "KSNVKZKA",
+            "948": "EURIKZKA",
+            "821": "KINCKZKA",
+            "250": "HCSKKZKA",
+            "886": "INLMKZKA",
+            "125": "NBRKKZKX",
+        }
+        assert by_code == expected
+        bcc = get_bank_by_code("856")
+        assert bcc is not None and bcc["bik"] == "KCJBKZKX"
+        nbrk = get_bank_by_code("125")
+        assert nbrk is not None and nbrk["bik"] == "NBRKKZKX"
 
     def test_bik_ok(self) -> None:
         assert bik_ok("KCJBKZKX") is True
+        assert bik_ok("NBRKKZKX") is True
         assert bik_ok("HSBKKZKX") is True
         assert bik_ok("CASPKZKA") is True
+        assert bik_ok("INLMKZKA") is True
         assert bik_ok("UNKNOWNX") is False
         assert bik_ok("kcjbkzkx") is False
         assert bik_ok("KCJBKZK") is False
         assert bik_ok("\u041aCJBKZKX") is False  # Cyrillic К
 
     def test_bik_matches_iik(self) -> None:
-        assert bik_matches_iik("KCJBKZKX", BCC_SAMPLE_IIK) is True
-        assert bik_matches_iik("HSBKKZKX", BCC_SAMPLE_IIK) is False
-        assert bik_matches_iik("UNKNOWNX", BCC_SAMPLE_IIK) is False
+        bcc_iik = make_iik("856", "KZT5004100100")
+        assert bik_matches_iik("KCJBKZKX", bcc_iik) is True
+        assert bik_matches_iik("NBRKKZKX", bcc_iik) is False
+        assert bik_matches_iik("NBRKKZKX", MOD97_SAMPLE_IIK) is True
+        assert bik_matches_iik("KCJBKZKX", MOD97_SAMPLE_IIK) is False
+        assert bik_matches_iik("UNKNOWNX", bcc_iik) is False
         assert bik_matches_iik("KCJBKZKX", "BAD") is False
 
         halyk = get_bank_by_bik("HSBKKZKX")
@@ -216,6 +266,6 @@ class TestGeneratorHelpers:
             assert bin_registration_yymm(iin) is None
 
         for bank in load_banks():
-            iik = generate_iik(rng1, bank["code"])
+            iik = generate_iik(rng1, bank["code"], banks_path=BANKS_JSON_PATH)
             assert iik_ok(iik) == (True, None)
             assert bik_matches_iik(bank["bik"], iik) is True
