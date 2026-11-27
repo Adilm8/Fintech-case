@@ -1,0 +1,101 @@
+# BCC Business Shield — local Docker Compose stack
+#
+# Demo mode (default):
+#   docker compose up --build
+#
+# Prod mode (stop demo first with `docker compose down` to avoid port conflicts):
+#   docker compose --profile prod up --build backend-prod frontend-prod
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  image: bcc-shield-backend
+  env_file:
+    - path: ./backend/.env
+      required: false
+  ports:
+    - "${BACKEND_PORT:-8000}:8000"
+  restart: unless-stopped
+
+services:
+  backend-demo:
+    <<: *backend-common
+    environment:
+      APP_MODE: demo
+      APP_MODULE: app.main:app
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; r = urllib.request.urlopen('http://127.0.0.1:8000/api/metrics', timeout=3); sys.exit(0 if r.status == 200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  frontend-demo:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_MODE: demo
+        BACKEND_URL: http://backend-demo:8000
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
+    image: bcc-shield-frontend-demo
+    environment:
+      NEXT_PUBLIC_APP_MODE: demo
+      BACKEND_URL: http://backend-demo:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend-demo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend-prod:
+    <<: *backend-common
+    profiles:
+      - prod
+    environment:
+      APP_MODE: prod
+      APP_MODULE: app.asgi:app
+      SHIELD_DB_PATH: /app/var/shield.db
+      SHIELD_COOKIE_INSECURE: "${SHIELD_COOKIE_INSECURE:-1}"
+    volumes:
+      - shield-prod-data:/app/var
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; r = urllib.request.urlopen('http://127.0.0.1:8000/api/v1/meta', timeout=3); sys.exit(0 if r.status == 200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  frontend-prod:
+    profiles:
+      - prod
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_MODE: prod
+        BACKEND_URL: "${BACKEND_URL:-http://backend-prod:8000}"
+        NEXT_PUBLIC_DEMO_LOGINS: "${NEXT_PUBLIC_DEMO_LOGINS:-}"
+    image: bcc-shield-frontend-prod
+    environment:
+      NEXT_PUBLIC_APP_MODE: prod
+      BACKEND_URL: "${BACKEND_URL:-http://backend-prod:8000}"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend-prod:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  shield-prod-data:
