@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { LANG_OPTIONS, useT } from "@/i18n";
 import {
   ApiError,
@@ -22,7 +23,28 @@ import {
   login as apiLogin,
 } from "@/lib/prod/api";
 import { defaultHomeForRole, useSession } from "@/lib/prod/session";
+import type { Session } from "@/lib/prod/types";
 import { cn } from "cn";
+
+type SessionWithPasswordFlag = Session & {
+  must_change_password?: boolean;
+  user: Session["user"] & { must_change_password?: boolean };
+};
+
+function requiresPasswordChange(session: Session): boolean {
+  const extended = session as SessionWithPasswordFlag;
+  return Boolean(
+    extended.must_change_password || extended.user.must_change_password
+  );
+}
+
+const SHOW_DEMO_LOGINS = process.env.NEXT_PUBLIC_DEMO_LOGINS === "1";
+
+const DEMO_LOGIN_PRESETS = [
+  { login: "accountant", labelKey: "demoLoginAccountant" },
+  { login: "director", labelKey: "demoLoginDirector" },
+  { login: "analyst", labelKey: "demoLoginAnalyst" },
+] as const;
 
 export default function ProdLoginPage() {
   const router = useRouter();
@@ -34,6 +56,13 @@ export default function ProdLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSelectDemoLogin = (presetLogin: string) => {
+    setLoginValue(presetLogin);
+    if (error) setError(null);
+    passwordInputRef.current?.focus();
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -51,16 +80,29 @@ export default function ProdLoginPage() {
         { login: trimmedLogin, password },
         lang
       );
-      setSession(session);
-      try {
-        const profile = await getProfile(lang, { suppressAuthRedirect: true });
-        if (profile.default_lang && profile.default_lang !== lang) {
-          setLang(profile.default_lang);
+      let mustChange = requiresPasswordChange(session);
+      if (!mustChange) {
+        try {
+          const profile = await getProfile(lang, {
+            suppressAuthRedirect: true,
+          });
+          if (profile.default_lang && profile.default_lang !== lang) {
+            setLang(profile.default_lang);
+          }
+        } catch (profileErr) {
+          if (
+            profileErr instanceof ApiError &&
+            profileErr.code === "password_change_required"
+          ) {
+            mustChange = true;
+          }
+          // Non-blocking language preference sync.
         }
-      } catch {
-        // Non-blocking language preference sync.
       }
-      router.replace(defaultHomeForRole(session.user.role));
+      setSession(session);
+      router.replace(
+        mustChange ? "/profile" : defaultHomeForRole(session.user.role)
+      );
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "invalid_credentials") {
@@ -171,6 +213,7 @@ export default function ProdLoginPage() {
                 </Label>
                 <div className="relative">
                   <Input
+                    ref={passwordInputRef}
                     id="prod-password-input"
                     name="password"
                     type={showPassword ? "text" : "password"}
@@ -218,6 +261,38 @@ export default function ProdLoginPage() {
                 )}
               </Button>
             </form>
+
+            {SHOW_DEMO_LOGINS && (
+              <div className="mt-4 space-y-2.5">
+                <Separator />
+                <div className="space-y-0.5 pt-1">
+                  <div className="ui-label-meta">
+                    {t.prod.login.demoLoginsTitle}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t.prod.login.demoLoginsHint}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {DEMO_LOGIN_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.login}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isSubmitting}
+                      onClick={() => handleSelectDemoLogin(preset.login)}
+                      className="min-h-10 w-full justify-between font-normal sm:min-h-8"
+                    >
+                      <span>{t.prod.login[preset.labelKey]}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {preset.login}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>

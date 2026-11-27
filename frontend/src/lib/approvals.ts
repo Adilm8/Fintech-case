@@ -1,3 +1,4 @@
+import { isIdentitySignalId } from "./identitySignals";
 import type { Approval, ApprovalStatus, CheckRequest } from "./types";
 
 export const MIN_DIRECTOR_COMMENT_LENGTH = 10;
@@ -150,17 +151,49 @@ export function findApprovalForPayment(
   return best;
 }
 
+const TRUST_ALLOWED_SIGNAL_IDS: ReadonlySet<string> = new Set([
+  "iik_changed",
+  "bank_changed",
+]);
+
+const TRUST_FORBIDDEN_SIGNAL_IDS: ReadonlySet<string> = new Set([
+  "urgent_wording",
+]);
+
+/**
+ * Returns true if the director may approve and trust the account.
+ * One rule for yellow and red: weighted signals must be a subset of
+ * {iik_changed, bank_changed} and contain iik_changed; any weighted identity
+ * signal or urgent_wording forbids trust; zero-weight info signals are allowed;
+ * any block signal forbids trust.
+ * Must stay in sync with `can_trust_check` in `backend/app/risk/config.py`.
+ */
 export function canTrustApproval(approval: Approval): boolean {
-  if (approval.check?.verdict !== "yellow") {
+  const verdict = approval.check?.verdict;
+  if (verdict !== "yellow" && verdict !== "red") {
     return false;
   }
   const signals = approval.check?.signals ?? [];
-  const hasBlock = signals.some((signal) => signal.severity === "block");
-  if (hasBlock) {
+  if (signals.some((signal) => signal.severity === "block")) {
     return false;
   }
-  return signals.some(
-    (signal) =>
-      signal.rule_id === "iik_changed" || signal.rule_id === "bank_changed"
+  const weightedIds = new Set(
+    signals
+      .filter((signal) => !(signal.severity === "info" && signal.points === 0))
+      .map((signal) => signal.rule_id)
   );
+  for (const id of weightedIds) {
+    if (isIdentitySignalId(id) || TRUST_FORBIDDEN_SIGNAL_IDS.has(id)) {
+      return false;
+    }
+  }
+  if (!weightedIds.has("iik_changed")) {
+    return false;
+  }
+  for (const id of weightedIds) {
+    if (!TRUST_ALLOWED_SIGNAL_IDS.has(id)) {
+      return false;
+    }
+  }
+  return true;
 }

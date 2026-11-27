@@ -203,26 +203,19 @@ function normalizeApiBase(raw: string | null | undefined): string {
 
 /**
  * Resolves the API base URL for `/api/invoice/extract`.
- * `next.config.ts` only rewrites `/api/v1/*`, so both demo and prod call `NEXT_PUBLIC_API_URL`
- * directly with `credentials: "omit"`. If unset in prod on a non-localhost host, returns ""
- * so callers surface a clear localized error instead of crashing.
+ * In prod mode `next.config.ts` rewrites `/api/invoice/*` same-origin, so returns `""`
+ * to issue a relative same-origin request with session cookies. In demo mode, calls
+ * `NEXT_PUBLIC_API_URL` (or `API_BASE_URL`) directly with `credentials: "omit"`.
  */
 export function getInvoiceApiBase(): string {
+  if (IS_PROD) {
+    return "";
+  }
   const configured = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
   if (configured) {
     return configured;
   }
-  if (!IS_PROD) {
-    return normalizeApiBase(API_BASE_URL);
-  }
-  if (
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" ||
-      window.location.hostname === "127.0.0.1")
-  ) {
-    return normalizeApiBase(API_BASE_URL);
-  }
-  return "";
+  return normalizeApiBase(API_BASE_URL);
 }
 
 const VENDOR_TERMS_RE =
@@ -563,12 +556,13 @@ export async function extractInvoice(
     });
   }
 
-  const resolvedApiBase =
-    options.apiBase !== undefined
-      ? normalizeApiBase(options.apiBase)
-      : getInvoiceApiBase();
+  const hasExplicitApiBase =
+    options.apiBase !== undefined && options.apiBase !== null;
+  const resolvedApiBase = hasExplicitApiBase
+    ? normalizeApiBase(options.apiBase)
+    : getInvoiceApiBase();
 
-  if (!resolvedApiBase) {
+  if (!IS_PROD && !resolvedApiBase) {
     throw new InvoiceExtractError({
       code: "missing_api_base",
       status: 0,
@@ -602,15 +596,20 @@ export async function extractInvoice(
       ? file.type.trim().toLowerCase()
       : validation.mimeType;
 
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+  };
+  if (IS_PROD) {
+    headers["X-Shield-Request"] = "1";
+  }
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": contentType,
-      },
+      headers,
       body: file,
-      credentials: "omit",
+      credentials: IS_PROD ? "include" : "omit",
       cache: "no-store",
       signal: controller.signal,
     });

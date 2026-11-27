@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useT } from "@/i18n";
 import {
   formatIntegerForLang,
@@ -11,11 +12,24 @@ import { cn } from "cn";
 
 interface AnalystDetailsCardProps {
   details: AnalystDetails | null | undefined;
+  isLoading?: boolean;
   className?: string;
+}
+
+function formatIikGroups(value: string): string {
+  const compact = value.replace(/\s+/g, "");
+  if (!compact) return value;
+  const chars = Array.from(compact);
+  const groups: string[] = [];
+  for (let i = 0; i < chars.length; i += 4) {
+    groups.push(chars.slice(i, i + 4).join(""));
+  }
+  return groups.join(" ");
 }
 
 export function AnalystDetailsCard({
   details,
+  isLoading = false,
   className,
 }: AnalystDetailsCardProps) {
   const { t, lang, formatDate, interpolate } = useT();
@@ -28,13 +42,25 @@ export function AnalystDetailsCard({
   const fieldLabelsMap: Record<string, string> = t.fields;
 
   return (
-    <div className={cn("ui-panel p-4 space-y-3", className)}>
+    <div
+      className={cn(
+        "ui-panel border-l-[3px] border-l-[#1D1D1E] p-4 space-y-3",
+        className
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="ui-section-title">{t.director.analystOnlyTitle}</div>
-        <span className="ui-tag">{t.director.analystConfidentialBadge}</span>
+        <span className="inline-flex items-center rounded-full bg-[#1D1D1E] px-2.5 py-0.5 text-[11px] font-semibold text-white">
+          {t.director.analystConfidentialBadge}
+        </span>
       </div>
 
-      {!hasContent ? (
+      {isLoading && !hasContent ? (
+        <div className="flex items-center gap-2 py-1 text-[13px] text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          <span>{t.common.loading}</span>
+        </div>
+      ) : !hasContent ? (
         <p className="text-[13px] text-muted-foreground">
           {t.director.analystNoDetails}
         </p>
@@ -44,26 +70,28 @@ export function AnalystDetailsCard({
             <dl className="ui-dl">
               <div className="ui-dl-row">
                 <dt className="ui-dt">{t.director.analystOwnerLabel}</dt>
-                <dd className="ui-dd space-y-1">
-                  <div className="font-medium text-foreground break-words">
+                <dd className="ui-dd space-y-1.5">
+                  <div className="text-sm font-semibold text-foreground break-words">
                     {bccAccount.owner_name}
                   </div>
-                  <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-xs tabular-nums text-muted-foreground">
-                    <span>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-xs tabular-nums text-[var(--text-secondary)]">
+                    <span className="font-medium text-foreground">
                       {interpolate(t.common.binPrefix, {
                         bin: bccAccount.owner_bin,
                       })}
                     </span>
                     <span aria-hidden="true">·</span>
-                    <span className="break-all">{bccAccount.iik}</span>
+                    <span className="break-words">
+                      {formatIikGroups(bccAccount.iik)}
+                    </span>
                   </div>
                   <div className="pt-0.5">
                     <span
                       className={cn(
-                        "ui-status",
+                        "ui-verdict-pill",
                         bccAccount.owner_matches_recipient
-                          ? "text-[var(--status-ok-text)]"
-                          : "text-[var(--status-danger-text)]"
+                          ? "ui-verdict-pill-green"
+                          : "ui-verdict-pill-red"
                       )}
                     >
                       <span
@@ -88,10 +116,10 @@ export function AnalystDetailsCard({
               <div className="ui-dl-row">
                 <dt className="ui-dt">{t.director.analystOpenedLabel}</dt>
                 <dd className="ui-dd flex flex-wrap items-baseline gap-x-2 gap-y-0.5 tabular-nums">
-                  <span className="font-medium text-foreground">
+                  <span className="font-semibold text-foreground">
                     {formatDate(bccAccount.opened_at)}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">
                     {interpolate(t.director.analystAgeDays, {
                       days: formatIntegerForLang(bccAccount.age_days, lang),
                     })}

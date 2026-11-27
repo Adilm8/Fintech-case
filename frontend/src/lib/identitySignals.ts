@@ -2,6 +2,7 @@ import type { Signal } from "./types";
 
 /**
  * Signal rule IDs that cast doubt on the recipient's identity.
+ * Must stay in sync with `IDENTITY_SIGNAL_IDS` in `backend/app/risk/config.py`.
  * When any of these signals is present on a yellow or grey check,
  * the accountant's phone-verification checkbox must NOT unlock signing —
  * only director approval can unlock «Подписать».

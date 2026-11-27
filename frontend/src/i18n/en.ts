@@ -139,6 +139,11 @@ export const en: Dictionary = {
       pendingApprovalsUnavailable: "Temporarily unavailable",
       totalAmountLabel: "Total to sign",
       totalAmountHint: "Current queue total",
+      totalPaymentsLabel: "Total payments",
+      readyToSignHint: "Ready to sign right away: {count}",
+      needsReviewLabel: "Require review",
+      amountAtRiskLabel: "Amount at risk",
+      amountAtRiskHint: "Red, yellow & invalid ({count})",
     },
     colRecipient: "Recipient",
     colAmount: "Amount",
@@ -237,6 +242,8 @@ export const en: Dictionary = {
   invoice: {
     label: "Invoice recognition",
     uploadButton: "Upload invoice (PDF or photo)",
+    demoSampleButton: "Use the demo invoice from the email",
+    demoSampleLoading: "Loading demo invoice...",
     replaceButton: "Replace file",
     clearButton: "Clear",
     cancelUploadButton: "Cancel",
@@ -283,11 +290,14 @@ export const en: Dictionary = {
         "Received an invalid response from the invoice recognition service.",
       generic:
         "Could not recognize the invoice. Try again or enter the details manually.",
+      demoSampleLoadFailed:
+        "Could not load the demo invoice. Please try again.",
     },
     aria: {
       dropzone: "Invoice upload drop zone",
       fileInput: "Select invoice file",
       removeFile: "Clear invoice recognition result",
+      demoSampleButton: "Load and recognize the demo invoice from the email",
     },
   },
   check: {
@@ -311,6 +321,7 @@ export const en: Dictionary = {
     actionsEyebrow: "Payment actions",
     actionFixRequisites: "Fix payment details",
     actionSign: "Sign",
+    actionSignLocked: "Sign with digital signature — locked until verified",
     actionSigning: "Signing...",
     actionPostpone: "Postpone & verify",
     actionSendToDirector: "Send to director",
@@ -342,6 +353,10 @@ export const en: Dictionary = {
     sending: "Sending...",
     send: "Send",
     rulesetVersion: "Ruleset version: {version}",
+    riskScoreBadge: "Risk score {score}/100",
+    viewModeAriaLabel: "Verification view mode",
+    viewModeClient: "Client view (banking secrecy)",
+    viewModeAnalyst: "BCC analyst view",
   },
   comparison: {
     title: "Details comparison with invoice & history",
@@ -354,6 +369,8 @@ export const en: Dictionary = {
     invalidBadge: "Invalid",
     latinTag: "lat.",
     latinTooltip: "Latin letter inside a Cyrillic name",
+    homoglyphBadge: "Latin {latin} instead of Cyrillic {cyrillic}",
+    homoglyphBadgeGeneric: "Latin {latin} in Cyrillic name",
     lastPayment: "Last payment: {date}",
     notInHistory: "Not in history",
   },
@@ -408,6 +425,17 @@ export const en: Dictionary = {
     statusApprovedShort: "Approved",
     statusRejectedShort: "Rejected",
     backToPayments: "Back to payments",
+    comparisonShowAll: "Show all",
+    comparisonHideUnchanged: "Hide unchanged",
+    quickCommentsLabel: "Quick comments",
+    quickCommentCalled:
+      "Called the number from the contract, new payment details confirmed",
+    quickCommentVerified:
+      "Verified the account against the contract and supplier correspondence",
+    quickCommentExpected:
+      "Amount and recipient confirmed, payment is expected",
+    quickCommentRejected: "Details were not confirmed, rejecting the payment",
+    openPayment: "Open payment →",
     analystViewToggle: "Antifraud analyst view",
     analystOnlyTitle: "Antifraud analyst only",
     analystConfidentialBadge: "Internal BCC data",
@@ -512,6 +540,20 @@ export const en: Dictionary = {
     knpLabel: "KNP",
     diffPreviewTitle: "Character diff vs. original",
     noFieldChanges: "All fields match the original.",
+    btnCombinedNewRequisites: "Combined attack (email with new details)",
+    hintHomoglyph: "Swaps one Cyrillic letter for Latin",
+    hintInvisibleChar: "Inserts hidden U+034F into the name",
+    hintOtherBank: "Changes IIK and BIC to another bank",
+    hintOwnBinOwnAccount: "Replaces BIN, IIK, and BIC",
+    hintBccOtherCompany: "Swaps IIK to another company's BCC account",
+    hintAmount4x: "Multiplies payment amount by 4×",
+    hintAddUrgent: 'Appends "urgent" to payment purpose',
+    hintCombinedNewRequisites:
+      'Latin letter + new IIK + "urgent" + amount ×3.6',
+    manualFieldsTitle: "Edit fields manually",
+    manualFieldsCount: "Modified: {count}",
+    verdictTransitionTitle: "Verdict transition",
+    verdictUnchangedHint: "Unchanged — pick an attack above",
   },
   shortcuts: {
     title: "Keyboard shortcuts",
@@ -634,6 +676,55 @@ export const en: Dictionary = {
       "This evaluation dataset is synthetic and designed to demonstrate rule behavior on defined scenarios. These metrics do not reflect real-world banking fraud statistics and do not replace validation on historical production data.",
     seedMeta: "Seed: {seed}",
     ariaBarLabel: "{name}: {rate}",
+    kpiDetectedLabel: "Attacks detected",
+    kpiStoppedShort: "red",
+    kpiEscalatedShort: "to director",
+    kpiFalseAlarmsLabel: "False alarms on hard set",
+    kpiFalseAlarmsHint:
+      "Intentionally heavy on hard legit cases (account changes, seasonal amounts)",
+    kpiHistoryLabel: "On yearly history",
+    kpiHistorySub: "{alerts} of {total} payments",
+    kpiHistoryUnavailable: "No history data",
+    kpiLatencyLabel: "Check latency",
+    kpiLatencyValue: "≈{ms} ms",
+    kpiLatencyHint: "Deterministic rules, locally",
+    verdictBarTitleWithCount: "{title} ({count} payments)",
+    verdictBarAriaLabel:
+      "Yearly history verdict distribution ({total} payments): {breakdown}",
+    verdictBarSegmentAria: "{label}: {count} ({rate})",
+    verdictBarGreyNote:
+      'Grey verdict ("No history") means no prior history for the recipient — it is neither an alert nor a false alarm.',
+    tabsAriaLabel: "Evaluation scenario categories",
+    tabsAttacks: "Attack detection ({count})",
+    tabsLegit: "Legitimate payments ({count}) & blind spots",
+    tabsAttacksEmpty: "No attack scenarios in the current report.",
+    tabsLegitEmpty: "No legitimate scenarios in the current report.",
+    tabsDetectedOfTotal: "Detected {detected} of {total}",
+    tabsFalsePositiveRate: "False alarms: {rate}",
+    tabsFalsePositiveCount: "{flagged} of {total}",
+    tabsVerdictCount: "{label}: {count}",
+    blindTitle: "Blind spots",
+    blindSubtitle:
+      "Current rule limitations computed from the dataset: missed attacks, frequent false alarms, and no-history scenarios.",
+    blindEmpty: "No blind spots found at the current thresholds.",
+    blindTagWeakDetection: "Blind spot",
+    blindTagFalseAlarm: "Frequent false alarms",
+    blindTagNoHistory: "No history",
+    blindMissedAttacksTitle: "Attacks with detection below {threshold}",
+    blindMissedAttacksHint:
+      "Attack scenarios that the system partially lets through without an alert.",
+    blindMissedAttackSummary:
+      "Detected {rate} · missed (green): {missed} of {total}",
+    blindMissedAttackGreyExtra: "no history: {grey}",
+    blindFalseAlarmsTitle:
+      "Legitimate scenarios with false alarms above {threshold}",
+    blindFalseAlarmsHint:
+      "Legitimate payments where rules regularly ask for verification.",
+    blindFalseAlarmSummary: "False alarms {rate} ({flagged} of {total})",
+    blindNoHistoryTitle: "No-history scenarios (over {threshold} grey)",
+    blindNoHistoryHint:
+      'Without prior history, the system honestly reports "unknown" (grey verdict) rather than guessing.',
+    blindNoHistorySummary: "Grey {rate} ({grey} of {total})",
   },
   prod: {
     roles: {
@@ -673,6 +764,11 @@ export const en: Dictionary = {
       errorInvalidCredentials: "Invalid login or password.",
       errorTooManyAttempts: "Too many failed sign-in attempts. Try again later.",
       sessionExpired: "Your session has expired. Please sign in again.",
+      demoLoginsTitle: "Quick login fill",
+      demoLoginsHint: "Fills only the login — enter the password manually.",
+      demoLoginAccountant: "Sign in as accountant",
+      demoLoginDirector: "Sign in as director",
+      demoLoginAnalyst: "Sign in as analyst",
     },
     access: {
       deniedTitle: "Access denied",
@@ -846,6 +942,16 @@ export const en: Dictionary = {
       verdictChangedToast: "Verdict changed — please review the payment again",
       verdictChangedDescription:
         "The updated server analysis is shown below. Review the new signals before taking action.",
+      documentMismatchToast: "Document changed — payment reloaded",
+      signatureBinding: {
+        signingDocument: "Document being signed",
+        check: "check",
+        rules: "rules",
+        modeHint:
+          "Signed via local NCALayer; if NCALayer is unavailable, a demo simulated signature is used (not NCALayer).",
+        modeSimulated: "Simulated digital signature, not NCALayer",
+        modeNcaLayer: "NCA RK Digital Signature (NCALayer)",
+      },
       signedBannerTitle: "Payment signed",
       signedBannerWithAck: "Signed with phone verification confirmation recorded.",
       cancelledBannerTitle: "Payment cancelled",
@@ -884,13 +990,23 @@ export const en: Dictionary = {
         approval_pending: "Signing is blocked pending the director's decision.",
         approval_rejected:
           "Payment was rejected by the director. Edit details or cancel it.",
+        approval_required_after_rejection:
+          "This payment or its requisites were previously rejected by the director — a new director approval is required before signing.",
         verdict_changed:
           "Verdict worsened on re-check. Review the payment again.",
+        document_mismatch:
+          "Payment details or verification results changed after the document was loaded. Refresh the payment and try signing again.",
+        signature_verification_unavailable:
+          "Server-side verification of NCA RK (NCALayer) digital signatures is unavailable in the current configuration.",
         invalid_requisites: "Invalid details. Fix the errors before signing.",
         red_requires_approval:
           "Red verdict: signing without director approval is blocked by the server.",
+        identity_requires_approval:
+          "Doubts about the recipient's identity: phone confirmation is not enough — director approval is required.",
         threshold_requires_approval:
           "Payment amount meets or exceeds the company approval threshold: director approval is required.",
+        duplicate_requires_approval:
+          "Duplicate of an existing or already signed payment detected: director approval is required.",
         ack_or_approval_required:
           "Signing requires phone verification confirmation by the accountant or director approval.",
         forbidden_role: "Your role cannot sign payments.",
@@ -1118,6 +1234,13 @@ export const en: Dictionary = {
       passwordChangedToast: "Password updated successfully",
       passwordChangedRevoked:
         "Password updated. Other active sessions revoked: {count}.",
+      passwordChangeRequiredTitle: "Password change required",
+      passwordChangeRequiredSubtitle:
+        "Update your password to unlock your workspace.",
+      passwordChangeRequiredDescription:
+        "You signed in with an initial or temporary password. Please set a new password to continue using the system.",
+      passwordChangeRateLimited:
+        "Too many failed password attempts. Please try again in 15 minutes.",
     },
     company: {
       title: "Company & Team",

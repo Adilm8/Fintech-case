@@ -32,6 +32,8 @@ import type {
   PaymentStatus,
   ProdMeta,
   Session,
+  SignerKind,
+  SignRequestBody,
   Supplier,
   SupplierDetail,
   UserProfile,
@@ -450,16 +452,25 @@ export async function recheckPayment(
   );
 }
 
+export type SignPaymentPayload =
+  | SignRequestBody
+  | {
+      document_digest?: string;
+      signature?: string;
+      signer?: SignerKind;
+      accountant_ack?: boolean;
+    };
+
 export async function signPayment(
   id: string,
-  payload?: { accountant_ack?: boolean },
+  payload: SignPaymentPayload,
   lang: Lang = getCurrentLang()
 ): Promise<Payment> {
   return request<Payment>(
     `/payments/${encodeURIComponent(id)}/sign`,
     {
       method: "POST",
-      body: JSON.stringify(payload ?? {}),
+      body: JSON.stringify(payload),
     },
     lang
   );

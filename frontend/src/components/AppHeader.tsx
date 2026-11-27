@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Keyboard, Loader2, Menu, RotateCcw, X } from "lucide-react";
+import { Loader2, Menu, RotateCcw, X } from "lucide-react";
 import {
   BrandLogo,
   CompanyChip,
@@ -39,7 +39,6 @@ export function AppHeader({
   onResetDemo,
   isResetting,
   onHomeReset,
-  onOpenShortcuts,
 }: AppHeaderProps) {
   const pathname = usePathname();
   const { t, lang, setLang } = useT();
@@ -100,13 +99,6 @@ export function AppHeader({
       badge: pendingCount,
     },
     {
-      key: "history",
-      href: "/history",
-      label: t.nav.history,
-      active: pathname.startsWith("/history"),
-      badge: null,
-    },
-    {
       key: "attack",
       href: "/attack",
       label: t.nav.attack,
@@ -140,7 +132,7 @@ export function AppHeader({
               />
             </div>
 
-            {/* Right controls (language switch + existing icon buttons; mobile utility toggle on < md) */}
+            {/* Right controls (language switch + reset button; mobile utility toggle on < md) */}
             <div className="order-3 flex shrink-0 items-center gap-1.5 md:order-2 md:gap-2">
               <LanguageSwitch
                 lang={lang}
@@ -148,29 +140,6 @@ export function AppHeader({
                 ariaLabel={t.nav.langAriaLabel}
                 className="hidden md:inline-flex"
               />
-
-              {onOpenShortcuts && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={onOpenShortcuts}
-                        aria-label={t.nav.shortcutsTooltip}
-                        title={t.nav.shortcutsTooltip}
-                        className="hidden size-8 shrink-0 rounded-[10px] p-0 text-muted-foreground hover:text-foreground md:inline-flex"
-                      />
-                    }
-                  >
-                    <Keyboard className="size-4" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {t.nav.shortcutsTooltip}
-                  </TooltipContent>
-                </Tooltip>
-              )}
 
               <Tooltip>
                 <TooltipTrigger
@@ -223,7 +192,7 @@ export function AppHeader({
               className="order-2 md:order-3 md:col-span-2 md:mt-2.5 md:border-t md:border-border/70 md:pt-2.5"
             />
 
-            {/* Collapsible utility tray on < md (keeps language switch, company chip, shortcuts accessible) */}
+            {/* Collapsible utility tray on < md (keeps language switch and company chip accessible) */}
             {menuOpen && (
               <div
                 id="app-mobile-utilities"
@@ -240,23 +209,6 @@ export function AppHeader({
                     onChange={setLang}
                     ariaLabel={t.nav.langAriaLabel}
                   />
-
-                  {onOpenShortcuts && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        onOpenShortcuts();
-                      }}
-                      aria-label={t.nav.shortcutsTooltip}
-                      title={t.nav.shortcutsTooltip}
-                      className="size-8 shrink-0 rounded-[10px] p-0 text-muted-foreground hover:text-foreground"
-                    >
-                      <Keyboard className="size-4" />
-                    </Button>
-                  )}
                 </div>
               </div>
             )}

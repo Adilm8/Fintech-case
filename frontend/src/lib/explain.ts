@@ -1,4 +1,5 @@
 import type { Lang } from "@/i18n";
+import { IS_PROD } from "./mode";
 import type { CheckResult } from "./types";
 
 export type ExplainSource = "claude" | "template";
@@ -47,10 +48,20 @@ export async function explainCheck(
     },
   };
 
-  const response = await fetch(`${API_URL}/api/explain`, {
+  const url = IS_PROD ? "/api/explain" : `${API_URL}/api/explain`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (IS_PROD) {
+    headers["X-Shield-Request"] = "1";
+  }
+
+  const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
+    ...(IS_PROD ? { credentials: "include" as const } : {}),
+    cache: "no-store",
     signal,
   });
   if (!response.ok) {

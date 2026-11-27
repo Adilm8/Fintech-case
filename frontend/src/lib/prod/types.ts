@@ -29,6 +29,15 @@ export type PaymentScope = "queue" | "signed" | "all";
 
 export type ImportFormat = "auto" | "1c" | "csv";
 
+export type SignerKind = "simulated" | "ncalayer";
+
+export interface SignRequestBody {
+  document_digest: string;
+  signature: string;
+  signer: SignerKind;
+  accountant_ack?: boolean;
+}
+
 export const REQUISITES_CHANGED_BADGE_DAYS = 90;
 export const MIN_DIRECTOR_COMMENT_LENGTH = 10;
 export const MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024;
@@ -64,6 +73,7 @@ export interface Company {
 export interface Session {
   user: User;
   company: Company | null;
+  must_change_password?: boolean;
 }
 
 export interface PaymentInput {
@@ -121,6 +131,7 @@ export interface Payment {
   doc_date: string | null;
   request: CheckRequest;
   check: CheckResult;
+  document_digest?: string | null;
   approval: ApprovalBrief | null;
   accountant_ack: boolean;
   supplier: SupplierRef;

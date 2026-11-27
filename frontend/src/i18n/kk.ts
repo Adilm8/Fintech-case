@@ -70,9 +70,9 @@ export const kk: Dictionary = {
     new_bcc_account: "BCC-дегі шот жақында ашылған",
     urgent_wording: "Шұғылдық немесе деректемелерді ауыстыру белгілері",
     amount_anomaly: "Әдеттен тыс төлем сомасы",
-    iik_changed: "Алушының ЖСК-сы өзгертілген",
-    bank_changed: "Алушының банкі өзгертілген",
-    iik_belongs_to_other_counterparty: "Шот бұрын басқа контрагентке тиесілі болған",
+    iik_changed: "Алушының ЖСК-сы өзгерген",
+    bank_changed: "Алушының банкі өзгерген",
+    iik_belongs_to_other_counterparty: "Шотты бұрын басқа контрагент пайдаланған",
     entity_type_mismatch: "Меншік нысаны мен БСН/ЖСН сәйкес келмейді",
     bin_young: "Жақында тіркелген компания",
     first_payment: "Алушыға алғашқы төлем",
@@ -140,6 +140,11 @@ export const kk: Dictionary = {
       pendingApprovalsUnavailable: "Уақытша қолжетімсіз",
       totalAmountLabel: "Қол қойылатын сома",
       totalAmountHint: "Ағымдағы кезек бойынша",
+      totalPaymentsLabel: "Барлық төлемдер",
+      readyToSignHint: "Бірден қол қоюға дайын: {count}",
+      needsReviewLabel: "Тексеруді қажет етеді",
+      amountAtRiskLabel: "Тәуекелдегі сома",
+      amountAtRiskHint: "Қызыл, сары және қателер ({count})",
     },
     colRecipient: "Алушы",
     colAmount: "Сома",
@@ -192,9 +197,9 @@ export const kk: Dictionary = {
     bankAutoDetected: "ЖСК коды бойынша банк: {bank} ({bik})",
     bikMismatchWarning:
       "БСК ЖСК-дағы банк кодымен сәйкес келмейді: күтілетін БСК — {expectedBik} ({bank})",
-    applyExpectedBik: "{bik} қою",
+    applyExpectedBik: "{bik} енгізу",
     iikValid: "ЖСК дұрыс (mod-97)",
-    iikIncomplete: "20 таңбаның {count} енгізілді",
+    iikIncomplete: "{count}/20 таңба енгізілді",
     iikErrCyrillic:
       "Кириллица әріптері анықталды — тек латын әріптерін қолданыңыз",
     iikErrPrefix: "Қазақстандық ЖСК KZ әріптерінен басталуы тиіс",
@@ -202,10 +207,10 @@ export const kk: Dictionary = {
     iikErrLength: "ЖСК дәл 20 таңбадан тұруы тиіс (қазір {count})",
     iikErrCheckDigits: "3–4-таңбалар бақылау цифрлары болуы тиіс",
     iikErrChecksum: "IBAN бақылау сомасының қатесі (mod-97)",
-    iikErrBankCodeDigits: "5–7-таңбалар (банк коды) цифр болуы тиіс",
+    iikErrBankCodeDigits: "5–7-таңбалар (банк коды) цифрлар болуы тиіс",
     iikErrUnknownBank: "Белгісіз ҚР банк коды: {code}",
     binValid: "Бақылау сомасы дұрыс",
-    binIncomplete: "12 цифрдың {count} енгізілді",
+    binIncomplete: "{count}/12 цифр енгізілді",
     binErrChecksum: "БСН/ЖСН бақылау сомасы қате",
     binErrMonth: "3–4-цифрлардағы ай қате",
     binErrFifth: "БСН/ЖСН-нің 5-цифры қате",
@@ -240,11 +245,13 @@ export const kk: Dictionary = {
   invoice: {
     label: "Төлем шотын тану",
     uploadButton: "Төлем шотын жүктеу (PDF немесе фото)",
+    demoSampleButton: "Хаттағы демо төлем шотын жүктеу",
+    demoSampleLoading: "Демо төлем шоты жүктелуде...",
     replaceButton: "Файлды ауыстыру",
-    clearButton: "Тазалау",
+    clearButton: "Алып тастау",
     cancelUploadButton: "Болдырмау",
     dropHint: "Файлды осында сүйреп әкеліңіз немесе төмендегі түймені басыңыз",
-    dropActiveHint: "Жүктеу үшін файлды жіберіңіз",
+    dropActiveHint: "Жүктеу үшін файлды осында тастаңыз",
     formatsHint: "PDF, PNG, JPEG немесе WebP, 10 МБ-қа дейін",
     privacyNotice:
       "Файл деректемелерді тану үшін жіберіледі; тек сынақ төлем шоттарын пайдаланыңыз",
@@ -287,11 +294,15 @@ export const kk: Dictionary = {
         "Төлем шотын тану қызметінен жарамсыз жауап алынды.",
       generic:
         "Төлем шотын тану мүмкін болмады. Қайталап көріңіз немесе өрістерді қолмен толтырыңыз.",
+      demoSampleLoadFailed:
+        "Демо төлем шотын жүктеу мүмкін болмады. Қайталап көріңіз.",
     },
     aria: {
       dropzone: "Төлем шотын жүктеу аймағы",
       fileInput: "Төлем шоты файлын таңдау",
       removeFile: "Төлем шотын тану нәтижесін тазалау",
+      demoSampleButton:
+        "Хаттағы демонстрациялық төлем шотын жүктеп, деректемелерін тану",
     },
   },
   check: {
@@ -315,8 +326,9 @@ export const kk: Dictionary = {
     actionsEyebrow: "Төлем бойынша әрекеттер",
     actionFixRequisites: "Деректемелерді түзету",
     actionSign: "Қол қою",
+    actionSignLocked: "ЭЦҚ-мен қол қою — тексеруге дейін бұғатталған",
     actionSigning: "Қол қойылуда...",
-    actionPostpone: "Кейінге қалдыру және тексеру",
+    actionPostpone: "Кейінге қалдырып тексеру",
     actionSendToDirector: "Директорға жіберу",
     actionSentToDirector: "Директорға жіберілді",
     accountantAckLabel:
@@ -346,6 +358,10 @@ export const kk: Dictionary = {
     sending: "Жіберілуде...",
     send: "Жіберу",
     rulesetVersion: "Ережелер нұсқасы: {version}",
+    riskScoreBadge: "Тәуекел балы {score}/100",
+    viewModeAriaLabel: "Тексеруді көрсету режимі",
+    viewModeClient: "Клиент экраны (банктік құпия)",
+    viewModeAnalyst: "BCC аналитигінің экраны",
   },
   comparison: {
     title: "Деректемелерді төлем шотымен және тарихпен салыстыру",
@@ -358,6 +374,8 @@ export const kk: Dictionary = {
     invalidBadge: "Қате",
     latinTag: "лат.",
     latinTooltip: "Кириллицамен жазылған атаудағы латын әрпі",
+    homoglyphBadge: "кириллицадағы {cyrillic} орнына латын {latin} әрпі",
+    homoglyphBadgeGeneric: "кириллица атауындағы латын {latin} әрпі",
     lastPayment: "Соңғы төлем: {date}",
     notInHistory: "Тарихта жоқ",
   },
@@ -411,6 +429,17 @@ export const kk: Dictionary = {
     statusApprovedShort: "Мақұлданды",
     statusRejectedShort: "Қабылданбады",
     backToPayments: "Қол қойылатын төлемдерге оралу",
+    comparisonShowAll: "Барлығын көрсету",
+    comparisonHideUnchanged: "Өзгермегендерін жасыру",
+    quickCommentsLabel: "Жылдам пікірлер",
+    quickCommentCalled:
+      "Шарттағы нөмір бойынша қоңырау шалдық, жаңа деректемелер расталды",
+    quickCommentVerified:
+      "Төлем шотын шартпен және жеткізушімен хат алмасумен салыстырдық",
+    quickCommentExpected:
+      "Сома мен алушы расталды, бұл төлем күтілген",
+    quickCommentRejected: "Деректемелер расталмады, төлемді қабылдамаймыз",
+    openPayment: "Төлемді ашу →",
     analystViewToggle: "Антифрод-аналитик көрінісі",
     analystOnlyTitle: "Тек антифрод-аналитикке арналған",
     analystConfidentialBadge: "BCC қызметтік деректері",
@@ -447,9 +476,9 @@ export const kk: Dictionary = {
     postponedTitle: "Төлем тексеру үшін кейінге қалдырылды",
     postponedDescription:
       "Жеткізушіден деректемелер расталғанға дейін төлем қол қоюдан алынды.",
-    postponeUndoneTitle: "Кейінге қалдыру болдырылмады",
+    postponeUndoneTitle: "Төлем кезекке қайтарылды",
     postponeUndoneDescription: "Төлем белсенді тексеру күйіне қайтарылды.",
-    csvExportedTitle: "CSV файлы жүктелді",
+    csvExportedTitle: "CSV файлы сақталды",
     csvExportedDescription: "Сақталған жазбалар: {count}",
     sentToDirectorTitle: "Директорға жіберілді",
     sentToDirectorDescription:
@@ -482,7 +511,7 @@ export const kk: Dictionary = {
     btnHomoglyph: "Әріпті латын әрпіне ауыстыру",
     btnInvisibleChar: "Атаудағы көрінбейтін таңба",
     btnOtherBank: "ЖСК-ны басқа банктегі шотқа ауыстыру",
-    btnOwnBinOwnAccount: "Өз БСН, өз шоты, сол атау",
+    btnOwnBinOwnAccount: "Өз БСН-і, өз шоты, сол атау",
     btnBccOtherCompany: "BCC-дегі басқа компанияның шоты",
     btnAmount4x: "Сома ×4",
     btnAddUrgent: "«Шұғыл» сөзін қосу",
@@ -495,7 +524,7 @@ export const kk: Dictionary = {
       "{orig} → {curr} (кириллица әрпіне ұқсас латын әрпі)",
     codePointAddedTooltip: "+ {curr} (қосылған таңба)",
     codePointInvisibleTooltip: "+ {curr} (көрінбейтін таңба)",
-    invisibleTag: "көр.",
+    invisibleTag: "көрінб.",
     originalCardTitle: "Түпнұсқа",
     attackedCardTitle: "Шабуылдан кейін",
     verdictChangedTitle: "Тексеру қорытындысы өзгерді",
@@ -516,6 +545,21 @@ export const kk: Dictionary = {
     knpLabel: "КНП",
     diffPreviewTitle: "Түпнұсқамен салыстырғандағы өзгерістер",
     noFieldChanges: "Өрістер түпнұсқамен сәйкес келеді.",
+    btnCombinedNewRequisites:
+      "Аралас шабуыл (жаңа деректемелер туралы хат)",
+    hintHomoglyph: "Атаудағы әріпті латын әрпіне ауыстырады",
+    hintInvisibleChar: "Атауға көрінбейтін U+034F таңбасын қосады",
+    hintOtherBank: "ЖСК мен БСК-ны басқа банкке ауыстырады",
+    hintOwnBinOwnAccount: "Бөтен БСН, ЖСК және БСК енгізеді",
+    hintBccOtherCompany: "ЖСК-ны BCC-дегі басқа компанияның шотына ауыстырады",
+    hintAmount4x: "Төлем сомасын 4 есе арттырады",
+    hintAddUrgent: "Төлем мақсатына «шұғыл» сөзін қосады",
+    hintCombinedNewRequisites:
+      "Латын әрпі + жаңа ЖСК + «шұғыл» + сома ×3,6",
+    manualFieldsTitle: "Өрістерді қолмен өзгерту",
+    manualFieldsCount: "Өзгертілді: {count}",
+    verdictTransitionTitle: "Қорытындының өзгеруі",
+    verdictUnchangedHint: "Өзгеріссіз — жоғарыдан шабуылды таңдаңыз",
   },
   shortcuts: {
     title: "Пернетақта тіркесімдері",
@@ -586,23 +630,23 @@ export const kk: Dictionary = {
       legit: "Қалыпты төлемдер",
       detectionRate: "Шабуылдарды анықтау",
       stoppedRed: "Тоқтатылды (қызыл)",
-      escalatedYellow: "Эскалацияланды (сары)",
+      escalatedYellow: "Директорға жіберілді (сары)",
       falseAlarmRate: "Жалған дабылдар",
     },
-    ofAttacks: "{total} шабуылдың {count}",
+    ofAttacks: "{count}/{total} шабуыл",
     redCountShort: "Қызыл: {count}",
     yellowCountShort: "Сары: {count}",
     historyReplayTitle: "Клиенттің жылдық тарихы",
     historyReplaySubtitle:
-      "Дабыл жиілігін (alert rate) бағалау үшін клиенттің жылдық тарихи төлемдерін қайта тексеру.",
+      "Дабыл жиілігін бағалау үшін клиенттің жылдық тарихи төлемдерін қайта тексеру.",
     historyReplayTotal: "Тарихтағы төлемдер",
-    historyReplayAlertRate: "Дабыл жиілігі (alert rate)",
+    historyReplayAlertRate: "Дабыл жиілігі",
     historyReplayFlagged: "Белгіленді: {total} ішінен {alerts}",
     historyReplayUnavailable:
       "Жылдық тарихты қайта тексеру деректері сервер жауабы жаңартылғаннан кейін пайда болады.",
     byKindTitle: "Сценарий түрлері бойынша нәтижелер",
     byKindSubtitle:
-      "Әр сценарий тобында тоқтатылған (қызыл) және эскалацияланған (сары) төлемдер үлесі.",
+      "Әр сценарий тобында тоқтатылған (қызыл) және қосымша тексеруге жіберілген (сары) төлемдер үлесі.",
     byKindEmpty: "Сценарийлер бойынша бөлініс жоқ.",
     labelAttack: "Шабуыл",
     labelLegit: "Қалыпты",
@@ -617,7 +661,7 @@ export const kk: Dictionary = {
       legit_account_change_confirmed: "Расталған шот ауыстыру",
       legit_account_change_unconfirmed: "Расталмаған шот ауыстыру (қалыпты)",
       legit_new_supplier: "Жаңа жеткізушіге алғашқы төлем",
-      legit_rebrand_same_account: "Сол шоттағы жеткізушінің ребрендингі",
+      legit_rebrand_same_account: "Шоты өзгермеген жеткізушінің атауы ауысуы",
       legit_urgent_known_supplier: "Таныс жеткізушіге шұғыл төлем",
       legit_budget_payment: "Бюджетке төлем",
       attack_iik_swap_same_bin: "Бұрынғы БСН-мен ЖСК-ны ауыстыру (BEC)",
@@ -628,7 +672,7 @@ export const kk: Dictionary = {
       attack_iik_reused_other_supplier: "Басқа жеткізуші қолданған ЖСК",
       attack_typo_free_valid_drop: "Бөгде банктегі қатесіз дроп-шот",
       attack_combined_bec: "Аралас BEC-шабуылы",
-      attack_own_bin_same_name: "Дәл атаумен өз БСН және өз шоты",
+      attack_own_bin_same_name: "Жеткізушінің дәл атауымен өз БСН-і мен шоты",
       attack_invisible_char: "Атаудағы көрінбейтін таңба",
       attack_duplicate_invoice: "Төлем шотының телнұсқасы",
       attack_structuring: "Төлем сомасын бөлшектеу",
@@ -638,6 +682,57 @@ export const kk: Dictionary = {
       "Бағалау жинағы синтетикалық болып табылады және ережелердің берілген сценарийлердегі жұмысын көрсетуге арналған. Көрсеткіштер нақты банктік алаяқтық статистикасын көрсетпейді және нақты тарихи деректердегі тексеруді алмастырмайды.",
     seedMeta: "Seed: {seed}",
     ariaBarLabel: "{name}: {rate}",
+    kpiDetectedLabel: "Анықталған шабуылдар",
+    kpiStoppedShort: "қызылмен",
+    kpiEscalatedShort: "директорға",
+    kpiFalseAlarmsLabel: "Күрделі жиындағы жалған дабылдар",
+    kpiFalseAlarmsHint:
+      "Жиынға күрделі қалыпты жағдайлар әдейі көп қосылған (шот ауыстыру, маусымдық сомалар)",
+    kpiHistoryLabel: "Жылдық тарихта",
+    kpiHistorySub: "{alerts}/{total} төлем",
+    kpiHistoryUnavailable: "Тарих деректері жоқ",
+    kpiLatencyLabel: "Тексеру уақыты",
+    kpiLatencyValue: "≈{ms} мс",
+    kpiLatencyHint: "Детерминистік ережелер, жергілікті",
+    verdictBarTitleWithCount: "{title} ({count} төлем)",
+    verdictBarAriaLabel:
+      "Жылдық тарих бойынша қорытындылардың бөлінісі ({total} төлем): {breakdown}",
+    verdictBarSegmentAria: "{label} — {count} ({rate})",
+    verdictBarGreyNote:
+      "Сұр қорытынды («Тарихы жоқ») алушы бойынша бұрынғы тарихтың жоқтығын білдіреді — бұл дабыл да, жалған іске қосылу да емес.",
+    tabsAriaLabel: "Бағалау сценарийлерінің санаттары",
+    tabsAttacks: "Шабуылдарды анықтау ({count})",
+    tabsLegit: "Қалыпты төлемдер ({count}) және осал аймақтар",
+    tabsAttacksEmpty: "Ағымдағы есепте шабуыл сценарийлері жоқ.",
+    tabsLegitEmpty: "Ағымдағы есепте қалыпты төлем сценарийлері жоқ.",
+    tabsDetectedOfTotal: "{total} ішінен {detected} анықталды",
+    tabsFalsePositiveRate: "Жалған дабылдар: {rate}",
+    tabsFalsePositiveCount: "{total} ішінен {flagged}",
+    tabsVerdictCount: "{label}: {count}",
+    blindTitle: "Осал аймақтар",
+    blindSubtitle:
+      "Жиын нәтижелері бойынша есептелген ағымдағы ережелердің шектеулері: өткізіп алынған шабуылдар, жиі жалған дабылдар және тарихы жоқ сценарийлер.",
+    blindEmpty: "Ағымдағы шекті мәндер кезінде осал аймақтар анықталған жоқ.",
+    blindTagWeakDetection: "Осал аймақ",
+    blindTagFalseAlarm: "Жиі жалған дабылдар",
+    blindTagNoHistory: "Тарихы жоқ",
+    blindMissedAttacksTitle:
+      "Анықталу деңгейі {threshold} шегінен төмен шабуылдар",
+    blindMissedAttacksHint:
+      "Жүйе дабылсыз ішінара өткізіп жіберетін шабуыл сценарийлері.",
+    blindMissedAttackSummary:
+      "Анықталды {rate} · анықталмады (жасыл): {total} ішінен {missed}",
+    blindMissedAttackGreyExtra: "тарихы жоқ: {grey}",
+    blindFalseAlarmsTitle:
+      "Жалған дабыл деңгейі {threshold} шегінен жоғары қалыпты сценарийлер",
+    blindFalseAlarmsHint:
+      "Ережелер тұрақты түрде растауды талап ететін заңды төлемдер.",
+    blindFalseAlarmSummary: "Жалған дабылдар {rate} ({total} ішінен {flagged})",
+    blindNoHistoryTitle:
+      "Тарихы жоқ сценарийлер (сұр қорытынды {threshold} шегінен жоғары)",
+    blindNoHistoryHint:
+      "Бұрынғы тарих болмаған жағдайда жүйе болжам жасамай, «тарихы жоқ» (сұр қорытынды) деп ашық хабарлайды.",
+    blindNoHistorySummary: "Сұр қорытынды {rate} ({total} ішінен {grey})",
   },
   prod: {
     roles: {
@@ -678,6 +773,11 @@ export const kk: Dictionary = {
       errorTooManyAttempts:
         "Сәтсіз кіру әрекеттері тым көп. Кейінірек қайталап көріңіз.",
       sessionExpired: "Сессия аяқталды. Жүйеге қайта кіріңіз.",
+      demoLoginsTitle: "Логинді жылдам таңдау",
+      demoLoginsHint: "Тек логин толтырылады — құпиясөзді қолмен енгізіңіз.",
+      demoLoginAccountant: "Бухгалтер ретінде кіру",
+      demoLoginDirector: "Директор ретінде кіру",
+      demoLoginAnalyst: "Аналитик ретінде кіру",
     },
     access: {
       deniedTitle: "Бұл бөлімге қолжетімділік жоқ",
@@ -688,7 +788,7 @@ export const kk: Dictionary = {
     },
     statuses: {
       checked: "Тексерілді",
-      pending_approval: "Директорда",
+      pending_approval: "Директордың қарауында",
       approved: "Мақұлданды",
       rejected: "Қабылданбады",
       postponed: "Кейінге қалдырылды",
@@ -741,7 +841,7 @@ export const kk: Dictionary = {
       shownCount: "{total} ішінен {shown} көрсетілді",
       totalInScope: "Барлығы: {count}",
       colDoc: "Құжат",
-      colStatus: "Мәртебесі",
+      colStatus: "Мәртебе",
       colSupplier: "Жеткізуші",
       docNumberPrefix: "№ {num}",
       possibleDuplicate: "Ықтимал телнұсқа",
@@ -809,11 +909,11 @@ export const kk: Dictionary = {
     batch: {
       signGreenTitle: "Барлық жасыл төлемдерге қол қою керек пе?",
       signGreenDescription:
-        "Сервер таңдалған аумақтағы әрбір жасыл төлемді ({count}) қайта тексереді және тек жасыл болып қалғандарына қол қояды. Қалғандары себебі көрсетіліп өткізіледі.",
+        "Сервер таңдалған аумақтағы әрбір жасыл төлемді ({count}) қайта тексереді және тек жасыл болып қалғандарына қол қояды. Қалғандарына себебі көрсетіліп қол қойылмайды.",
       signGreenConfirm: "Жасылдарға қол қою",
       signing: "Қол қойылуда...",
       signGreenToastTitle: "Бумалық қол қою аяқталды",
-      signGreenToastDesc: "Қол қойылды: {done} · өткізілді: {skipped}",
+      signGreenToastDesc: "Қол қойылды: {done} · қалдырылды: {skipped}",
       sendDirectorTitle: "Қалғандарын директорға жіберу керек пе?",
       sendDirectorDescription:
         "«Тексерілді» мәртебесіндегі сары, қызыл және сұр қорытындылы төлемдер ({count}) директордың келісуіне жіберіледі. Деректемелері қате және жасыл төлемдер өзгеріссіз қалады.",
@@ -823,11 +923,11 @@ export const kk: Dictionary = {
       sendDirectorConfirm: "Директорға жіберу",
       sending: "Жіберілуде...",
       sendDirectorToastTitle: "Бумалық жіберу аяқталды",
-      sendDirectorToastDesc: "Жіберілді: {done} · өткізілді: {skipped}",
+      sendDirectorToastDesc: "Жіберілді: {done} · қалдырылды: {skipped}",
       resultDone: "Орындалды: {count}",
-      resultSkipped: "Өткізілді: {count}",
+      resultSkipped: "Қалдырылды: {count}",
       allDoneMessage: "Барлық сәйкес төлемдер сәтті өңделді.",
-      skippedListTitle: "Өткізілген төлемдер",
+      skippedListTitle: "Өңделмеген төлемдер",
       doneButton: "Дайын",
     },
     detail: {
@@ -854,6 +954,16 @@ export const kk: Dictionary = {
       verdictChangedToast: "Қорытынды өзгерді, төлемді қайта тексеріңіз",
       verdictChangedDescription:
         "Төменде серверден алынған өзекті талдау көрсетілген. Әрі қарай әрекет етпес бұрын тәуекелдерді қайта бағалаңыз.",
+      documentMismatchToast: "Құжат өзгерді, төлем жаңартылды",
+      signatureBinding: {
+        signingDocument: "Қол қойылатын құжат",
+        check: "тексеру",
+        rules: "ережелер",
+        modeHint:
+          "Қол қою жергілікті NCALayer арқылы орындалады; NCALayer қолжетімсіз болса — демонстрациялық ЭЦҚ имитациясы қолданылады (NCALayer емес).",
+        modeSimulated: "ЭЦҚ имитациясы, NCALayer емес",
+        modeNcaLayer: "ҚР ҰКО ЭЦҚ (NCALayer)",
+      },
       signedBannerTitle: "Төлемге қол қойылды",
       signedBannerWithAck: "Жеткізушімен телефон арқылы растау белгісімен қол қойылды.",
       cancelledBannerTitle: "Төлемнен бас тартылды",
@@ -892,27 +1002,37 @@ export const kk: Dictionary = {
         approval_pending: "Директор шешім қабылдағанға дейін қол қою бұғатталған.",
         approval_rejected:
           "Төлемді директор қабылдамады. Деректемелерді өзгертіңіз немесе төлемнен бас тартыңыз.",
+        approval_required_after_rejection:
+          "Төлемді немесе оның деректемелерін (БСН/ЖСК) директор бұрын қабылдамаған — қол қою үшін директордың жаңа мақұлдауы қажет.",
         verdict_changed:
           "Қайта тексеру кезінде қорытынды нашарлады. Қайта қарау қажет.",
+        document_mismatch:
+          "Құжат жүктелгеннен кейін төлем деректемелері немесе тексеру нәтижелері өзгерген. Төлемді жаңартып, қол қоюды қайталаңыз.",
+        signature_verification_unavailable:
+          "ҚР ҰКО (NCALayer) ЭЦҚ-сын серверлік тексеру ағымдағы баптауда қолжетімсіз.",
         invalid_requisites:
           "Деректемелерде қате бар. Қол қоймас бұрын қателерді түзетіңіз.",
         red_requires_approval:
           "Қызыл қорытынды: директордың мақұлдауынсыз қол қоюға сервер тыйым салды.",
+        identity_requires_approval:
+          "Алушының тұлғасына күмән бар: қоңырау арқылы растау жеткіліксіз — директордың мақұлдауы қажет.",
         threshold_requires_approval:
           "Төлем сомасы компанияның келісу шегіне жетті: директордың мақұлдауы міндетті.",
+        duplicate_requires_approval:
+          "Бұрыннан бар немесе қол қойылған төлемнің телнұсқасы анықталды: директордың мақұлдауы қажет.",
         ack_or_approval_required:
           "Қол қою үшін бухгалтердің қоңырау арқылы растауы немесе директордың мақұлдауы қажет.",
         forbidden_role: "Сіздің рөліңіз төлемдерге қол қоюға мүмкіндік бермейді.",
-        default: "Төлемге қол қою қазір сервермен бұғатталған.",
+        default: "Төлемге қол қоюды қазір сервер бұғаттап тұр.",
       },
     },
     approvals: {
       title: "Директор келісулері",
       subtitle:
-        "Тәуекелі жоғары немесе деректемелері өзгерген төлем шоттарын растау өтінімдері.",
+        "Тәуекелі жоғары немесе деректемелері өзгерген төлемдерді растау өтінімдері.",
       readOnlyBanner:
         "Тек қарау режимі: келісулер бойынша шешімді тек директор қабылдай алады.",
-      filterAll: "Өзектілер",
+      filterAll: "Өзекті",
       filterPending: "Шешім күтуде",
       filterApproved: "Мақұлданғандар",
       filterRejected: "Қабылданбағандар",
@@ -989,17 +1109,17 @@ export const kk: Dictionary = {
         trustedStatus: "Сенімді",
         notTrustedStatus: "Қалыпты",
         trustedSince: "Расталған күні: {date}",
-        untrustButton: "Сенімді қайтарып алу",
-        untrustDialogTitle: "Шотқа сенімді қайтарып алу керек пе?",
+        untrustButton: "Сенім белгісін алу",
+        untrustDialogTitle: "Шоттың сенім белгісін алу керек пе?",
         untrustDialogDescription:
-          "Қайтарып алғаннан кейін {iik} шотына жасалатын болашақ төлемдер деректемелердің өзгеруіне қайта тексеріледі.",
-        untrustCommentLabel: "Сенімді қайтарып алу себебі",
+          "Сенім белгісі алынғаннан кейін {iik} шотына жасалатын болашақ төлемдер деректемелердің өзгеруіне қайта тексеріледі.",
+        untrustCommentLabel: "Сенім белгісін алу себебі",
         untrustCommentPlaceholder:
-          "Сенімді қайтарып алу себебін көрсетіңіз (кемінде {minChars})...",
+          "Сенім белгісін алу себебін көрсетіңіз (кемінде {minChars})...",
         untrustCommentRequired: "Міндетті (кемінде {minChars}: {current}/{min})",
-        untrustConfirm: "Сенімді қайтарып алу",
-        untrusting: "Қайтарылуда...",
-        untrustSuccess: "Шотқа берілген сенім қайтарып алынды",
+        untrustConfirm: "Сенім белгісін алу",
+        untrusting: "Алынуда...",
+        untrustSuccess: "Шоттың сенім белгісі алынды",
         wasLabel: "Бұрын",
         becameLabel: "Қазір",
         openPayment: "Төлем",
@@ -1013,7 +1133,7 @@ export const kk: Dictionary = {
     audit: {
       title: "Аудит журналы",
       subtitle:
-        "Пайдаланушы әрекеттерінің, төлем шоты тексерулерінің және серверлік қол қою шешімдерінің өзгермейтін хронологиясы.",
+        "Пайдаланушы әрекеттерінің, тексерулердің және серверлік қол қою шешімдерінің өзгермейтін хронологиясы.",
       paymentFilterPlaceholder: "Төлем ID бойынша сүзгі (pay-...)",
       actionFilterAll: "Барлық әрекеттер",
       limitLabel: "Жазбалар",
@@ -1032,7 +1152,7 @@ export const kk: Dictionary = {
       colAction: "Әрекет",
       colPayment: "Төлем",
       colVerdict: "Қорытынды",
-      colDetails: "Егжей-тегжейі",
+      colDetails: "Толығырақ",
       colHash: "Хэш",
       systemUser: "Жүйе",
       actions: {
@@ -1044,7 +1164,7 @@ export const kk: Dictionary = {
         check: "Төлемді тексеру",
         import: "Файл импорты",
         sign: "Төлемге қол қою",
-        sign_denied: "Қол қоюдан бас тартылды",
+        sign_denied: "Қол қою бұғатталды",
         send_to_director: "Директорға жіберу",
         "decision:approved": "Директор мақұлдады",
         "decision:approved_trusted": "Мақұлданды (сенімді шот)",
@@ -1053,7 +1173,7 @@ export const kk: Dictionary = {
         postpone: "Төлем кейінге қалдырылды",
         resume: "Кейінге қалдырылғаннан қайтару",
         cancel: "Төлемнен бас тартылды",
-        trust_revoked: "Шотқа сенім қайтарылды",
+        trust_revoked: "Шоттан сенім белгісі алынды",
         profile_updated: "Профиль жаңартылды",
         password_changed: "Құпиясөз өзгертілді",
         password_change_failed: "Құпиясөзді өзгерту сәтсіз аяқталды",
@@ -1067,7 +1187,7 @@ export const kk: Dictionary = {
     export: {
       csvButton: "CSV",
       pdfButton: "PDF",
-      csvTooltip: "Excel үшін төлем шоты тексерулерін CSV пішімінде жүктеу",
+      csvTooltip: "Тексерулер кестесін Excel үшін CSV пішімінде жүктеу",
       pdfTooltip: "«Қол қояр алдында нені тексеру керек» PDF есебін жүктеу",
       fromLabel: "Басталу күні",
       toLabel: "Аяқталу күні",
@@ -1080,13 +1200,13 @@ export const kk: Dictionary = {
       title: "Хабарламалар",
       ariaLabel: "Хабарламалар",
       unreadBadge: "{count} оқылмаған",
-      markAllRead: "Барлығын оқу",
+      markAllRead: "Барлығын оқылды деп белгілеу",
       markingRead: "Сақталуда...",
       emptyTitle: "Хабарламалар жоқ",
       emptyDescription:
         "Мұнда келісуге түскен өтінімдер, директор шешімдері және қол қоюдан серверлік бас тартулар көрсетіледі.",
       settingsLink: "Хабарлама сүзгісін баптау",
-      openPayment: "Төлем шотын ашу",
+      openPayment: "Төлемді ашу",
       kinds: {
         approval_pending: "Келісуде",
         approval_approved: "Мақұлданды",
@@ -1127,6 +1247,13 @@ export const kk: Dictionary = {
       passwordChangedToast: "Құпиясөз сәтті өзгертілді",
       passwordChangedRevoked:
         "Құпиясөз жаңартылды. Басқа белсенді сессиялар аяқталды: {count}.",
+      passwordChangeRequiredTitle: "Құпиясөзді ауыстыру қажет",
+      passwordChangeRequiredSubtitle:
+        "Жүйеде жұмысты бастау үшін құпиясөзді жаңартыңыз.",
+      passwordChangeRequiredDescription:
+        "Сіз уақытша немесе бастапқы құпиясөзбен кірдіңіз. Жүйеде жұмысты жалғастыру үшін жаңа құпиясөз орнатыңыз.",
+      passwordChangeRateLimited:
+        "Құпиясөзді ауыстырудың сәтсіз әрекеттері тым көп болды. 15 минуттан кейін қайталап көріңіз.",
     },
     company: {
       title: "Компания және қызметкерлер",
@@ -1150,7 +1277,7 @@ export const kk: Dictionary = {
       colUser: "Қызметкер",
       colLogin: "Логин",
       colRole: "Рөл",
-      colStatus: "Күйі",
+      colStatus: "Мәртебе",
       colCreated: "Қосылған күні",
       colActions: "Әрекеттер",
       deactivateButton: "Өшіру",
@@ -1163,7 +1290,7 @@ export const kk: Dictionary = {
           "Компания ішінде жаңа есептік жазба жасаңыз. Сервер уақытша құпиясөзді құрып, оны тек бір рет көрсетеді.",
         loginLabel: "Логин",
         loginPlaceholder: "Мысалы, a.serikova",
-        loginHint: "Латын әріптері, цифрлар, нүкте, сызықша немесе астын сызу (кемінде 3 таңба).",
+        loginHint: "Латын әріптері, цифрлар, нүкте, сызықша немесе астыңғы сызық «_» (кемінде 3 таңба).",
         fullNameLabel: "Аты-жөні",
         fullNamePlaceholder: "Мысалы, Әлия Серікова",
         roleLabel: "Рөл",
@@ -1182,26 +1309,26 @@ export const kk: Dictionary = {
     settings: {
       title: "Компания баптаулары",
       subtitle:
-        "Хабарлама ережелері және төлем шоты бойынша директордың міндетті келісуі талап етілетін сома шегі.",
+        "Хабарлама ережелері және директордың міндетті келісуі талап етілетін төлем сомасының шегі.",
       notifyCardTitle: "Хабарлама сүзгісі",
       notifyCardDescription:
         "Компания хабарламаларында қай тәуекел деңгейіндегі оқиғалар көрсетілетінін таңдаңыз.",
       notifyRedYellowTitle: "Қызыл және сары оқиғалар",
       notifyRedYellowDesc:
-        "Барлық қауіпті және назар аударуды қажет ететін төлем шоттары, шешімдер мен шектен асқан төлемдер туралы хабарлау.",
+        "Барлық қауіпті және назар аударуды қажет ететін төлемдер, шешімдер мен шектен асқан төлемдер туралы хабарлау.",
       notifyRedTitle: "Тек қызыл оқиғалар",
       notifyRedDesc:
-        "Тек жоғары тәуекелді (қызыл қорытындылы) төлем шоттары бойынша хабарламаларды көрсету.",
+        "Тек жоғары тәуекелді (қызыл қорытындылы) төлемдер бойынша хабарламаларды көрсету.",
       thresholdCardTitle: "Директордың міндетті келісу шегі",
       thresholdCardDescription:
-        "Сомасы көрсетілген шекке тең немесе одан жоғары төлем шоттары жасыл қорытынды болса да директордың мақұлдауын талап етеді (барлық жасылдарға бумалық қол қоюды қоса алғанда).",
+        "Сомасы көрсетілген шекке тең немесе одан жоғары төлемдер жасыл қорытынды болса да директордың мақұлдауын талап етеді (барлық жасылдарға бумалық қол қоюды қоса алғанда).",
       thresholdEnableLabel: "Сома бойынша келісу шегін қосу",
       thresholdInputLabel: "Шекті сома (₸)",
       thresholdPlaceholder: "Мысалы, 5000000",
       thresholdPreview: "Ағымдағы шек: {amount} бастап",
       thresholdDisabledHint:
-        "Шек орнатылмаған — кез келген сомадағы жасыл төлем шоттары қосымша келісусіз қол қойылады.",
-      thresholdInvalidError: "Теңгемен оң соманы көрсетіңіз.",
+        "Шек орнатылмаған — кез келген сомадағы жасыл төлемдерге қосымша келісусіз қол қойылады.",
+      thresholdInvalidError: "Нөлден үлкен соманы теңгемен көрсетіңіз.",
       saveButton: "Баптауларды сақтау",
       savingButton: "Сақталуда...",
       savedToast: "Компания баптаулары сақталды",

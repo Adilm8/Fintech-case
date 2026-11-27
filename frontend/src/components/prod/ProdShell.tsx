@@ -66,10 +66,16 @@ function ProdShellInner({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (session?.must_change_password) {
+      // Forced password change: keep the user on /profile until it is done.
+      if (pathname !== "/profile") router.replace("/profile");
+      return;
+    }
+
     if (session && isLoginRoute) {
       router.replace(defaultHomeForRole(session.user.role));
     }
-  }, [isDemoRoute, isLoading, isLoginRoute, router, session]);
+  }, [pathname, isDemoRoute, isLoading, isLoginRoute, router, session]);
 
   const isDirector = session?.user.role === "director";
 

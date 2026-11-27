@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useInfoT, type InfoRouteKey } from "@/i18n/info";
-import { IS_PROD } from "@/lib/mode";
+import { useInfoT } from "@/i18n/info";
 import { cn } from "cn";
 
 export interface SiteFooterProps {
@@ -15,30 +14,16 @@ export interface SiteFooterProps {
   className?: string;
 }
 
-const FOOTER_LINKS: readonly { key: InfoRouteKey; href: string }[] = [
-  { key: "howItWorks", href: "/how-it-works" },
-  { key: "help", href: "/help" },
-  { key: "security", href: "/security" },
-  { key: "support", href: "/support" },
-  { key: "about", href: "/about" },
-  { key: "terms", href: "/terms" },
-  { key: "privacy", href: "/privacy" },
-];
+// Mirrors RULESET_VERSION in backend/app/risk/config.py
+const RULESET_VERSION = "2026.11.26-r3";
+const HOW_IT_WORKS_HREF = "/how-it-works";
 
 export function SiteFooter({ embedded = false, className }: SiteFooterProps) {
   const pathname = usePathname();
-  const { info, appT } = useInfoT();
-  const appHomeHref = IS_PROD ? "/payments" : "/";
-
-  const linkClass = (href: string) => {
-    const active = pathname === href || pathname.startsWith(`${href}/`);
-    return cn(
-      "inline-flex min-h-8 items-center rounded-[4px] text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      active
-        ? "font-medium text-foreground"
-        : "text-muted-foreground hover:text-foreground"
-    );
-  };
+  const { info, appT, interpolate } = useInfoT();
+  const isHowItWorksActive =
+    pathname === HOW_IT_WORKS_HREF ||
+    pathname.startsWith(`${HOW_IT_WORKS_HREF}/`);
 
   return (
     <footer
@@ -51,45 +36,34 @@ export function SiteFooter({ embedded = false, className }: SiteFooterProps) {
     >
       <div
         className={cn(
-          "flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between",
-          !embedded && "mx-auto w-full max-w-[1248px] px-4 py-4 sm:px-6"
+          "flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5",
+          !embedded && "mx-auto w-full max-w-[1248px] px-4 py-3 sm:px-6"
         )}
       >
-        <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
-          <Link
-            href={appHomeHref}
-            className="inline-flex w-fit items-center gap-2 rounded-[4px] transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.svg"
-              alt=""
-              width={20}
-              height={20}
-              className="h-5 w-5 shrink-0"
-            />
-            <span className="text-[13px] font-semibold text-foreground">
-              {appT.brand.name}
-            </span>
-          </Link>
-          <span className="text-xs text-muted-foreground">
-            {info.footer.prototypeNotice}
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span>{info.footer.syntheticNote}</span>
+          <span aria-hidden="true" className="text-border">
+            ·
+          </span>
+          <span className="font-mono text-[11px] tabular-nums whitespace-nowrap">
+            {interpolate(appT.check.rulesetVersion, {
+              version: RULESET_VERSION,
+            })}
           </span>
         </div>
 
-        <nav
-          aria-label={info.common.footerNavAria}
-          className="flex flex-wrap items-center gap-x-4 gap-y-1"
+        <Link
+          href={HOW_IT_WORKS_HREF}
+          aria-current={isHowItWorksActive ? "page" : undefined}
+          className={cn(
+            "inline-flex min-h-8 shrink-0 items-center rounded-[4px] text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            isHowItWorksActive
+              ? "font-medium text-foreground"
+              : "font-medium text-[var(--brand-text)] hover:underline"
+          )}
         >
-          <Link href={appHomeHref} className={linkClass(appHomeHref)}>
-            {info.footer.backToPayments}
-          </Link>
-          {FOOTER_LINKS.map((item) => (
-            <Link key={item.href} href={item.href} className={linkClass(item.href)}>
-              {info.nav[item.key]}
-            </Link>
-          ))}
-        </nav>
+          {info.nav.howItWorks}
+        </Link>
       </div>
     </footer>
   );

@@ -27,7 +27,7 @@ import {
   APPROVAL_STATUS_STYLES,
   findApprovalForPayment,
 } from "@/lib/approvals";
-import { VERDICT_STYLES } from "@/lib/format";
+import { pickReason, VERDICT_STYLES } from "@/lib/format";
 import {
   getQueuePreferencesSnapshot,
   getServerQueuePreferencesSnapshot,
@@ -95,6 +95,10 @@ const APPROVAL_DOT_CLASS: Record<ApprovalStatus, string> = {
  */
 function needsAttention(verdict: Verdict): boolean {
   return verdict !== "green";
+}
+
+function isAtRiskVerdict(verdict: Verdict): boolean {
+  return verdict === "red" || verdict === "yellow" || verdict === "invalid";
 }
 
 function matchesSearchQuery(item: QueueItem, rawQuery: string): boolean {
@@ -266,10 +270,7 @@ export function PaymentQueueScreen({
     [verdictCounts, verdictFilter]
   );
 
-  const signableQueue = useMemo(
-    () => queue.filter((item) => item.result.verdict !== "invalid"),
-    [queue]
-  );
+  const readyToSignCount = verdictCounts.green;
 
   const attentionCount = useMemo(
     () => queue.filter((item) => needsAttention(item.result.verdict)).length,
@@ -281,14 +282,17 @@ export function PaymentQueueScreen({
     [approvals]
   );
 
-  const totalSignableAmount = useMemo(
-    () =>
-      signableQueue.reduce(
-        (sum, item) => sum + (item.request.amount_kzt || 0),
-        0
-      ),
-    [signableQueue]
-  );
+  const atRiskSummary = useMemo(() => {
+    let count = 0;
+    let amount = 0;
+    for (const item of queue) {
+      if (isAtRiskVerdict(item.result.verdict)) {
+        count += 1;
+        amount += item.request.amount_kzt || 0;
+      }
+    }
+    return { count, amount };
+  }, [queue]);
 
   const filteredQueue = useMemo(() => {
     const filtered = queue.filter((item) => {
@@ -428,16 +432,20 @@ export function PaymentQueueScreen({
               onClick={resetFilters}
               className="ui-kpi-cell cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              <span className="ui-kpi-label">{t.queue.tiles.toSignLabel}</span>
-              <div className="ui-kpi-value">{signableQueue.length}</div>
+              <span className="ui-kpi-label">
+                {t.queue.tiles.totalPaymentsLabel}
+              </span>
+              <div className="ui-kpi-value">{queue.length}</div>
               <div className="text-xs text-muted-foreground">
-                {t.queue.tiles.toSignHint}
+                {interpolate(t.queue.tiles.readyToSignHint, {
+                  count: readyToSignCount,
+                })}
               </div>
             </button>
 
             <div className="ui-kpi-cell">
               <span className="ui-kpi-label">
-                {t.queue.tiles.needsAttentionLabel}
+                {t.queue.tiles.needsReviewLabel}
               </span>
               <div
                 className={cn(
@@ -473,13 +481,23 @@ export function PaymentQueueScreen({
 
             <div className="ui-kpi-cell">
               <span className="ui-kpi-label">
-                {t.queue.tiles.totalAmountLabel}
+                {t.queue.tiles.amountAtRiskLabel}
               </span>
-              <div className="ui-kpi-value truncate whitespace-nowrap">
-                {formatMoney(totalSignableAmount)}
+              <div
+                className={cn(
+                  "ui-kpi-value truncate whitespace-nowrap",
+                  atRiskSummary.amount > 0 &&
+                    "text-[var(--status-danger-text)]"
+                )}
+              >
+                {formatMoney(atRiskSummary.amount)}
               </div>
               <div className="text-xs text-muted-foreground">
-                {t.queue.tiles.totalAmountHint}
+                {atRiskSummary.count > 0
+                  ? interpolate(t.queue.tiles.amountAtRiskHint, {
+                      count: atRiskSummary.count,
+                    })
+                  : t.queue.tiles.allClearHint}
               </div>
             </div>
           </>
@@ -785,6 +803,10 @@ export function PaymentQueueScreen({
                     ? t.approvalStatus[approval.status]
                     : null;
                   const directorComment = approval?.director_comment?.trim();
+                  const firstSignal = item.result.signals[0];
+                  const primaryReason = firstSignal
+                    ? pickReason(firstSignal, lang).trim()
+                    : "";
                   const isHighlighted = highlightedId === item.id;
 
                   return (
@@ -824,6 +846,15 @@ export function PaymentQueueScreen({
                           className="shrink-0"
                         />
                       </div>
+
+                      {primaryReason && (
+                        <p
+                          title={primaryReason}
+                          className="mt-1 truncate text-xs leading-4 text-[var(--text-secondary)]"
+                        >
+                          {primaryReason}
+                        </p>
+                      )}
 
                       <div className="mt-1.5 flex items-center justify-between gap-2">
                         <div className="text-base font-semibold tabular-nums whitespace-nowrap text-foreground">
@@ -913,6 +944,10 @@ export function PaymentQueueScreen({
                         : null;
                       const directorComment =
                         approval?.director_comment?.trim();
+                      const firstSignal = item.result.signals[0];
+                      const primaryReason = firstSignal
+                        ? pickReason(firstSignal, lang).trim()
+                        : "";
                       const isHighlighted = highlightedId === item.id;
 
                       return (
@@ -968,7 +1003,7 @@ export function PaymentQueueScreen({
                             </span>
                           </TableCell>
                           <TableCell className="whitespace-normal">
-                            <div className="flex flex-col items-start gap-1">
+                            <div className="flex min-w-0 flex-col items-start gap-1">
                               <VerdictBadge
                                 verdict={item.result.verdict}
                                 label={
@@ -980,6 +1015,14 @@ export function PaymentQueueScreen({
                                     : undefined
                                 }
                               />
+                              {primaryReason && (
+                                <p
+                                  title={primaryReason}
+                                  className="max-w-[240px] lg:max-w-[300px] truncate text-xs leading-4 text-[var(--text-secondary)]"
+                                >
+                                  {primaryReason}
+                                </p>
+                              )}
                               {approval && approvalStyle && approvalLabel && (
                                 <span
                                   className={cn(

@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
 import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
+import { useAppData } from "@/components/AppShell";
 import { ComparisonTable } from "@/components/ComparisonTable";
 import { ReasonsList } from "@/components/ReasonsList";
 import { VerdictBadge } from "@/components/VerdictBadge";
@@ -46,8 +47,14 @@ import {
   parseKztString,
   pickHeadline,
 } from "@/lib/format";
+import { getPaymentCheckHref } from "@/lib/queue-storage";
 import { notify } from "@/lib/toast";
-import type { Approval, ApprovalDecision } from "@/lib/types";
+import type {
+  Approval,
+  ApprovalDecision,
+  ComparisonField,
+  QueueItem,
+} from "@/lib/types";
 import { cn } from "cn";
 
 interface DirectorScreenProps {
@@ -59,9 +66,81 @@ interface DirectorScreenProps {
   onNetworkError: (message: string) => void;
 }
 
+const TRUST_NEUTRALIZED_FIELDS = new Set<ComparisonField>([
+  "iik",
+  "bik",
+  "bank",
+]);
+
+function normalizeBin(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, "");
+}
+
+function normalizeIik(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, "").toUpperCase();
+}
+
 function getFieldFromComparison(approval: Approval, field: string): string {
   const row = approval.check.comparison.find((c) => c.field === field);
   return row?.in_invoice ?? "";
+}
+
+function findQueueItemForApproval(
+  queue: QueueItem[],
+  approval: Approval
+): QueueItem | null {
+  const exactByCheckId = queue.find(
+    (item) => item.result.check_id === approval.check.check_id
+  );
+  if (exactByCheckId) return exactByCheckId;
+
+  const targetBin = normalizeBin(
+    approval.request?.recipient_bin || getFieldFromComparison(approval, "bin")
+  );
+  const targetIik = normalizeIik(
+    approval.request?.recipient_iik || getFieldFromComparison(approval, "iik")
+  );
+  const targetAmount =
+    approval.request?.amount_kzt !== undefined
+      ? approval.request.amount_kzt
+      : parseKztString(getFieldFromComparison(approval, "amount"));
+
+  if (!targetBin || !targetIik || targetAmount === null) {
+    return null;
+  }
+
+  const matches = queue.filter(
+    (item) =>
+      normalizeBin(item.request.recipient_bin) === targetBin &&
+      normalizeIik(item.request.recipient_iik) === targetIik &&
+      Math.abs(item.request.amount_kzt - targetAmount) < 0.01
+  );
+
+  if (matches.length <= 1) {
+    return matches[0] ?? null;
+  }
+
+  const targetPurpose = (approval.request?.purpose ?? "").trim().toLowerCase();
+  if (targetPurpose) {
+    const byPurpose = matches.find(
+      (item) => item.request.purpose.trim().toLowerCase() === targetPurpose
+    );
+    if (byPurpose) return byPurpose;
+  }
+
+  const targetName = (
+    approval.request?.recipient_name || getFieldFromComparison(approval, "name")
+  )
+    .trim()
+    .toLowerCase();
+  if (targetName) {
+    const byName = matches.find(
+      (item) => item.request.recipient_name.trim().toLowerCase() === targetName
+    );
+    if (byName) return byName;
+  }
+
+  return matches[0] ?? null;
 }
 
 function getApprovalSummary(
@@ -102,7 +181,11 @@ function getApprovalSummary(
 interface PendingApprovalCardProps {
   approval: Approval;
   analystMode: boolean;
-  onDecided: (decision: ApprovalDecision, recipientName: string) => Promise<void>;
+  onDecided: (
+    decision: ApprovalDecision,
+    decidedApproval: Approval,
+    recipientName: string
+  ) => Promise<void>;
   onConflictError: (message: string) => Promise<void>;
   onNetworkError: (message: string) => void;
 }
@@ -117,6 +200,7 @@ function PendingApprovalCard({
   const { t, lang, formatMoney, interpolate, plural } = useT();
   const [comment, setComment] = useState("");
   const [trustAccount, setTrustAccount] = useState(false);
+  const [showAllComparison, setShowAllComparison] = useState(false);
   const [submittingDecision, setSubmittingDecision] =
     useState<ApprovalDecision | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
@@ -148,12 +232,61 @@ function PendingApprovalCard({
     t.plurals.charsGenitive
   );
 
+  const invalidFields = useMemo(
+    () => extractInvalidFieldMap(approval.check.verdict, approval.check.signals),
+    [approval.check.verdict, approval.check.signals]
+  );
+  const isTrusted = Boolean(approval.check.trusted);
+  const allComparisonRows = approval.check.comparison;
+  const changedComparisonRows = useMemo(
+    () =>
+      allComparisonRows.filter((row) => {
+        const isInvalid = Boolean(invalidFields[row.field]);
+        const isNeutralized =
+          isTrusted && TRUST_NEUTRALIZED_FIELDS.has(row.field) && !isInvalid;
+        return isInvalid || (!isNeutralized && row.differs);
+      }),
+    [allComparisonRows, invalidFields, isTrusted]
+  );
+  const hasCollapsibleComparison =
+    changedComparisonRows.length > 0 &&
+    changedComparisonRows.length < allComparisonRows.length;
+  const visibleComparisonRows =
+    hasCollapsibleComparison && !showAllComparison
+      ? changedComparisonRows
+      : allComparisonRows;
+  const hiddenComparisonCount =
+    allComparisonRows.length - changedComparisonRows.length;
+
+  const quickCommentChips = [
+    {
+      key: "called",
+      text: t.director.quickCommentCalled,
+      tone: "approve" as const,
+    },
+    {
+      key: "verified",
+      text: t.director.quickCommentVerified,
+      tone: "approve" as const,
+    },
+    {
+      key: "expected",
+      text: t.director.quickCommentExpected,
+      tone: "approve" as const,
+    },
+    {
+      key: "rejected",
+      text: t.director.quickCommentRejected,
+      tone: "reject" as const,
+    },
+  ];
+
   const handleDecision = async (decision: ApprovalDecision) => {
     setCardError(null);
     setCommentFieldError(null);
     setSubmittingDecision(decision);
     try {
-      await decideApproval(
+      const decided = await decideApproval(
         approval.id,
         {
           decision,
@@ -164,7 +297,10 @@ function PendingApprovalCard({
         { analyst: analystMode }
       );
       setRejectDialogOpen(false);
-      await onDecided(decision, summary.recipientName);
+      const mergedApproval = decided.request
+        ? decided
+        : { ...decided, request: approval.request };
+      await onDecided(decision, mergedApproval, summary.recipientName);
     } catch (err) {
       const message = getErrorMessage(err);
       const fieldErrors = getFieldErrors(err);
@@ -250,35 +386,7 @@ function PendingApprovalCard({
           headline={pickHeadline(approval.check, lang)}
         />
 
-        <ComparisonTable
-          comparison={approval.check.comparison}
-          trusted={Boolean(approval.check.trusted)}
-          invalidFields={extractInvalidFieldMap(
-            approval.check.verdict,
-            approval.check.signals
-          )}
-        />
-
-        <ReasonsList
-          signals={approval.check.signals}
-          score={approval.check.score}
-        />
-
-        {analystMode && (
-          <AnalystDetailsCard details={approval.check.analyst_details} />
-        )}
-
-        <div className="ui-subpanel space-y-1">
-          <div className="ui-label-meta">{t.director.accountantNoteTitle}</div>
-          <p className="text-sm text-foreground break-words">
-            {approval.accountant_note?.trim()
-              ? approval.accountant_note
-              : t.director.noAccountantNote}
-          </p>
-        </div>
-
-        <Separator />
-
+        {/* Decision block positioned directly below payment header and verdict */}
         <div className="space-y-3.5">
           {cardError && (
             <div
@@ -292,7 +400,7 @@ function PendingApprovalCard({
             </div>
           )}
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label htmlFor={`director-comment-${approval.id}`}>
                 {t.director.directorCommentLabel}
@@ -324,6 +432,42 @@ function PendingApprovalCard({
                 </span>
               )}
             </div>
+
+            <div
+              role="group"
+              aria-label={t.director.quickCommentsLabel}
+              className="flex flex-wrap gap-1.5"
+            >
+              {quickCommentChips.map((chip) => {
+                const isSelected = trimmedComment === chip.text;
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    disabled={submittingDecision !== null}
+                    onClick={() => {
+                      setComment(chip.text);
+                      if (cardError) setCardError(null);
+                      if (commentFieldError) setCommentFieldError(null);
+                    }}
+                    className={cn(
+                      "inline-flex min-h-8 cursor-pointer items-center rounded-[6px] border px-2.5 py-1 text-left text-xs font-medium leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+                      isSelected
+                        ? chip.tone === "reject"
+                          ? "border-[var(--status-danger)] bg-[#FEF2F2] text-[var(--status-danger-text)]"
+                          : "border-[var(--brand)] bg-[var(--brand-subtle)] text-[var(--brand-text)]"
+                        : chip.tone === "reject"
+                          ? "border-border bg-card text-[var(--text-secondary)] hover:border-[var(--status-danger)]/40 hover:bg-[#FEF2F2] hover:text-[var(--status-danger-text)]"
+                          : "border-border bg-card text-[var(--text-secondary)] hover:border-[var(--brand)]/50 hover:bg-[var(--brand-subtle)] hover:text-foreground"
+                    )}
+                  >
+                    {chip.text}
+                  </button>
+                );
+              })}
+            </div>
+
             <Textarea
               id={`director-comment-${approval.id}`}
               rows={3}
@@ -468,15 +612,71 @@ function PendingApprovalCard({
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </div>
 
-          {approval.check.ruleset_version && (
-            <div className="pt-0.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-              {interpolate(t.check.rulesetVersion, {
-                version: approval.check.ruleset_version,
-              })}
-            </div>
+        <Separator />
+
+        <div className="ui-subpanel space-y-1">
+          <div className="ui-label-meta">{t.director.accountantNoteTitle}</div>
+          <p className="text-sm text-foreground break-words">
+            {approval.accountant_note?.trim()
+              ? approval.accountant_note
+              : t.director.noAccountantNote}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <ComparisonTable
+            comparison={visibleComparisonRows}
+            trusted={isTrusted}
+            invalidFields={invalidFields}
+          />
+          {hasCollapsibleComparison && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-expanded={showAllComparison}
+              onClick={() => setShowAllComparison((prev) => !prev)}
+              className="min-h-10 gap-1.5 text-xs font-medium sm:min-h-8"
+            >
+              <span>
+                {showAllComparison
+                  ? t.director.comparisonHideUnchanged
+                  : t.director.comparisonShowAll}
+              </span>
+              {!showAllComparison && (
+                <span className="tabular-nums text-muted-foreground">
+                  (+{hiddenComparisonCount})
+                </span>
+              )}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "size-3.5 transition-transform duration-150",
+                  showAllComparison && "rotate-180"
+                )}
+              />
+            </Button>
           )}
         </div>
+
+        <ReasonsList
+          signals={approval.check.signals}
+          score={approval.check.score}
+        />
+
+        {analystMode && (
+          <AnalystDetailsCard details={approval.check.analyst_details} />
+        )}
+
+        {approval.check.ruleset_version && (
+          <div className="pt-0.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+            {interpolate(t.check.rulesetVersion, {
+              version: approval.check.ruleset_version,
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -490,7 +690,9 @@ export function DirectorScreen({
   onRefresh,
   onNetworkError,
 }: DirectorScreenProps) {
+  const { queue } = useAppData();
   const { t, formatMoney, formatDate, interpolate } = useT();
+  const [lastApproved, setLastApproved] = useState<Approval | null>(null);
 
   const pendingApprovals = useMemo(
     () => approvals.filter((a) => a.status === "pending"),
@@ -515,14 +717,34 @@ export function DirectorScreen({
     [resolvedApprovals]
   );
 
+  const lastApprovedSummary = useMemo(
+    () =>
+      lastApproved
+        ? getApprovalSummary(
+            lastApproved,
+            formatMoney,
+            t.director.recipientFallback
+          )
+        : null,
+    [lastApproved, formatMoney, t.director.recipientFallback]
+  );
+
+  const lastApprovedHref = useMemo(() => {
+    if (!lastApproved) return null;
+    const matched = findQueueItemForApproval(queue, lastApproved);
+    return matched ? getPaymentCheckHref(matched.id) : null;
+  }, [lastApproved, queue]);
+
   const handleDecided = async (
     decision: ApprovalDecision,
+    decidedApproval: Approval,
     recipientName: string
   ) => {
     const description = interpolate(t.toast.decisionSavedDescription, {
       recipient: recipientName,
     });
     if (decision === "approved") {
+      setLastApproved(decidedApproval);
       notify.success(t.toast.approvedTitle, description);
     } else {
       notify.info(t.toast.rejectedTitle, description);
@@ -637,6 +859,35 @@ export function DirectorScreen({
         )}
       </div>
 
+      {lastApproved && lastApprovedSummary && (
+        <div
+          role="status"
+          className="ui-notice ui-notice-ok flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="min-w-0 space-y-0.5">
+            <div className="text-sm font-semibold text-[var(--status-ok-text)]">
+              {t.toast.approvedTitle}
+            </div>
+            <p className="text-xs text-foreground break-words">
+              {interpolate(t.toast.decisionSavedDescription, {
+                recipient: lastApprovedSummary.recipientName,
+              })}{" "}
+              <span className="font-medium tabular-nums whitespace-nowrap">
+                ({lastApprovedSummary.amountDisplay})
+              </span>
+            </p>
+          </div>
+          {lastApprovedHref && (
+            <Link
+              href={lastApprovedHref}
+              className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-[6px] bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-[var(--brand-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-9"
+            >
+              {t.director.openPayment}
+            </Link>
+          )}
+        </div>
+      )}
+
       {isLoading && approvals.length === 0 ? (
         <Card className="min-w-0">
           <CardHeader className="border-b border-border pb-3.5">
@@ -654,15 +905,14 @@ export function DirectorScreen({
           </CardHeader>
           <CardContent className="space-y-4">
             <Skeleton className="h-14 w-full rounded-[6px]" />
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-full rounded-[6px]" />
-              <Skeleton className="h-10 w-full rounded-[6px]" />
-              <Skeleton className="h-10 w-full rounded-[6px]" />
-            </div>
             <Skeleton className="h-24 w-full rounded-[6px]" />
             <div className="flex gap-2.5">
               <Skeleton className="h-9 w-32 rounded-[6px]" />
               <Skeleton className="h-9 w-32 rounded-[6px]" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full rounded-[6px]" />
+              <Skeleton className="h-10 w-full rounded-[6px]" />
             </div>
           </CardContent>
         </Card>
@@ -708,6 +958,12 @@ export function DirectorScreen({
                 t.director.recipientFallback
               );
               const isApproved = approval.status === "approved";
+              const matchedQueueItem = isApproved
+                ? findQueueItemForApproval(queue, approval)
+                : null;
+              const paymentHref = matchedQueueItem
+                ? getPaymentCheckHref(matchedQueueItem.id)
+                : null;
 
               return (
                 <div key={approval.id} className="space-y-3 px-4 py-3">
@@ -761,6 +1017,14 @@ export function DirectorScreen({
                         <span className="text-xs tabular-nums text-muted-foreground">
                           {formatDate(approval.decided_at)}
                         </span>
+                      )}
+                      {paymentHref && (
+                        <Link
+                          href={paymentHref}
+                          className="inline-flex min-h-9 items-center rounded-[6px] border border-[var(--brand)]/40 bg-[var(--brand-subtle)] px-2.5 text-xs font-medium text-[var(--brand-text)] transition-colors hover:bg-[var(--brand)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+                        >
+                          {t.director.openPayment}
+                        </Link>
                       )}
                     </div>
                   </div>

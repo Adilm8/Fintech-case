@@ -102,6 +102,46 @@ interface InvoiceHistoryConflict {
 const DEFAULT_KBE = "17";
 const DEFAULT_KNP = "710";
 
+const LATIN_LOOKALIKE_TO_CYRILLIC: Record<string, string> = {
+  a: "а",
+  b: "в",
+  c: "с",
+  e: "е",
+  h: "н",
+  i: "і",
+  k: "к",
+  m: "м",
+  o: "о",
+  p: "р",
+  t: "т",
+  x: "х",
+  y: "у",
+};
+
+function foldLookalikeName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[«»"'`„“”]/g, " ")
+    .replace(/[abcehikmoptxy]/g, (ch) => LATIN_LOOKALIKE_TO_CYRILLIC[ch] ?? ch)
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findSupplierByConfusableName(
+  suppliers: SupplierSuggestion[],
+  rawName: string | null | undefined
+): SupplierSuggestion | null {
+  if (!rawName) return null;
+  const target = foldLookalikeName(rawName);
+  if (!target) return null;
+  return (
+    suppliers.find((s) =>
+      s.aliases.some((alias) => foldLookalikeName(alias) === target)
+    ) ?? null
+  );
+}
+
 const EMPTY_FORM: FormState = {
   recipient_name: "",
   recipient_bin: "",
@@ -236,6 +276,7 @@ export function NewPaymentDialog({
     const historyMatch =
       findSupplierByBin(supplierList, candidateBin) ??
       findSupplierByName(supplierList, candidateName) ??
+      findSupplierByConfusableName(supplierList, candidateName) ??
       prevSelected;
 
     if (!historyMatch) return null;
@@ -1064,6 +1105,7 @@ export function NewPaymentDialog({
           <InvoiceUpload
             key={invoiceResetKey}
             disabled={isSubmitting}
+            showDemoSample={isEditMode ? false : undefined}
             confirmed={invoiceConfirmed}
             onExtracted={handleInvoiceExtracted}
             onConfirmedChange={setInvoiceConfirmed}

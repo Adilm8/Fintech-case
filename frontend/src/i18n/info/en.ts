@@ -59,7 +59,8 @@ export const infoEn: InfoDictionary = {
         },
         {
           title: "Bank Internal Account Data",
-          detail: "Account holder match & new-account signal — without disclosing banking secrecy.",
+          detail:
+            "Account holder match, new-account signal & anonymized bank-wide signals — without disclosing secrecy.",
         },
         {
           title: "Lookalike Names & Symbols",
@@ -135,6 +136,7 @@ export const infoEn: InfoDictionary = {
           "If a new internal account belongs to the same BIN as a known supplier, the bank confirms the match (amount checks still run).",
           "If the internal account belongs to a different company, a blocking red signal fires with neutral wording — never revealing the owner's name, BIN, or opening date.",
           "Flags recently opened internal accounts without exposing the exact opening date to the client.",
+          "Anonymized bank-wide signals (implemented on synthetic data in bank_signals.json): aggregated complaints from other clients on an IIK, first-time inflows to a fresh account from many unrelated payers (exempting established bank-known BINs), and a mule watchlist — never disclosing payer names or BINs.",
           "Detailed internal account data is separated into the \"Antifraud analyst view\".",
         ],
       },
@@ -193,7 +195,7 @@ export const infoEn: InfoDictionary = {
         actionDetails:
           "Call the supplier using the phone number from your contract (not from the email) and route the payment to the director for approval.",
         signingRule:
-          "Allowed after director approval or after the accountant confirms phone verification.",
+          "Allowed after director approval or after the accountant confirms phone verification (in prod mode, if any counterparty identity signal fired, phone confirmation is blocked and director approval is required).",
       },
       {
         verdict: "red",
@@ -215,7 +217,7 @@ export const infoEn: InfoDictionary = {
         actionDetails:
           "Double-check BIN/IIN, IIK, and amount against the signed contract. If the amount exceeds your 90th percentile, the system recommends director review.",
         signingRule:
-          "Allowed after accountant phone-verification confirmation or director approval.",
+          "Allowed after accountant phone-verification confirmation or director approval (in prod mode, any counterparty identity signal requires director approval).",
       },
       {
         verdict: "invalid",
@@ -241,7 +243,7 @@ export const infoEn: InfoDictionary = {
       {
         title: "Director Approvals & Trusted Accounts",
         description:
-          "Directors review the same comparison table and signals. For a yellow account-change payment, they can check \"Trust this account\" with a comment so future payments turn green.",
+          "Directors review the same comparison table and signals. For a yellow account-change payment — or a red verdict whose only risk signals are IIK and bank change (no blocking or other risk signals) — they can check \"Trust this account\" with a comment of 10+ characters so future payments turn green.",
       },
       {
         title: "Audit Log & Three Languages",
@@ -288,7 +290,7 @@ export const infoEn: InfoDictionary = {
         category: "workflow",
         question: "What if the supplier genuinely changed their bank or account?",
         answer:
-          "A first unconfirmed account switch always triggers an alert (yellow, or red if the bank changed and the amount is at or above the supplier's median), because requisites alone cannot distinguish a real switch from spoofing. Call the supplier using the verified number from your contract (never from the new email), then send the payment to the director. Once the director approves the yellow payment with a comment and checks \"Trust this account\", future payments to that account turn green.",
+          "A first unconfirmed account switch always triggers an alert (yellow, or red if the bank changed and the amount is at or above the supplier's median), because requisites alone cannot distinguish a real switch from spoofing. Call the supplier using the verified number from your contract (never from the new email), then send the payment to the director. The director can approve with a comment of 10+ characters and check \"Trust this account\" — even on a red verdict when the only risk signals are IIK and bank change with no other risk or blocking signals — so future payments to that account turn green.",
       },
       {
         id: "director-confirmation",
@@ -304,7 +306,7 @@ export const infoEn: InfoDictionary = {
         question:
           "How do trusted accounts work, and can a red payment be marked trusted?",
         answer:
-          "Checking \"Trust this account\" links the new IIK to that supplier so subsequent payments immediately receive a green verdict labeled \"New account confirmed by director\". For safety, trust can only be granted on a yellow payment involving an IIK/bank change, with no blocking facts, and with a mandatory director comment (10+ characters). It is not available for red verdicts.",
+          "Checking \"Trust this account\" links the new IIK to that supplier so subsequent payments immediately receive a green verdict labeled \"New account confirmed by director\". Trust can be granted — always with a mandatory director comment (10+ characters) — on a yellow IIK/bank-change payment, and also on a red verdict when the only risk signals are IIK and bank change (no blocking or other risk signals). Whenever a red verdict includes any other risk or blocking signal (such as a lookalike name, third-party bank account, or watchlist match), trust stays unavailable.",
       },
       {
         id: "invoice-upload",
@@ -379,7 +381,7 @@ export const infoEn: InfoDictionary = {
         question:
           "How does this prototype differ from a full production bank rollout?",
         answer:
-          "The prototype uses synthetic data for a single demo company, simulates signing without connecting to real digital signatures (NCALayer), and keeps approvals and trusted accounts in memory (resettable via \"Reset demo\"). Production deployment adds a persistent database, bank role authentication, pre-NCALayer integration, 1C/CSV batch verification, and a shadow-mode pilot.",
+          "Demo mode uses synthetic data for a single sample company, simulates signing without live digital signatures (NCALayer), and keeps approvals and trusted accounts in memory (resettable via \"Reset demo\"). The same repository also includes a local production-like mode (APP_MODE=prod) with SQLite, login and roles, a server-enforced signing gate, hash-chained audit logs, and 1C/CSV batch import (tested only on synthetic data). Live bank rollout adds PostgreSQL, bank SSO/JWT authentication, pre-NCALayer integration, validation on real 1C exports, and a shadow-mode pilot.",
       },
     ],
     stillNeedHelpTitle: "Still have a question?",
@@ -442,7 +444,7 @@ export const infoEn: InfoDictionary = {
       {
         label: "External calls per check",
         value: "0",
-        hint: "Risk engine runs strictly on internal data and local catalogs",
+        hint: "Risk engine runs locally; optional invoice extraction and plain-language summary call an external API only when a key is set and never affect verdicts",
       },
       {
         label: "Banking secrecy",
@@ -469,6 +471,7 @@ export const infoEn: InfoDictionary = {
         points: [
           "12-month client payment history: usual IIKs, banks, amounts, and KNP codes per supplier.",
           "Internal bank account directory: verifies account ownership and age strictly inside the bank boundary.",
+          "Anonymized bank-wide signals (synthetic bank_signals.json): aggregated client complaints on an IIK, multi-payer inflows to fresh accounts (exempting established bank-known BINs), and a mule watchlist — without disclosing payer names or BINs.",
           "NBK bank catalog: bank codes, BICs, and budget recipient markers (Treasury, Government for Citizens).",
           "Short-term check memory: detects repeated invoice numbers within 90 days, 72-hour structuring, and 7-day cumulative volume to new recipients.",
         ],
@@ -531,7 +534,7 @@ export const infoEn: InfoDictionary = {
     limitationsSubtitle:
       "Important boundaries to keep in mind while evaluating the hackathon build:",
     limitations: [
-      "All datasets (150-payment history, 12 suppliers, account directory, and queue) are synthetic.",
+      "All datasets (150-payment history, 12 suppliers, account directory, bank-wide signals, and queue) are synthetic.",
       "No live digital signature (NCALayer) is connected in demo mode: clicking \"Sign\" simulates submission.",
       "Approvals, trusted accounts, and short-term memory live in process memory and reset on restart or \"Reset demo\".",
       "Interbank ownership verification for external banks is not connected; external accounts rely on client history, format validation, and anomaly checks.",
@@ -671,7 +674,7 @@ export const infoEn: InfoDictionary = {
       {
         title: "Trilingual & Pilot-Ready",
         description:
-          "Russian, Kazakh, and English across UI and API, append-only audit logging, 223 automated tests, and a shadow-mode pilot plan.",
+          "Russian, Kazakh, and English across UI and API, append-only audit logging, 480+ automated tests, and a shadow-mode pilot plan.",
       },
     ],
     teamTitle: "Project Team",
@@ -726,9 +729,9 @@ export const infoEn: InfoDictionary = {
       {
         phase: "Phase 3",
         statusLabel: "Scale",
-        title: "1C & CSV Batch Verification",
+        title: "Validation on Real 1C Exports",
         description:
-          "Split imported batches into green orders (ready for group signing) and flagged orders (routed for approval) so one suspicious invoice never stalls payroll or taxes.",
+          "1C/CSV batch import and batch green signing are already implemented in prod mode (tested only on synthetic data); the next step is validating against live \"1C: Accounting for Kazakhstan\" exports and tuning batch throughput.",
       },
       {
         phase: "Phase 4",
@@ -740,9 +743,9 @@ export const infoEn: InfoDictionary = {
       {
         phase: "Phase 5",
         statusLabel: "Expanded protection",
-        title: "Bank-Wide Signals & In-Bank Invoice Parsing",
+        title: "Live Bank Feeds, Decision Tables & In-Bank Parsing",
         description:
-          "Detect newly opened accounts receiving transfers from many companies, manage rule weights via decision tables, and run tamper-aware invoice parsing inside bank infrastructure.",
+          "Bank-wide signals are already implemented on synthetic data (bank_signals.json); next steps are connecting live anonymized bank-wide feeds, managing rule weights via decision tables without code changes, and running invoice parsing inside bank infrastructure.",
       },
     ],
   },

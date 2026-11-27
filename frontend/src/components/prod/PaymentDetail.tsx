@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
 import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
 import { ComparisonTable } from "@/components/ComparisonTable";
+import { ExplainButton } from "@/components/ExplainButton";
 import { ReasonsList } from "@/components/ReasonsList";
 import { VerdictBanner } from "@/components/VerdictBanner";
 import { DecisionDialog } from "@/components/prod/DecisionDialog";
@@ -397,6 +398,12 @@ export function PaymentDetail({
             text={pickActionText(check.next_action, lang)}
             verdict={check.verdict}
           />
+
+          {(check.verdict === "yellow" ||
+            check.verdict === "red" ||
+            check.verdict === "grey") && (
+            <ExplainButton check={check} lang={lang} labels={t.explain} />
+          )}
 
           <SignPanel
             payment={payment}

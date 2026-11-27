@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, Lock, Shield } from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
+import { AnalystDetailsCard } from "@/components/AnalystDetailsCard";
+import { useAppData } from "@/components/AppShell";
 import { ComparisonTable } from "@/components/ComparisonTable";
-import { ExplainButton } from "@/components/ExplainButton";
 import { NewPaymentDialog } from "@/components/NewPaymentDialog";
 import { ReasonsList } from "@/components/ReasonsList";
 import { Button } from "@/components/ui/button";
@@ -86,11 +87,15 @@ export function CheckScreen({
   const router = useRouter();
   const { t, lang, formatMoney, formatDate, interpolate, formatTrustedBanner } =
     useT();
+  const { analystMode, setAnalystMode, isAnalystLoading } = useAppData();
 
   const [override, setOverride] = useState<{
     baseCheckId: string;
     result: CheckResult;
   } | null>(null);
+  const [analystFallbackFailedFor, setAnalystFallbackFailedFor] = useState<
+    string | null
+  >(null);
   const currentResult =
     override && override.baseCheckId === result.check_id
       ? override.result
@@ -119,6 +124,7 @@ export function CheckScreen({
 
   const lastFetchedLangRef = useRef(lang);
   const baseCheckIdRef = useRef(result.check_id);
+  const analystModeRef = useRef(analystMode);
   const onNetworkErrorRef = useRef(onNetworkError);
   const postponeUndoTimerRef = useRef<number | null>(null);
   const previousStatusBeforePostponeRef = useRef<"signed" | "postponed" | null>(
@@ -135,6 +141,12 @@ export function CheckScreen({
 
   useEffect(() => {
     return () => {
+      setAnalystMode(false);
+    };
+  }, [setAnalystMode]);
+
+  useEffect(() => {
+    return () => {
       if (postponeUndoTimerRef.current !== null) {
         window.clearTimeout(postponeUndoTimerRef.current);
       }
@@ -146,6 +158,10 @@ export function CheckScreen({
   }, [result.check_id]);
 
   useEffect(() => {
+    analystModeRef.current = analystMode;
+  }, [analystMode]);
+
+  useEffect(() => {
     onNetworkErrorRef.current = onNetworkError;
   }, [onNetworkError]);
 
@@ -154,7 +170,10 @@ export function CheckScreen({
     lastFetchedLangRef.current = lang;
     let active = true;
 
-    checkPayment(request, lang, { recordHistory: false })
+    checkPayment(request, lang, {
+      recordHistory: false,
+      analyst: analystModeRef.current,
+    })
       .then((updated) => {
         if (!active) return;
         setOverride({ baseCheckId: baseCheckIdRef.current, result: updated });
@@ -170,6 +189,55 @@ export function CheckScreen({
       active = false;
     };
   }, [lang, request]);
+
+  useEffect(() => {
+    if (
+      !analystMode ||
+      isAnalystLoading ||
+      currentResult.analyst_details !== undefined
+    ) {
+      return;
+    }
+    let active = true;
+    const targetCheckId = currentResult.check_id;
+
+    checkPayment(request, lang, { recordHistory: false, analyst: true })
+      .then((updated) => {
+        if (!active) return;
+        setAnalystFallbackFailedFor(null);
+        setOverride({ baseCheckId: baseCheckIdRef.current, result: updated });
+      })
+      .catch((err) => {
+        if (!active) return;
+        setAnalystFallbackFailedFor(targetCheckId);
+        if (isNetworkUnreachableError(err)) {
+          onNetworkErrorRef.current?.(getErrorMessage(err));
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    analystMode,
+    isAnalystLoading,
+    currentResult.analyst_details,
+    currentResult.check_id,
+    lang,
+    request,
+  ]);
+
+  const isAnalystDetailsLoading =
+    analystMode &&
+    currentResult.analyst_details === undefined &&
+    analystFallbackFailedFor !== currentResult.check_id;
+
+  const handleAnalystModeChange = (enabled: boolean) => {
+    if (enabled === analystMode) return;
+    setOverride(null);
+    setAnalystFallbackFailedFor(null);
+    setAnalystMode(enabled);
+  };
 
   const matchedApproval = findApprovalForPayment(approvals, request);
   const effectiveApproval = matchedApproval ?? localApproval;
@@ -215,6 +283,7 @@ export function CheckScreen({
     try {
       const updated = await checkPayment(request, lang, {
         historyAction: "recheck",
+        analyst: analystMode,
       });
       lastFetchedLangRef.current = lang;
       setOverride({ baseCheckId: result.check_id, result: updated });
@@ -261,7 +330,10 @@ export function CheckScreen({
       let effectiveVerdict: Verdict = verdict;
 
       if (!signCommittedRef.current) {
-        const committed = await checkPayment(request, lang, { commit: true });
+        const committed = await checkPayment(request, lang, {
+          commit: true,
+          analyst: analystMode,
+        });
         signCommittedRef.current = true;
         effectiveCheckId = committed.check_id;
         effectiveVerdict = committed.verdict;
@@ -379,7 +451,10 @@ export function CheckScreen({
     setIsSendingApproval(true);
     try {
       if (!approvalCommittedRef.current) {
-        const committed = await checkPayment(request, lang, { commit: true });
+        const committed = await checkPayment(request, lang, {
+          commit: true,
+          analyst: analystMode,
+        });
         approvalCommittedRef.current = true;
         lastFetchedLangRef.current = lang;
         setOverride({ baseCheckId: result.check_id, result: committed });
@@ -391,7 +466,8 @@ export function CheckScreen({
           request,
           accountant_note: accountantNote.trim(),
         },
-        lang
+        lang,
+        { analyst: analystMode }
       );
       setSentApprovalId(created.id);
       setLocalApproval(created);
@@ -442,6 +518,18 @@ export function CheckScreen({
     setDialogError(null);
     setDialogOpen(true);
   };
+
+  const renderLockedSignButton = () => (
+    <Button
+      type="button"
+      variant="outline"
+      disabled
+      className="h-auto min-h-10 w-full gap-2 whitespace-normal border-dashed border-border bg-muted/70 px-3 py-2 text-center leading-snug text-muted-foreground disabled:opacity-85"
+    >
+      <Lock className="size-4 shrink-0" aria-hidden="true" />
+      <span>{t.check.actionSignLocked}</span>
+    </Button>
+  );
 
   const renderActionButtons = () => {
     if (verdict === "invalid") {
@@ -519,6 +607,7 @@ export function CheckScreen({
             >
               {t.check.actionSentToDirector}
             </Button>
+            {renderLockedSignButton()}
             <p className="pt-0.5 text-xs text-muted-foreground">
               {t.check.blockedUntilDecisionHint}
             </p>
@@ -535,14 +624,18 @@ export function CheckScreen({
           >
             {t.check.actionSentToDirector}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled
-            className="min-h-10 w-full"
-          >
-            {t.check.actionSign}
-          </Button>
+          {verdict === "yellow" ? (
+            renderLockedSignButton()
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className="min-h-10 w-full"
+            >
+              {t.check.actionSign}
+            </Button>
+          )}
           <p className="pt-0.5 text-xs text-muted-foreground">
             {t.check.blockedUntilDecisionHint}
           </p>
@@ -589,6 +682,7 @@ export function CheckScreen({
           >
             {t.check.actionSendToDirector}
           </Button>
+          {renderLockedSignButton()}
           <p className="pt-0.5 text-xs text-muted-foreground">
             {t.check.blockedUntilCheckOrApprovalHint}
           </p>
@@ -614,14 +708,18 @@ export function CheckScreen({
             {t.check.directorRequiredIdentity}
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            disabled
-            className="min-h-10 w-full"
-          >
-            {t.check.actionSign}
-          </Button>
+          {verdict === "yellow" ? (
+            renderLockedSignButton()
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className="min-h-10 w-full"
+            >
+              {t.check.actionSign}
+            </Button>
+          )}
         </div>
       );
     }
@@ -659,24 +757,30 @@ export function CheckScreen({
           </div>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          disabled={
-            !accountantAck || isSigning || demoActionStatus === "signed"
-          }
-          onClick={() => void handleSignDemo()}
-          className="min-h-10 w-full"
-        >
-          {isSigning ? (
-            <>
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              <span>{t.check.actionSigning}</span>
-            </>
-          ) : (
-            t.check.actionSign
-          )}
-        </Button>
+        {verdict === "yellow" &&
+        !accountantAck &&
+        demoActionStatus !== "signed" ? (
+          renderLockedSignButton()
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              !accountantAck || isSigning || demoActionStatus === "signed"
+            }
+            onClick={() => void handleSignDemo()}
+            className="min-h-10 w-full"
+          >
+            {isSigning ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                <span>{t.check.actionSigning}</span>
+              </>
+            ) : (
+              t.check.actionSign
+            )}
+          </Button>
+        )}
       </div>
     );
   };
@@ -814,19 +918,57 @@ export function CheckScreen({
           <span>{t.check.backToList}</span>
         </Button>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleRecheck}
-          disabled={isRechecking}
-          className="min-h-10 sm:min-h-8"
-        >
-          {isRechecking && (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-          )}
-          <span>{isRechecking ? t.check.rechecking : t.check.recheck}</span>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            role="group"
+            aria-label={t.check.viewModeAriaLabel}
+            className="inline-flex flex-wrap items-center gap-1 rounded-[10px] border border-border bg-muted/80 p-1"
+          >
+            <button
+              type="button"
+              aria-pressed={!analystMode}
+              onClick={() => handleAnalystModeChange(false)}
+              className={cn(
+                "inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                !analystMode
+                  ? "bg-card text-foreground shadow-xs ring-1 ring-border/70 font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Shield className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>{t.check.viewModeClient}</span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={analystMode}
+              onClick={() => handleAnalystModeChange(true)}
+              className={cn(
+                "inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                analystMode
+                  ? "bg-[#1D1D1E] text-white shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Eye className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>{t.check.viewModeAnalyst}</span>
+            </button>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleRecheck}
+            disabled={isRechecking}
+            className="min-h-10 sm:min-h-8"
+          >
+            {isRechecking && (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            )}
+            <span>{isRechecking ? t.check.rechecking : t.check.recheck}</span>
+          </Button>
+        </div>
       </div>
 
       <div className="ui-panel min-w-0 p-4">
@@ -902,6 +1044,7 @@ export function CheckScreen({
       <VerdictBanner
         verdict={verdict}
         headline={pickHeadline(currentResult, lang)}
+        score={currentResult.score}
       />
 
       {showProminentTrustedBanner && (
@@ -943,33 +1086,30 @@ export function CheckScreen({
 
       <div className="grid grid-cols-1 items-start gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4 sm:space-y-5">
+          <ReasonsList
+            signals={currentResult.signals}
+            score={currentResult.score}
+          />
+
+          {analystMode && (
+            <AnalystDetailsCard
+              details={currentResult.analyst_details}
+              isLoading={isAnalystDetailsLoading}
+            />
+          )}
+
           <ComparisonTable
             comparison={currentResult.comparison}
             trusted={isTrusted}
             invalidFields={invalidFields}
           />
-
-          <ReasonsList
-            signals={currentResult.signals}
-            score={currentResult.score}
-          />
         </div>
 
-        <div className="min-w-0 space-y-4 lg:sticky lg:top-20">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-32">
           <AdviceBox
             text={pickActionText(currentResult.next_action, lang)}
             verdict={verdict}
           />
-
-          {(verdict === "yellow" ||
-            verdict === "red" ||
-            verdict === "grey") && (
-            <ExplainButton
-              check={currentResult}
-              lang={lang}
-              labels={t.explain}
-            />
-          )}
 
           <div
             className={cn(

@@ -60,6 +60,7 @@ interface AppDataContextValue {
   resetCounter: number;
   homeResetNonce: number;
   analystMode: boolean;
+  isAnalystLoading: boolean;
   setAnalystMode: (enabled: boolean) => void;
   loadData: (showLoading?: boolean) => Promise<void>;
   refreshApprovalsOnly: () => Promise<void>;
@@ -114,6 +115,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [resetCounter, setResetCounter] = useState(0);
   const [homeResetNonce, setHomeResetNonce] = useState(0);
   const [analystModeState, setAnalystModeState] = useState(false);
+  const [isAnalystLoading, setIsAnalystLoading] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const hasLoadedOnceRef = useRef(false);
   const lastRecheckedLocalLangRef = useRef<string | null>(null);
@@ -160,11 +162,37 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, [pathname, router]);
 
-  const isDirectorRoute = pathname.startsWith("/approvals");
-  const effectiveAnalystMode = isDirectorRoute && analystModeState;
+  const isAdHocCheckRoute =
+    mounted &&
+    pathname === "/" &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("id");
+  const isAnalystRoute =
+    pathname.startsWith("/approvals") ||
+    pathname.startsWith("/check") ||
+    isAdHocCheckRoute;
+  const effectiveAnalystMode = isAnalystRoute && analystModeState;
+
+  const pathnameRef = useRef(pathname);
+  const effectiveAnalystModeRef = useRef(effectiveAnalystMode);
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+    effectiveAnalystModeRef.current = effectiveAnalystMode;
+  }, [pathname, effectiveAnalystMode]);
 
   const setAnalystMode = useCallback((enabled: boolean) => {
     setAnalystModeState(enabled);
+    const currentPathname = pathnameRef.current;
+    const canUseAnalystNow =
+      currentPathname.startsWith("/approvals") ||
+      currentPathname.startsWith("/check") ||
+      (typeof window !== "undefined" &&
+        currentPathname === "/" &&
+        new URLSearchParams(window.location.search).has("id"));
+    setIsAnalystLoading(
+      enabled && canUseAnalystNow && !effectiveAnalystModeRef.current
+    );
   }, []);
 
   const loadData = useCallback(
@@ -257,8 +285,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         }
       })
       .finally(() => {
-        if (active && isInitialLoad) {
-          setIsLoading(false);
+        if (active) {
+          if (isInitialLoad) {
+            setIsLoading(false);
+          }
+          setIsAnalystLoading(false);
         }
       });
 
@@ -341,6 +372,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       clearLocalQueueState();
       lastRecheckedLocalLangRef.current = lang;
       setAnalystModeState(false);
+      setIsAnalystLoading(false);
       setApiErrorState(null);
       setApprovalsError(false);
       setResetCounter((count) => count + 1);
@@ -495,6 +527,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       resetCounter,
       homeResetNonce,
       analystMode: effectiveAnalystMode,
+      isAnalystLoading,
       setAnalystMode,
       loadData: (showLoading?: boolean) => loadData(showLoading),
       refreshApprovalsOnly,
@@ -514,6 +547,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       resetCounter,
       homeResetNonce,
       effectiveAnalystMode,
+      isAnalystLoading,
       setAnalystMode,
       loadData,
       refreshApprovalsOnly,

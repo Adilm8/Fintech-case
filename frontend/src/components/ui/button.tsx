@@ -16,7 +16,7 @@ const buttonVariants = cva(
         ghost:
           "text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
         destructive:
-          "border-[#E5A3A3] bg-card text-[#B91C1C] hover:bg-[#FEF2F2] focus-visible:border-destructive focus-visible:ring-destructive/20",
+          "border-transparent bg-[#DC2626] text-white hover:bg-[#B91C1C] active:bg-[#991B1B] focus-visible:border-[#DC2626] focus-visible:ring-[#DC2626]/25",
         link: "text-[var(--brand-text)] underline-offset-4 hover:underline",
       },
       size: {

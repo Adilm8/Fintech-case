@@ -8,26 +8,42 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, Mail, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { useT } from "@/i18n";
+import {
+  getDictionary,
+  interpolate as interpolateTemplate,
+  useT,
+  type Dictionary,
+  type Lang,
+} from "@/i18n";
 import {
   INVOICE_ACCEPT_ATTRIBUTE,
+  INVOICE_EXTRACT_TIMEOUT_MS,
+  InvoiceExtractError,
+  MAX_INVOICE_FILE_BYTES,
   extractInvoice,
+  getInvoiceApiBase,
   getInvoiceErrorMessage,
   isInvoiceExtractAbortError,
   mapInvoiceToFormValues,
   needsManualConfirmation,
+  parseInvoiceExtraction,
   validateInvoiceFile,
   type InvoiceExtraction,
 } from "@/lib/invoice";
+import { IS_PROD } from "@/lib/mode";
 import { cn } from "cn";
+
+const DEMO_SAMPLE_URL = "/samples/demo-invoice-alatau.txt";
+const DEMO_SAMPLE_FILENAME = "demo-invoice-alatau.txt";
 
 export interface InvoiceUploadProps {
   apiBase?: string | null;
   disabled?: boolean;
+  showDemoSample?: boolean;
   confirmed?: boolean;
   onExtracted: (result: InvoiceExtraction) => void;
   onConfirmedChange?: (confirmed: boolean) => void;
@@ -49,9 +65,194 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function normalizeApiBase(raw: string | null | undefined): string {
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("/")
+  ) {
+    return trimmed;
+  }
+  return "";
+}
+
+function buildTextExtractHttpError(
+  status: number,
+  detail: unknown,
+  dict: Dictionary
+): InvoiceExtractError {
+  const safeDetail =
+    typeof detail === "string" && detail.trim() ? detail.trim() : null;
+
+  if (status === 400) {
+    return new InvoiceExtractError({
+      code: "http_400",
+      status,
+      detail,
+      message: safeDetail || dict.invoice.errors.http400,
+    });
+  }
+  if (status === 413) {
+    return new InvoiceExtractError({
+      code: "http_413",
+      status,
+      detail,
+      message: safeDetail || dict.invoice.errors.http413,
+    });
+  }
+  if (status === 415) {
+    return new InvoiceExtractError({
+      code: "http_415",
+      status,
+      detail,
+      message: safeDetail || dict.invoice.errors.http415,
+    });
+  }
+  return new InvoiceExtractError({
+    code: "http_other",
+    status,
+    detail,
+    message:
+      safeDetail ||
+      interpolateTemplate(dict.invoice.errors.httpOther, { status }),
+  });
+}
+
+/**
+ * Posts a text/plain invoice sample to the same /api/invoice/extract endpoint used by
+ * regular uploads so the backend runs deterministic local template extraction.
+ */
+async function extractTextPlainInvoice(
+  file: File,
+  options: { apiBase?: string | null; signal?: AbortSignal; lang: Lang }
+): Promise<InvoiceExtraction> {
+  const dict = getDictionary(options.lang);
+
+  if (file.size <= 0) {
+    throw new InvoiceExtractError({
+      code: "empty_file",
+      status: 0,
+      message: dict.invoice.errors.emptyFile,
+    });
+  }
+  if (file.size > MAX_INVOICE_FILE_BYTES) {
+    throw new InvoiceExtractError({
+      code: "too_large",
+      status: 0,
+      message: dict.invoice.errors.tooLarge,
+    });
+  }
+
+  const hasExplicitApiBase =
+    options.apiBase !== undefined && options.apiBase !== null;
+  const resolvedApiBase = hasExplicitApiBase
+    ? normalizeApiBase(options.apiBase)
+    : getInvoiceApiBase();
+
+  if (!IS_PROD && !resolvedApiBase) {
+    throw new InvoiceExtractError({
+      code: "missing_api_base",
+      status: 0,
+      message: dict.invoice.errors.apiBaseMissing,
+    });
+  }
+
+  const externalSignal = options.signal;
+  if (externalSignal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const onExternalAbort = () => controller.abort();
+  externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, INVOICE_EXTRACT_TIMEOUT_MS);
+
+  const filename = file.name?.trim() || DEMO_SAMPLE_FILENAME;
+  const url = `${resolvedApiBase}/api/invoice/extract?filename=${encodeURIComponent(filename)}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "text/plain",
+  };
+  if (IS_PROD) {
+    headers["X-Shield-Request"] = "1";
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: file,
+      credentials: IS_PROD ? "include" : "omit",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (timedOut) {
+      throw new InvoiceExtractError({
+        code: "timeout",
+        status: 0,
+        message: dict.invoice.errors.timeout,
+      });
+    }
+    if (externalSignal?.aborted || isInvoiceExtractAbortError(err)) {
+      throw err;
+    }
+    throw new InvoiceExtractError({
+      code: "network",
+      status: 0,
+      message: dict.invoice.errors.network,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
+  }
+
+  let body: unknown = null;
+  const responseContentType = response.headers.get("content-type") || "";
+  if (responseContentType.includes("application/json")) {
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+  } else {
+    try {
+      const text = await response.text();
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = text;
+        }
+      }
+    } catch {
+      body = null;
+    }
+  }
+
+  if (!response.ok) {
+    const detail =
+      body && typeof body === "object" && "detail" in body
+        ? (body as { detail: unknown }).detail
+        : body;
+    throw buildTextExtractHttpError(response.status, detail, dict);
+  }
+
+  return parseInvoiceExtraction(body, options.lang);
+}
+
 export function InvoiceUpload({
   apiBase,
   disabled = false,
+  showDemoSample = !IS_PROD,
   confirmed,
   onExtracted,
   onConfirmedChange,
@@ -71,6 +272,7 @@ export function InvoiceUpload({
   const dragDepthRef = useRef(0);
 
   const [status, setStatus] = useState<UploadStatus>("idle");
+  const [loadingSource, setLoadingSource] = useState<"file" | "demo">("file");
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFileMeta | null>(
     null
@@ -110,6 +312,7 @@ export function InvoiceUpload({
     abortControllerRef.current = null;
     dragDepthRef.current = 0;
     setIsDragOver(false);
+    setLoadingSource("file");
     setStatus("idle");
     setSelectedFile(null);
     setErrorMessage(null);
@@ -120,49 +323,83 @@ export function InvoiceUpload({
     onClear?.();
   };
 
-  const handleFile = async (file: File) => {
+  const handleFile = async (
+    file: File,
+    options?: {
+      allowTextPlain?: boolean;
+      existingRequestId?: number;
+      existingController?: AbortController;
+    }
+  ) => {
     if (disabled) return;
 
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-    const currentRequestId = ++requestIdRef.current;
-    resetFileInput();
+    const isContinuingDemo =
+      options?.existingRequestId !== undefined &&
+      options?.existingController !== undefined;
+    const isTextPlainSample =
+      Boolean(options?.allowTextPlain) &&
+      (file.type || "").trim().toLowerCase() === "text/plain";
 
-    const validation = validateInvoiceFile(file, lang);
-    if (!validation.ok) {
-      setSelectedFile({ name: file.name, size: file.size });
-      setResult(null);
-      setErrorMessage(validation.message);
-      setStatus("error");
-      updateConfirmed(false);
-      onLoadingChange?.(false);
+    let currentRequestId: number;
+    let controller: AbortController;
+
+    if (isContinuingDemo) {
+      currentRequestId = options.existingRequestId!;
+      controller = options.existingController!;
+      if (requestIdRef.current !== currentRequestId) {
+        return;
+      }
+    } else {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      currentRequestId = ++requestIdRef.current;
+      resetFileInput();
+      setLoadingSource("file");
+
+      const validation = validateInvoiceFile(file, lang);
+      if (!validation.ok) {
+        setSelectedFile({ name: file.name, size: file.size });
+        setResult(null);
+        setErrorMessage(validation.message);
+        setStatus("error");
+        updateConfirmed(false);
+        onLoadingChange?.(false);
+        onClear?.();
+        return;
+      }
+
       onClear?.();
-      return;
+      updateConfirmed(false);
+      setErrorMessage(null);
+      setResult(null);
+      setStatus("loading");
+      onLoadingChange?.(true);
+
+      controller = new AbortController();
+      abortControllerRef.current = controller;
     }
 
-    onClear?.();
-    updateConfirmed(false);
     setSelectedFile({ name: file.name, size: file.size });
-    setErrorMessage(null);
-    setResult(null);
-    setStatus("loading");
-    onLoadingChange?.(true);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
 
     try {
-      const extracted = await extractInvoice(file, {
-        apiBase,
-        signal: controller.signal,
-        lang,
-      });
+      const extracted = isTextPlainSample
+        ? await extractTextPlainInvoice(file, {
+            apiBase,
+            signal: controller.signal,
+            lang,
+          })
+        : await extractInvoice(file, {
+            apiBase,
+            signal: controller.signal,
+            lang,
+          });
 
       if (requestIdRef.current !== currentRequestId) {
         return;
       }
 
       abortControllerRef.current = null;
+      setLoadingSource("file");
       setResult(extracted);
       setErrorMessage(null);
       setStatus("success");
@@ -175,6 +412,7 @@ export function InvoiceUpload({
       }
 
       abortControllerRef.current = null;
+      setLoadingSource("file");
       onLoadingChange?.(false);
 
       if (isInvoiceExtractAbortError(err)) {
@@ -191,6 +429,75 @@ export function InvoiceUpload({
       setStatus("error");
       updateConfirmed(false);
     }
+  };
+
+  const handleLoadDemoSample = async () => {
+    if (isDisabled) return;
+
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    const currentRequestId = ++requestIdRef.current;
+    resetFileInput();
+
+    onClear?.();
+    updateConfirmed(false);
+    setLoadingSource("demo");
+    setSelectedFile({ name: DEMO_SAMPLE_FILENAME, size: 0 });
+    setErrorMessage(null);
+    setResult(null);
+    setStatus("loading");
+    onLoadingChange?.(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    let sampleFile: File;
+    try {
+      const response = await fetch(DEMO_SAMPLE_URL, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(t.invoice.errors.demoSampleLoadFailed);
+      }
+      const blob = await response.blob();
+      if (requestIdRef.current !== currentRequestId) {
+        return;
+      }
+      sampleFile = new File([blob], DEMO_SAMPLE_FILENAME, {
+        type: "text/plain",
+      });
+    } catch (err) {
+      if (requestIdRef.current !== currentRequestId) {
+        return;
+      }
+
+      abortControllerRef.current = null;
+      setLoadingSource("file");
+      onLoadingChange?.(false);
+
+      if (isInvoiceExtractAbortError(err)) {
+        setStatus("idle");
+        setSelectedFile(null);
+        setErrorMessage(null);
+        setResult(null);
+        updateConfirmed(false);
+        return;
+      }
+
+      setResult(null);
+      setSelectedFile(null);
+      setErrorMessage(t.invoice.errors.demoSampleLoadFailed);
+      setStatus("error");
+      updateConfirmed(false);
+      return;
+    }
+
+    await handleFile(sampleFile, {
+      allowTextPlain: true,
+      existingRequestId: currentRequestId,
+      existingController: controller,
+    });
   };
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -298,11 +605,15 @@ export function InvoiceUpload({
               />
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="text-sm font-medium text-foreground break-words">
-                  {t.invoice.loadingTitle}
+                  {loadingSource === "demo"
+                    ? t.invoice.demoSampleLoading
+                    : t.invoice.loadingTitle}
                 </div>
                 {selectedFile && (
                   <div className="text-xs text-muted-foreground tabular-nums break-all">
-                    {selectedFile.name} · {formatFileSize(selectedFile.size)}
+                    {selectedFile.size > 0
+                      ? `${selectedFile.name} · ${formatFileSize(selectedFile.size)}`
+                      : selectedFile.name}
                   </div>
                 )}
               </div>
@@ -462,26 +773,48 @@ export function InvoiceUpload({
               </div>
             )}
 
-            <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 space-y-0.5">
-                <div className="text-[13px] font-medium text-foreground break-words">
-                  {isDragOver ? t.invoice.dropActiveHint : t.invoice.label}
+            <div className="flex min-w-0 flex-col gap-2.5">
+              <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-[13px] font-medium text-foreground break-words">
+                    {isDragOver ? t.invoice.dropActiveHint : t.invoice.label}
+                  </div>
+                  <p className="text-xs text-muted-foreground break-words">
+                    {t.invoice.dropHint} · {t.invoice.formatsHint}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground break-words">
-                  {t.invoice.dropHint} · {t.invoice.formatsHint}
-                </p>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openFilePicker}
+                  disabled={isDisabled}
+                  className="min-h-10 w-full shrink-0 sm:min-h-8 sm:w-auto"
+                >
+                  {t.invoice.uploadButton}
+                </Button>
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={openFilePicker}
-                disabled={isDisabled}
-                className="min-h-10 w-full shrink-0 sm:min-h-8 sm:w-auto"
-              >
-                {t.invoice.uploadButton}
-              </Button>
+              {showDemoSample && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleLoadDemoSample()}
+                    disabled={isDisabled}
+                    aria-label={t.invoice.aria.demoSampleButton}
+                    className="min-h-10 w-full border-[#00AB75]/45 bg-[var(--brand-subtle)] text-[var(--brand-text)] hover:border-[#00AB75] hover:bg-[#00AB75]/10 hover:text-[var(--brand-text)] sm:min-h-8 sm:w-auto"
+                  >
+                    <Mail
+                      aria-hidden="true"
+                      className="size-3.5 text-[#00AB75]"
+                    />
+                    <span>{t.invoice.demoSampleButton}</span>
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}

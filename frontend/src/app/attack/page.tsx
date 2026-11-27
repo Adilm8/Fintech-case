@@ -2,10 +2,15 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ChevronDown, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Loader2,
+  SlidersHorizontal,
+} from "lucide-react";
 import { AdviceBox } from "@/components/AdviceBox";
 import { useAppData } from "@/components/AppShell";
-import { ReasonsList } from "@/components/ReasonsList";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +43,7 @@ import { pickActionText, pickHeadline } from "@/lib/format";
 import { notify } from "@/lib/toast";
 import type { CheckRequest, CheckResult, QueueItem } from "@/lib/types";
 import { cn } from "cn";
+import { CompactReasonsList } from "./CompactReasonsList";
 
 interface AttackFormState {
   recipient_name: string;
@@ -50,8 +56,20 @@ interface AttackFormState {
   knp: string;
 }
 
+type PresetId =
+  | "homoglyph"
+  | "invisible"
+  | "other_bank"
+  | "own_bin"
+  | "bcc_other"
+  | "amount_4x"
+  | "urgent"
+  | "combined_new_requisites";
+
 const DEFAULT_KBE = "17";
 const DEFAULT_KNP = "710";
+const COMBINED_URGENT_PHRASE = "срочно, новые реквизиты";
+const COMBINED_AMOUNT_MULTIPLIER = 3.6;
 
 function requestToForm(req: CheckRequest): AttackFormState {
   return {
@@ -63,6 +81,43 @@ function requestToForm(req: CheckRequest): AttackFormState {
     purpose: req.purpose,
     kbe: req.kbe?.trim() || DEFAULT_KBE,
     knp: req.knp?.trim() || DEFAULT_KNP,
+  };
+}
+
+function cloneBaseRequest(req: CheckRequest): CheckRequest {
+  const cleanKbe = req.kbe?.replace(/\D+/g, "").slice(0, 2);
+  const cleanKnp = req.knp?.replace(/\D+/g, "").slice(0, 3);
+  return {
+    ...(req.payer_id !== undefined ? { payer_id: req.payer_id } : {}),
+    recipient_name: req.recipient_name,
+    recipient_bin: req.recipient_bin,
+    recipient_iik: req.recipient_iik,
+    recipient_bik: req.recipient_bik,
+    amount_kzt: req.amount_kzt,
+    purpose: req.purpose,
+    ...(cleanKbe ? { kbe: cleanKbe } : {}),
+    ...(cleanKnp ? { knp: cleanKnp } : {}),
+  };
+}
+
+function applyCombinedNewRequisitesAttack(request: CheckRequest): CheckRequest {
+  const withHomoglyph = applyHomoglyphAttack(request);
+  const withNewIik = applyOtherBankIikAttack(withHomoglyph);
+  const withInflatedAmount = applyMultiplyAmountAttack(
+    withNewIik,
+    COMBINED_AMOUNT_MULTIPLIER
+  );
+  const trimmedPurpose = withInflatedAmount.purpose.trim();
+  const lowerPurpose = trimmedPurpose.toLowerCase();
+  const nextPurpose = lowerPurpose.includes(COMBINED_URGENT_PHRASE)
+    ? trimmedPurpose
+    : trimmedPurpose
+      ? `${trimmedPurpose}, ${COMBINED_URGENT_PHRASE}`
+      : COMBINED_URGENT_PHRASE;
+
+  return {
+    ...withInflatedAmount,
+    purpose: nextPurpose,
   };
 }
 
@@ -127,10 +182,12 @@ function CharDiffHighlight({
   original,
   attacked,
   monospace = false,
+  compact = false,
 }: {
   original: string;
   attacked: string;
   monospace?: boolean;
+  compact?: boolean;
 }) {
   const { t, interpolate } = useT();
   const tokens = useMemo(
@@ -146,8 +203,12 @@ function CharDiffHighlight({
     <span
       className={cn(
         monospace
-          ? "font-mono text-xs tabular-nums sm:text-sm break-all [overflow-wrap:anywhere]"
-          : "text-sm leading-relaxed break-words [overflow-wrap:anywhere]"
+          ? compact
+            ? "font-mono text-xs leading-4 tabular-nums break-all [overflow-wrap:anywhere]"
+            : "font-mono text-xs tabular-nums sm:text-sm break-all [overflow-wrap:anywhere]"
+          : compact
+            ? "text-xs leading-4 break-words [overflow-wrap:anywhere]"
+            : "text-sm leading-relaxed break-words [overflow-wrap:anywhere]"
       )}
     >
       {tokens.map((token, idx) => {
@@ -190,7 +251,7 @@ function CharDiffHighlight({
             >
               {token.isInvisible ? (
                 <>
-                  <span className="font-mono text-[11px] leading-none">
+                  <span className="font-mono text-[10px] leading-none">
                     {token.codePoint}
                   </span>
                   <span className="ui-mark-tag">{t.attack.invisibleTag}</span>
@@ -230,6 +291,8 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
   const [attackedForm, setAttackedForm] = useState<AttackFormState>(
     () => originalForm
   );
+  const [activePresetId, setActivePresetId] = useState<PresetId | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
   const [liveResult, setLiveResult] = useState<CheckResult | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -311,48 +374,33 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
   const attackedVerdict = effectiveResult.verdict;
   const verdictChanged = isDirty && attackedVerdict !== originalVerdict;
 
-  const buildAttackBaseRequest = (): CheckRequest => {
-    const cleanKbe = attackedForm.kbe.replace(/\D+/g, "").slice(0, 2);
-    const cleanKnp = attackedForm.knp.replace(/\D+/g, "").slice(0, 3);
-    return {
-      ...(baseItem.request.payer_id !== undefined
-        ? { payer_id: baseItem.request.payer_id }
-        : {}),
-      recipient_name: attackedForm.recipient_name,
-      recipient_bin: attackedForm.recipient_bin,
-      recipient_iik: attackedForm.recipient_iik,
-      recipient_bik: attackedForm.recipient_bik,
-      amount_kzt: Number.isFinite(parseAmount(attackedForm.amount_kzt))
-        ? parseAmount(attackedForm.amount_kzt)
-        : baseItem.request.amount_kzt,
-      purpose: attackedForm.purpose,
-      ...(cleanKbe ? { kbe: cleanKbe } : {}),
-      ...(cleanKnp ? { knp: cleanKnp } : {}),
-    };
-  };
-
-  const applyAttack = (fn: (req: CheckRequest) => CheckRequest) => {
-    const currentReq = buildAttackBaseRequest();
-    const nextReq = fn(currentReq);
+  const applyPresetFromBase = (
+    presetId: PresetId,
+    fn: (req: CheckRequest) => CheckRequest
+  ) => {
+    const cleanBase = cloneBaseRequest(baseItem.request);
+    const nextReq = fn(cleanBase);
     setAttackedForm(requestToForm(nextReq));
+    setActivePresetId(presetId);
     setCheckError(null);
   };
 
   const handleHomoglyphClick = () => {
-    const currentReq = buildAttackBaseRequest();
-    const nextReq = applyHomoglyphAttack(currentReq);
-    if (nextReq.recipient_name === currentReq.recipient_name) {
+    const cleanBase = cloneBaseRequest(baseItem.request);
+    const nextReq = applyHomoglyphAttack(cleanBase);
+    if (nextReq.recipient_name === cleanBase.recipient_name) {
       notify.info(t.attack.btnHomoglyph, t.attack.noHomoglyphLeft);
       return;
     }
     setAttackedForm(requestToForm(nextReq));
+    setActivePresetId("homoglyph");
     setCheckError(null);
   };
 
   const handleInvisibleCharClick = () => {
-    const currentReq = buildAttackBaseRequest();
-    const nextReq = applyInvisibleCharAttack(currentReq);
-    if (nextReq.recipient_name === currentReq.recipient_name) {
+    const cleanBase = cloneBaseRequest(baseItem.request);
+    const nextReq = applyInvisibleCharAttack(cleanBase);
+    if (nextReq.recipient_name === cleanBase.recipient_name) {
       notify.info(
         t.attack.btnInvisibleChar,
         t.attack.invisibleCharAlreadyPresent
@@ -360,12 +408,14 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
       return;
     }
     setAttackedForm(requestToForm(nextReq));
+    setActivePresetId("invisible");
     setCheckError(null);
   };
 
   const handleReset = () => {
     requestSeqRef.current += 1;
     setAttackedForm(originalForm);
+    setActivePresetId(null);
     setLiveResult(null);
     setCheckError(null);
     setIsChecking(false);
@@ -379,8 +429,74 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
       value = rawValue.replace(/\D+/g, "").slice(0, 3);
     }
     setAttackedForm((prev) => ({ ...prev, [field]: value }));
+    setActivePresetId(null);
     if (checkError) setCheckError(null);
   };
+
+  const presets: {
+    id: PresetId;
+    label: string;
+    hint: string;
+    featured?: boolean;
+    onClick: () => void;
+  }[] = [
+    {
+      id: "homoglyph",
+      label: t.attack.btnHomoglyph,
+      hint: t.attack.hintHomoglyph,
+      onClick: handleHomoglyphClick,
+    },
+    {
+      id: "invisible",
+      label: t.attack.btnInvisibleChar,
+      hint: t.attack.hintInvisibleChar,
+      onClick: handleInvisibleCharClick,
+    },
+    {
+      id: "other_bank",
+      label: t.attack.btnOtherBank,
+      hint: t.attack.hintOtherBank,
+      onClick: () => applyPresetFromBase("other_bank", applyOtherBankIikAttack),
+    },
+    {
+      id: "own_bin",
+      label: t.attack.btnOwnBinOwnAccount,
+      hint: t.attack.hintOwnBinOwnAccount,
+      onClick: () => applyPresetFromBase("own_bin", applyOwnBinOwnAccountAttack),
+    },
+    {
+      id: "bcc_other",
+      label: t.attack.btnBccOtherCompany,
+      hint: t.attack.hintBccOtherCompany,
+      onClick: () => applyPresetFromBase("bcc_other", applyBccOtherCompanyAttack),
+    },
+    {
+      id: "amount_4x",
+      label: t.attack.btnAmount4x,
+      hint: t.attack.hintAmount4x,
+      onClick: () =>
+        applyPresetFromBase("amount_4x", (req) =>
+          applyMultiplyAmountAttack(req, 4)
+        ),
+    },
+    {
+      id: "urgent",
+      label: t.attack.btnAddUrgent,
+      hint: t.attack.hintAddUrgent,
+      onClick: () => applyPresetFromBase("urgent", applyUrgentPurposeAttack),
+    },
+    {
+      id: "combined_new_requisites",
+      label: t.attack.btnCombinedNewRequisites,
+      hint: t.attack.hintCombinedNewRequisites,
+      featured: true,
+      onClick: () =>
+        applyPresetFromBase(
+          "combined_new_requisites",
+          applyCombinedNewRequisitesAttack
+        ),
+    },
+  ];
 
   const allFields: {
     key: keyof AttackFormState;
@@ -449,398 +565,236 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
     (entry) => entry.original !== entry.attacked
   );
 
+  const transitionNoticeClass = !isDirty
+    ? "ui-notice-neutral"
+    : attackedVerdict === "red"
+      ? "ui-notice-danger"
+      : attackedVerdict === "invalid"
+        ? "ui-notice-invalid"
+        : attackedVerdict === "yellow"
+          ? "ui-notice-warn"
+          : attackedVerdict === "green"
+            ? "ui-notice-ok"
+            : "ui-notice-neutral";
+
+  const attackedChipToneClass =
+    isDirty && (attackedVerdict === "red" || attackedVerdict === "invalid")
+      ? "border-[#FCA5A5] bg-[#FEF2F2]"
+      : isDirty && attackedVerdict === "yellow"
+        ? "border-[#FCD34D] bg-[#FFFBEB]"
+        : isDirty && attackedVerdict === "green"
+          ? "border-[#00AB75]/40 bg-[#F0FAF6]"
+          : "border-border bg-muted/50";
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Quick Attack Buttons + Editable Attacked Fields */}
-      <Card className="min-w-0">
-        <CardHeader className="space-y-3 border-b border-border pb-3.5">
+    <div className="space-y-2.5">
+      {/* 1. Quick Attacks */}
+      <Card size="sm" className="min-w-0 gap-0 py-0">
+        <CardHeader className="border-b border-border px-3 py-2 [.border-b]:pb-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <CardTitle>{t.attack.quickAttacksTitle}</CardTitle>
-              <CardDescription className="mt-0.5">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+              <CardTitle className="text-sm leading-5">
+                {t.attack.quickAttacksTitle}
+              </CardTitle>
+              <span className="hidden text-xs text-muted-foreground md:inline">
                 {t.attack.editableFieldsHint}
-              </CardDescription>
+              </span>
             </div>
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="xs"
               onClick={handleReset}
               disabled={!isDirty}
-              className="min-h-10 sm:min-h-8"
+              className="h-7 px-2.5 text-xs"
             >
               {t.attack.btnReset}
             </Button>
           </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleHomoglyphClick}
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnHomoglyph}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleInvisibleCharClick}
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnInvisibleChar}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => applyAttack(applyOtherBankIikAttack)}
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnOtherBank}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => applyAttack(applyOwnBinOwnAccountAttack)}
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnOwnBinOwnAccount}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => applyAttack(applyBccOtherCompanyAttack)}
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnBccOtherCompany}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                applyAttack((req) => applyMultiplyAmountAttack(req, 4))
-              }
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnAmount4x}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => applyAttack(applyUrgentPurposeAttack)}
-              className="min-h-10 sm:min-h-8"
-            >
-              {t.attack.btnAddUrgent}
-            </Button>
-          </div>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="min-w-0 space-y-1.5 sm:col-span-2 lg:col-span-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_recipient_name">
-                  {t.queue.labelRecipientName}
-                </Label>
-                {attackedForm.recipient_name !== originalForm.recipient_name && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
+        <CardContent className="px-3 py-2.5">
+          <div className="grid grid-cols-1 gap-x-2 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+            {presets.map((preset) => {
+              const isActive = activePresetId === preset.id;
+              return (
+                <div key={preset.id} className="flex min-w-0 flex-col gap-0.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-pressed={isActive}
+                    onClick={preset.onClick}
+                    className={cn(
+                      "h-auto min-h-7 w-full justify-start px-2.5 py-1 text-left text-xs font-medium leading-[1.2] whitespace-normal",
+                      isActive
+                        ? "border-[#00AB75] bg-[#F0FAF6] text-[#007A53] ring-1 ring-[#00AB75]/25 hover:bg-[#F0FAF6] hover:text-[#007A53]"
+                        : preset.featured
+                          ? "border-[#00AB75]/45 bg-[#F0FAF6]/55 text-foreground hover:bg-[#F0FAF6]"
+                          : ""
+                    )}
+                  >
+                    {preset.label}
+                  </Button>
+                  <span
+                    title={preset.hint}
+                    className="block truncate px-0.5 text-[11px] leading-[1.25] text-muted-foreground"
+                  >
+                    {preset.hint}
                   </span>
-                )}
-              </div>
-              <Input
-                id="attack_recipient_name"
-                value={attackedForm.recipient_name}
-                onChange={(e) => updateField("recipient_name", e.target.value)}
-                className="h-10 bg-card sm:h-9"
-              />
-              {attackedForm.recipient_name !== originalForm.recipient_name && (
-                <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1.5">
-                  <CharDiffHighlight
-                    original={originalForm.recipient_name}
-                    attacked={attackedForm.recipient_name}
-                  />
                 </div>
-              )}
-            </div>
-
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_amount_kzt">{t.queue.labelAmount}</Label>
-                {attackedForm.amount_kzt !== originalForm.amount_kzt && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_amount_kzt"
-                type="number"
-                min="1"
-                step="any"
-                value={attackedForm.amount_kzt}
-                onChange={(e) => updateField("amount_kzt", e.target.value)}
-                className="h-10 bg-card tabular-nums sm:h-9"
-              />
-            </div>
-
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_recipient_bin">{t.queue.labelBin}</Label>
-                {attackedForm.recipient_bin !== originalForm.recipient_bin && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_recipient_bin"
-                inputMode="numeric"
-                value={attackedForm.recipient_bin}
-                onChange={(e) => updateField("recipient_bin", e.target.value)}
-                className="h-10 bg-card font-mono tabular-nums sm:h-9"
-              />
-              {attackedForm.recipient_bin !== originalForm.recipient_bin && (
-                <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1.5">
-                  <CharDiffHighlight
-                    original={originalForm.recipient_bin}
-                    attacked={attackedForm.recipient_bin}
-                    monospace
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_recipient_iik">{t.queue.labelIik}</Label>
-                {attackedForm.recipient_iik !== originalForm.recipient_iik && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_recipient_iik"
-                value={attackedForm.recipient_iik}
-                onChange={(e) => updateField("recipient_iik", e.target.value)}
-                className="h-10 bg-card font-mono uppercase tabular-nums sm:h-9"
-              />
-              {attackedForm.recipient_iik !== originalForm.recipient_iik && (
-                <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1.5">
-                  <CharDiffHighlight
-                    original={originalForm.recipient_iik}
-                    attacked={attackedForm.recipient_iik}
-                    monospace
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_recipient_bik">{t.queue.labelBik}</Label>
-                {attackedForm.recipient_bik !== originalForm.recipient_bik && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_recipient_bik"
-                value={attackedForm.recipient_bik}
-                onChange={(e) => updateField("recipient_bik", e.target.value)}
-                className="h-10 bg-card font-mono uppercase tabular-nums sm:h-9"
-              />
-              {attackedForm.recipient_bik !== originalForm.recipient_bik && (
-                <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1.5">
-                  <CharDiffHighlight
-                    original={originalForm.recipient_bik}
-                    attacked={attackedForm.recipient_bik}
-                    monospace
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_kbe">{t.queue.labelKbe}</Label>
-                {attackedForm.kbe !== originalForm.kbe && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_kbe"
-                inputMode="numeric"
-                maxLength={2}
-                placeholder={t.queue.placeholderKbe}
-                value={attackedForm.kbe}
-                onChange={(e) => updateField("kbe", e.target.value)}
-                className="h-10 bg-card font-mono tabular-nums sm:h-9"
-              />
-            </div>
-
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_knp">{t.queue.labelKnp}</Label>
-                {attackedForm.knp !== originalForm.knp && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_knp"
-                inputMode="numeric"
-                maxLength={3}
-                placeholder={t.queue.placeholderKnp}
-                value={attackedForm.knp}
-                onChange={(e) => updateField("knp", e.target.value)}
-                className="h-10 bg-card font-mono tabular-nums sm:h-9"
-              />
-            </div>
-
-            <div className="min-w-0 space-y-1.5 sm:col-span-2 lg:col-span-3">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="attack_purpose">{t.queue.labelPurpose}</Label>
-                {attackedForm.purpose !== originalForm.purpose && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t.attack.modifiedBadge}
-                  </span>
-                )}
-              </div>
-              <Input
-                id="attack_purpose"
-                value={attackedForm.purpose}
-                onChange={(e) => updateField("purpose", e.target.value)}
-                className="h-10 bg-card sm:h-9"
-              />
-              {attackedForm.purpose !== originalForm.purpose && (
-                <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1.5">
-                  <CharDiffHighlight
-                    original={originalForm.purpose}
-                    attacked={attackedForm.purpose}
-                  />
-                </div>
-              )}
-            </div>
+              );
+            })}
           </div>
-
-          {isDirty && !parsedPayload && (
-            <div
-              role="status"
-              className="ui-notice ui-notice-warn py-2 text-xs text-foreground"
-            >
-              {t.attack.incompleteHint}
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Verdict transition indicator */}
-      {verdictChanged && (
-        <div
-          role="status"
-          className="ui-notice ui-notice-danger flex flex-wrap items-center justify-between gap-3"
-        >
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="text-sm font-semibold text-foreground">
-              {t.attack.verdictChangedTitle}:
-            </span>
+      {/* 2. Verdict transition strip (immediately below Quick Attacks) */}
+      <div
+        role="status"
+        className={cn(
+          "ui-notice flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-3 py-2",
+          transitionNoticeClass
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-foreground">
+            {verdictChanged
+              ? t.attack.verdictChangedTitle
+              : t.attack.verdictTransitionTitle}
+            :
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-[5px] border border-border bg-muted/50 px-2 py-0.5">
             <VerdictBadge verdict={originalVerdict} />
-            <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+            <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
+              {baseItem.result.score}/100
+            </span>
+          </span>
+          <ArrowRight
+            className="size-3.5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-[5px] border px-2 py-0.5",
+              attackedChipToneClass
+            )}
+          >
             <VerdictBadge verdict={attackedVerdict} />
-          </div>
-          <div className="font-mono text-xs font-medium text-foreground tabular-nums">
-            {baseItem.result.score} → {effectiveResult.score} / 100
-          </div>
+            <span className="font-mono text-xs font-semibold tabular-nums text-foreground">
+              {effectiveResult.score}/100
+            </span>
+          </span>
         </div>
-      )}
 
-      {/* Side-by-side comparison: stacked on phones/tablets, 2 columns on lg+ */}
-      <div className="grid grid-cols-1 items-start gap-4 sm:gap-5 lg:grid-cols-2">
+        <div className="flex items-center gap-2 text-xs">
+          {isChecking ? (
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+              <span>{t.attack.checkingLive}</span>
+            </span>
+          ) : !isDirty ? (
+            <span className="text-muted-foreground">
+              {t.attack.verdictUnchangedHint}
+            </span>
+          ) : (
+            <span className="font-mono font-semibold tabular-nums text-foreground">
+              {baseItem.result.score} → {effectiveResult.score} / 100
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Side-by-side comparison cards: Original / After Attack */}
+      <div className="grid grid-cols-1 items-start gap-2.5 lg:grid-cols-2">
         {/* Left Card: Original */}
-        <Card className="min-w-0">
-          <CardHeader className="border-b border-border pb-3.5">
+        <Card size="sm" className="min-w-0 gap-0 py-0">
+          <CardHeader className="gap-0.5 border-b border-border px-3 py-2 [.border-b]:pb-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>{t.attack.originalCardTitle}</CardTitle>
-              <VerdictBadge verdict={baseItem.result.verdict} />
+              <CardTitle className="text-sm leading-5">
+                {t.attack.originalCardTitle}
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <VerdictBadge verdict={baseItem.result.verdict} />
+                <span className="font-mono text-[11px] font-medium text-muted-foreground tabular-nums">
+                  {interpolate(t.attack.scoreLabel, {
+                    score: baseItem.result.score,
+                  })}
+                </span>
+              </div>
             </div>
-            <CardDescription className="mt-1 flex flex-wrap items-center justify-between gap-2">
-              <span className="break-words">
-                {pickHeadline(baseItem.result, lang)}
-              </span>
-              <span className="shrink-0 font-mono text-xs font-medium text-foreground tabular-nums">
-                {interpolate(t.attack.scoreLabel, {
-                  score: baseItem.result.score,
-                })}
-              </span>
+            <CardDescription className="truncate text-xs leading-4">
+              {pickHeadline(baseItem.result, lang)}
             </CardDescription>
           </CardHeader>
 
-          <CardContent>
-            <dl className="ui-dl">
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.fields.name}</dt>
-                <dd className="ui-dd font-medium">
+          <CardContent className="px-3 py-1.5">
+            <dl className="divide-y divide-border/70 text-xs">
+              <div className="grid grid-cols-1 gap-0.5 py-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-2">
+                <dt className="text-[11px] font-medium text-muted-foreground">
+                  {t.fields.name}
+                </dt>
+                <dd className="min-w-0 font-medium text-foreground break-words">
                   {baseItem.request.recipient_name}
                 </dd>
               </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.fields.bin}</dt>
-                <dd className="ui-dd font-mono tabular-nums">
+              <div className="grid grid-cols-1 gap-0.5 py-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-2">
+                <dt className="text-[11px] font-medium text-muted-foreground">
+                  {t.fields.bin}
+                </dt>
+                <dd className="min-w-0 font-mono tabular-nums text-foreground">
                   {baseItem.request.recipient_bin}
                 </dd>
               </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.fields.iik}</dt>
-                <dd className="ui-dd font-mono tabular-nums break-all">
+              <div className="grid grid-cols-1 gap-0.5 py-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-2">
+                <dt className="text-[11px] font-medium text-muted-foreground">
+                  {t.fields.iik}
+                </dt>
+                <dd className="min-w-0 font-mono tabular-nums text-foreground break-all">
                   {baseItem.request.recipient_iik}
                 </dd>
               </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.fields.bik}</dt>
-                <dd className="ui-dd font-mono tabular-nums">
+              <div className="grid grid-cols-1 gap-0.5 py-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-2">
+                <dt className="text-[11px] font-medium text-muted-foreground">
+                  {t.fields.bik}
+                </dt>
+                <dd className="min-w-0 font-mono tabular-nums text-foreground">
                   {baseItem.request.recipient_bik}
                 </dd>
               </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.fields.amount}</dt>
-                <dd className="ui-dd font-medium tabular-nums whitespace-nowrap">
+              <div className="grid grid-cols-1 gap-0.5 py-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-2">
+                <dt className="text-[11px] font-medium text-muted-foreground">
+                  {t.fields.amount}
+                </dt>
+                <dd className="min-w-0 font-medium tabular-nums text-foreground whitespace-nowrap">
                   {formatMoney(baseItem.request.amount_kzt)}
                 </dd>
               </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.attack.kbeLabel}</dt>
-                <dd className="ui-dd font-mono tabular-nums">
-                  {originalForm.kbe || "—"}
-                </dd>
+              <div className="grid grid-cols-2 gap-3 py-1.5">
+                <div className="flex min-w-0 items-baseline justify-between gap-2 sm:grid sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-2">
+                  <dt className="text-[11px] font-medium text-muted-foreground">
+                    {t.attack.kbeLabel}
+                  </dt>
+                  <dd className="min-w-0 font-mono tabular-nums text-foreground">
+                    {originalForm.kbe || "—"}
+                  </dd>
+                </div>
+                <div className="flex min-w-0 items-baseline justify-between gap-2 sm:justify-start sm:gap-3">
+                  <dt className="text-[11px] font-medium text-muted-foreground">
+                    {t.attack.knpLabel}
+                  </dt>
+                  <dd className="min-w-0 font-mono tabular-nums text-foreground">
+                    {originalForm.knp || "—"}
+                  </dd>
+                </div>
               </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.attack.knpLabel}</dt>
-                <dd className="ui-dd font-mono tabular-nums">
-                  {originalForm.knp || "—"}
+              <div className="grid grid-cols-1 gap-0.5 py-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-2">
+                <dt className="text-[11px] font-medium text-muted-foreground">
+                  {t.attack.purposeLabel}
+                </dt>
+                <dd className="min-w-0 leading-4 text-foreground break-words">
+                  {baseItem.request.purpose}
                 </dd>
-              </div>
-              <div className="ui-dl-row">
-                <dt className="ui-dt">{t.attack.purposeLabel}</dt>
-                <dd className="ui-dd">{baseItem.request.purpose}</dd>
               </div>
             </dl>
           </CardContent>
@@ -848,19 +802,22 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
 
         {/* Right Card: After Attack (live) */}
         <Card
+          size="sm"
           className={cn(
-            "min-w-0 transition-opacity",
+            "min-w-0 gap-0 py-0 transition-opacity",
             isChecking && "opacity-85"
           )}
         >
-          <CardHeader className="border-b border-border pb-3.5">
+          <CardHeader className="gap-0.5 border-b border-border px-3 py-2 [.border-b]:pb-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <CardTitle>{t.attack.attackedCardTitle}</CardTitle>
+                <CardTitle className="text-sm leading-5">
+                  {t.attack.attackedCardTitle}
+                </CardTitle>
                 <span
                   aria-live="polite"
                   className={cn(
-                    "inline-flex items-center gap-1 text-xs text-muted-foreground transition-opacity",
+                    "inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-opacity",
                     isChecking
                       ? "opacity-100"
                       : "pointer-events-none opacity-0"
@@ -870,28 +827,28 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
                   <span>{t.attack.checkingLive}</span>
                 </span>
               </div>
-              <VerdictBadge verdict={effectiveResult.verdict} />
+              <div className="flex items-center gap-2">
+                <VerdictBadge verdict={effectiveResult.verdict} />
+                <span className="shrink-0 font-mono text-[11px] font-medium text-foreground tabular-nums">
+                  {interpolate(t.attack.scoreLabel, {
+                    score: effectiveResult.score,
+                  })}
+                </span>
+              </div>
             </div>
 
-            <CardDescription className="mt-1 flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium text-foreground break-words">
-                {pickHeadline(effectiveResult, lang)}
-              </span>
-              <span className="shrink-0 font-mono text-xs font-medium text-foreground tabular-nums">
-                {interpolate(t.attack.scoreLabel, {
-                  score: effectiveResult.score,
-                })}
-              </span>
+            <CardDescription className="text-xs font-medium leading-4 text-foreground break-words">
+              {pickHeadline(effectiveResult, lang)}
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-2 px-3 py-2.5">
             {checkError && (
               <div
                 role="alert"
-                className="ui-notice ui-notice-danger space-y-0.5"
+                className="ui-notice ui-notice-danger space-y-0.5 px-2.5 py-1.5"
               >
-                <div className="text-[13px] font-semibold text-[var(--status-danger-text)]">
+                <div className="text-xs font-semibold text-[var(--status-danger-text)]">
                   {t.attack.checkErrorTitle}
                 </div>
                 <p className="text-xs text-foreground break-words">
@@ -901,24 +858,30 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
             )}
 
             {/* Highlighted character diffs */}
-            <div className="ui-subpanel space-y-2">
-              <div className="ui-label-meta">{t.attack.diffPreviewTitle}</div>
+            <div className="ui-subpanel space-y-1 px-2.5 py-2">
+              <div className="text-[11px] font-medium leading-4 text-muted-foreground">
+                {t.attack.diffPreviewTitle}
+              </div>
               {changedFields.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs leading-4 text-muted-foreground">
                   {t.attack.noFieldChanges}
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {changedFields.map((entry) => (
-                    <div key={entry.key} className="space-y-0.5">
-                      <div className="text-xs font-medium text-muted-foreground">
+                    <div
+                      key={entry.key}
+                      className="grid grid-cols-1 gap-x-2 gap-y-0.5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-baseline"
+                    >
+                      <div className="text-[11px] font-medium leading-4 text-muted-foreground">
                         {entry.label}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <CharDiffHighlight
                           original={entry.original}
                           attacked={entry.attacked}
                           monospace={entry.monospace}
+                          compact
                         />
                       </div>
                     </div>
@@ -928,7 +891,7 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
             </div>
 
             {/* Live signals / reasons */}
-            <ReasonsList
+            <CompactReasonsList
               signals={effectiveResult.signals}
               score={effectiveResult.score}
             />
@@ -937,10 +900,300 @@ function AttackWorkspace({ baseItem, onNetworkError }: AttackWorkspaceProps) {
             <AdviceBox
               text={pickActionText(effectiveResult.next_action, lang)}
               verdict={effectiveResult.verdict}
+              className="space-y-0.5 px-2.5 py-1.5 [&_p]:text-xs [&_p]:leading-4"
             />
           </CardContent>
         </Card>
       </div>
+
+      {/* 4. Collapsible manual 8-field form (closed by default) */}
+      <Card size="sm" className="min-w-0 gap-0 py-0">
+        <button
+          type="button"
+          onClick={() => setManualOpen((prev) => !prev)}
+          aria-expanded={manualOpen}
+          aria-controls="attack-manual-fields"
+          className={cn(
+            "flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            manualOpen && "border-b border-border"
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <SlidersHorizontal
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="text-xs font-semibold text-foreground">
+              {t.attack.manualFieldsTitle}
+            </span>
+            {changedFields.length > 0 && (
+              <span className="ui-tag">
+                {interpolate(t.attack.manualFieldsCount, {
+                  count: changedFields.length,
+                })}
+              </span>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                "size-4 transition-transform duration-150",
+                manualOpen && "rotate-180"
+              )}
+            />
+          </span>
+        </button>
+
+        {!manualOpen && isDirty && !parsedPayload && (
+          <div className="border-t border-border px-3 py-2">
+            <div
+              role="status"
+              className="ui-notice ui-notice-warn py-1.5 text-xs text-foreground"
+            >
+              {t.attack.incompleteHint}
+            </div>
+          </div>
+        )}
+
+        {manualOpen && (
+          <CardContent
+            id="attack-manual-fields"
+            className="space-y-3 px-3 py-3"
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label
+                    htmlFor="attack_recipient_name"
+                    className="text-xs"
+                  >
+                    {t.queue.labelRecipientName}
+                  </Label>
+                  {attackedForm.recipient_name !==
+                    originalForm.recipient_name && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_recipient_name"
+                  value={attackedForm.recipient_name}
+                  onChange={(e) =>
+                    updateField("recipient_name", e.target.value)
+                  }
+                  className="h-9 bg-card text-sm sm:h-8"
+                />
+                {attackedForm.recipient_name !==
+                  originalForm.recipient_name && (
+                  <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1">
+                    <CharDiffHighlight
+                      original={originalForm.recipient_name}
+                      attacked={attackedForm.recipient_name}
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_amount_kzt" className="text-xs">
+                    {t.queue.labelAmount}
+                  </Label>
+                  {attackedForm.amount_kzt !== originalForm.amount_kzt && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_amount_kzt"
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={attackedForm.amount_kzt}
+                  onChange={(e) => updateField("amount_kzt", e.target.value)}
+                  className="h-9 bg-card text-sm tabular-nums sm:h-8"
+                />
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_recipient_bin" className="text-xs">
+                    {t.queue.labelBin}
+                  </Label>
+                  {attackedForm.recipient_bin !==
+                    originalForm.recipient_bin && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_recipient_bin"
+                  inputMode="numeric"
+                  value={attackedForm.recipient_bin}
+                  onChange={(e) => updateField("recipient_bin", e.target.value)}
+                  className="h-9 bg-card font-mono text-sm tabular-nums sm:h-8"
+                />
+                {attackedForm.recipient_bin !== originalForm.recipient_bin && (
+                  <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1">
+                    <CharDiffHighlight
+                      original={originalForm.recipient_bin}
+                      attacked={attackedForm.recipient_bin}
+                      monospace
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_recipient_iik" className="text-xs">
+                    {t.queue.labelIik}
+                  </Label>
+                  {attackedForm.recipient_iik !==
+                    originalForm.recipient_iik && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_recipient_iik"
+                  value={attackedForm.recipient_iik}
+                  onChange={(e) => updateField("recipient_iik", e.target.value)}
+                  className="h-9 bg-card font-mono text-sm uppercase tabular-nums sm:h-8"
+                />
+                {attackedForm.recipient_iik !== originalForm.recipient_iik && (
+                  <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1">
+                    <CharDiffHighlight
+                      original={originalForm.recipient_iik}
+                      attacked={attackedForm.recipient_iik}
+                      monospace
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_recipient_bik" className="text-xs">
+                    {t.queue.labelBik}
+                  </Label>
+                  {attackedForm.recipient_bik !==
+                    originalForm.recipient_bik && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_recipient_bik"
+                  value={attackedForm.recipient_bik}
+                  onChange={(e) => updateField("recipient_bik", e.target.value)}
+                  className="h-9 bg-card font-mono text-sm uppercase tabular-nums sm:h-8"
+                />
+                {attackedForm.recipient_bik !== originalForm.recipient_bik && (
+                  <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1">
+                    <CharDiffHighlight
+                      original={originalForm.recipient_bik}
+                      attacked={attackedForm.recipient_bik}
+                      monospace
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_kbe" className="text-xs">
+                    {t.queue.labelKbe}
+                  </Label>
+                  {attackedForm.kbe !== originalForm.kbe && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_kbe"
+                  inputMode="numeric"
+                  maxLength={2}
+                  placeholder={t.queue.placeholderKbe}
+                  value={attackedForm.kbe}
+                  onChange={(e) => updateField("kbe", e.target.value)}
+                  className="h-9 bg-card font-mono text-sm tabular-nums sm:h-8"
+                />
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_knp" className="text-xs">
+                    {t.queue.labelKnp}
+                  </Label>
+                  {attackedForm.knp !== originalForm.knp && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_knp"
+                  inputMode="numeric"
+                  maxLength={3}
+                  placeholder={t.queue.placeholderKnp}
+                  value={attackedForm.knp}
+                  onChange={(e) => updateField("knp", e.target.value)}
+                  className="h-9 bg-card font-mono text-sm tabular-nums sm:h-8"
+                />
+              </div>
+
+              <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="attack_purpose" className="text-xs">
+                    {t.queue.labelPurpose}
+                  </Label>
+                  {attackedForm.purpose !== originalForm.purpose && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t.attack.modifiedBadge}
+                    </span>
+                  )}
+                </div>
+                <Input
+                  id="attack_purpose"
+                  value={attackedForm.purpose}
+                  onChange={(e) => updateField("purpose", e.target.value)}
+                  className="h-9 bg-card text-sm sm:h-8"
+                />
+                {attackedForm.purpose !== originalForm.purpose && (
+                  <div className="rounded-[6px] border border-border bg-muted/40 px-2.5 py-1">
+                    <CharDiffHighlight
+                      original={originalForm.purpose}
+                      attacked={attackedForm.purpose}
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {isDirty && !parsedPayload && (
+              <div
+                role="status"
+                className="ui-notice ui-notice-warn py-1.5 text-xs text-foreground"
+              >
+                {t.attack.incompleteHint}
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
     </div>
   );
 }
@@ -970,27 +1223,31 @@ export default function AttackConsolePage() {
   }, [queue, selectedBaseId, defaultBaseItem]);
 
   return (
-    <div className="space-y-4 sm:space-y-5">
-      <div className="ui-page-header sm:items-end">
+    <div className="space-y-2.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="ui-page-title">{t.attack.title}</h1>
-          <p className="ui-page-subtitle">{t.attack.intro}</p>
+          <h1 className="text-lg font-semibold leading-tight tracking-[-0.015em] text-foreground">
+            {t.attack.title}
+          </h1>
+          <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
+            {t.attack.intro}
+          </p>
         </div>
 
         {queue.length > 0 && baseItem && (
-          <div className="w-full shrink-0 space-y-1 sm:w-80">
+          <div className="flex w-full shrink-0 flex-col gap-1 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
             <Label
               htmlFor="attack-base-payment"
-              className="ui-label-meta"
+              className="ui-label-meta shrink-0 whitespace-nowrap"
             >
               {t.attack.basePaymentLabel}
             </Label>
-            <div className="relative">
+            <div className="relative w-full sm:w-72">
               <select
                 id="attack-base-payment"
                 value={baseItem.id}
                 onChange={(e) => setSelectedBaseId(e.target.value)}
-                className="ui-select h-10 w-full appearance-none sm:h-9"
+                className="ui-select h-9 w-full appearance-none text-xs sm:h-8 sm:text-xs"
               >
                 {queue.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -1001,7 +1258,7 @@ export default function AttackConsolePage() {
               </select>
               <ChevronDown
                 aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
               />
             </div>
           </div>
@@ -1009,22 +1266,21 @@ export default function AttackConsolePage() {
       </div>
 
       {isLoading && queue.length === 0 ? (
-        <div className="space-y-4">
-          <div className="ui-panel space-y-4 p-4">
-            <div className="flex flex-wrap gap-1.5">
-              {Array.from({ length: 5 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-8 w-40 rounded-[6px]" />
-              ))}
-            </div>
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-9 w-full rounded-[6px]" />
+        <div className="space-y-2.5">
+          <div className="ui-panel space-y-2.5 p-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <div key={idx} className="space-y-1">
+                  <Skeleton className="h-7 w-full rounded-[6px]" />
+                  <Skeleton className="h-3 w-4/5 rounded-[4px]" />
+                </div>
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Skeleton className="h-80 w-full rounded-[8px]" />
-            <Skeleton className="h-80 w-full rounded-[8px]" />
+          <Skeleton className="h-10 w-full rounded-[6px]" />
+          <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+            <Skeleton className="h-64 w-full rounded-[8px]" />
+            <Skeleton className="h-64 w-full rounded-[8px]" />
           </div>
         </div>
       ) : !baseItem ? (

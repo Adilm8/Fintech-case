@@ -143,6 +143,11 @@ export const ru = {
       pendingApprovalsUnavailable: "Временно недоступно",
       totalAmountLabel: "Сумма к подписи",
       totalAmountHint: "По текущей очереди",
+      totalPaymentsLabel: "Всего платежей",
+      readyToSignHint: "Готовы к подписи сразу: {count}",
+      needsReviewLabel: "Требуют проверки",
+      amountAtRiskLabel: "Сумма под риском",
+      amountAtRiskHint: "Красный, жёлтый и ошибки ({count})",
     },
     colRecipient: "Получатель",
     colAmount: "Сумма",
@@ -242,6 +247,8 @@ export const ru = {
   invoice: {
     label: "Распознавание счёта",
     uploadButton: "Загрузить счёт (PDF или фото)",
+    demoSampleButton: "Подставить демо-счёт из письма",
+    demoSampleLoading: "Загружаем демо-счёт...",
     replaceButton: "Заменить файл",
     clearButton: "Убрать",
     cancelUploadButton: "Отменить",
@@ -289,11 +296,15 @@ export const ru = {
         "Получен некорректный ответ от сервиса распознавания счёта.",
       generic:
         "Не удалось распознать счёт. Попробуйте ещё раз или заполните поля вручную.",
+      demoSampleLoadFailed:
+        "Не удалось загрузить демо-счёт. Попробуйте ещё раз.",
     },
     aria: {
       dropzone: "Область загрузки счёта на оплату",
       fileInput: "Выбор файла счёта на оплату",
       removeFile: "Очистить результат распознавания счёта",
+      demoSampleButton:
+        "Подставить демонстрационный счёт из письма и распознать реквизиты",
     },
   },
   check: {
@@ -318,6 +329,7 @@ export const ru = {
     actionsEyebrow: "Действия по платежу",
     actionFixRequisites: "Исправить реквизиты",
     actionSign: "Подписать",
+    actionSignLocked: "Подписать ЭЦП — заблокировано до проверки",
     actionSigning: "Подписание...",
     actionPostpone: "Отложить и проверить",
     actionSendToDirector: "Отправить директору",
@@ -349,6 +361,10 @@ export const ru = {
     sending: "Отправка...",
     send: "Отправить",
     rulesetVersion: "Версия правил: {version}",
+    riskScoreBadge: "Балл риска {score}/100",
+    viewModeAriaLabel: "Режим отображения проверки",
+    viewModeClient: "Экран клиента (банковская тайна)",
+    viewModeAnalyst: "Экран аналитика BCC",
   },
   comparison: {
     title: "Сверка реквизитов со счётом и историей",
@@ -361,6 +377,8 @@ export const ru = {
     invalidBadge: "Ошибка",
     latinTag: "лат.",
     latinTooltip: "Латинская буква внутри кириллического названия",
+    homoglyphBadge: "латинская {latin} вместо кириллической {cyrillic}",
+    homoglyphBadgeGeneric: "латинская {latin} в кириллическом названии",
     lastPayment: "Последний платёж: {date}",
     notInHistory: "Нет в истории",
   },
@@ -416,6 +434,17 @@ export const ru = {
     statusApprovedShort: "Одобрено",
     statusRejectedShort: "Отклонено",
     backToPayments: "К платежам на подпись",
+    comparisonShowAll: "Показать всё",
+    comparisonHideUnchanged: "Скрыть неизменившиеся",
+    quickCommentsLabel: "Быстрые комментарии",
+    quickCommentCalled:
+      "Позвонили по номеру из договора, новые реквизиты подтверждены",
+    quickCommentVerified:
+      "Сверили счёт с договором и перепиской с поставщиком",
+    quickCommentExpected:
+      "Сумма и получатель подтверждены, платёж ожидаем",
+    quickCommentRejected: "Реквизиты не подтвердились, платёж отклоняем",
+    openPayment: "Открыть платёж →",
     analystViewToggle: "Вид аналитика антифрода",
     analystOnlyTitle: "Только для антифрод-аналитика",
     analystConfidentialBadge: "Служебные данные BCC",
@@ -521,6 +550,21 @@ export const ru = {
     knpLabel: "КНП",
     diffPreviewTitle: "Подсветка изменений относительно оригинала",
     noFieldChanges: "Поля совпадают с оригиналом.",
+    btnCombinedNewRequisites:
+      "Комбинированная атака (письмо с новыми реквизитами)",
+    hintHomoglyph: "Подменяет букву названия на латинскую",
+    hintInvisibleChar: "Вставляет скрытый символ U+034F в название",
+    hintOtherBank: "Меняет ИИК и БИК на другой банк",
+    hintOwnBinOwnAccount: "Подставляет чужой БИН, ИИК и БИК",
+    hintBccOtherCompany: "Меняет ИИК на счёт чужой компании в BCC",
+    hintAmount4x: "Увеличивает сумму платежа в 4 раза",
+    hintAddUrgent: "Дописывает «срочно» в назначение платежа",
+    hintCombinedNewRequisites:
+      "Латиница в названии + новый ИИК + «срочно» + сумма ×3,6",
+    manualFieldsTitle: "Изменить поля вручную",
+    manualFieldsCount: "Изменено: {count}",
+    verdictTransitionTitle: "Переход вердикта",
+    verdictUnchangedHint: "Без изменений — выберите атаку выше",
   },
   shortcuts: {
     title: "Горячие клавиши",
@@ -643,6 +687,55 @@ export const ru = {
       "Оценочный набор синтетический и предназначен для демонстрации поведения правил на заданных сценариях. Метрики не отражают реальную банковскую статистику мошенничества и не заменяют проверку на исторических боевых данных.",
     seedMeta: "Seed: {seed}",
     ariaBarLabel: "{name}: {rate}",
+    kpiDetectedLabel: "Атак найдено",
+    kpiStoppedShort: "красным",
+    kpiEscalatedShort: "директору",
+    kpiFalseAlarmsLabel: "Ложные тревоги на трудном наборе",
+    kpiFalseAlarmsHint:
+      "В наборе намеренно много сложных честных кейсов (смена счёта, сезонные суммы)",
+    kpiHistoryLabel: "На годовой истории",
+    kpiHistorySub: "{alerts} из {total} платежей",
+    kpiHistoryUnavailable: "Нет данных истории",
+    kpiLatencyLabel: "Проверка",
+    kpiLatencyValue: "≈{ms} мс",
+    kpiLatencyHint: "Детерминированные правила, локально",
+    verdictBarTitleWithCount: "{title} ({count} платежей)",
+    verdictBarAriaLabel:
+      "Распределение вердиктов по годовой истории ({total} платежей): {breakdown}",
+    verdictBarSegmentAria: "{label} — {count} ({rate})",
+    verdictBarGreyNote:
+      "Серый вердикт («Нет истории») означает отсутствие истории по получателю — это не тревога и не ложное срабатывание.",
+    tabsAriaLabel: "Категории сценариев оценки",
+    tabsAttacks: "Обнаружение атак ({count})",
+    tabsLegit: "Честные платежи ({count}) и слепые зоны",
+    tabsAttacksEmpty: "Сценарии атак отсутствуют в текущем отчёте.",
+    tabsLegitEmpty: "Честные сценарии отсутствуют в текущем отчёте.",
+    tabsDetectedOfTotal: "Обнаружено {detected} из {total}",
+    tabsFalsePositiveRate: "Ложных: {rate}",
+    tabsFalsePositiveCount: "{flagged} из {total}",
+    tabsVerdictCount: "{label}: {count}",
+    blindTitle: "Слепые зоны",
+    blindSubtitle:
+      "Ограничения текущих правил, вычисленные по результатам набора: пропущенные атаки, частые ложные тревоги и сценарии без истории.",
+    blindEmpty: "Слепых зон не найдено при текущих порогах.",
+    blindTagWeakDetection: "Слепая зона",
+    blindTagFalseAlarm: "Частые ложные тревоги",
+    blindTagNoHistory: "Нет истории",
+    blindMissedAttacksTitle: "Атаки с обнаружением ниже {threshold}",
+    blindMissedAttacksHint:
+      "Сценарии атак, которые система частично пропускает без тревоги.",
+    blindMissedAttackSummary:
+      "Обнаружено {rate} · пропущено (зелёный): {missed} из {total}",
+    blindMissedAttackGreyExtra: "нет истории: {grey}",
+    blindFalseAlarmsTitle:
+      "Честные сценарии с ложными тревогами выше {threshold}",
+    blindFalseAlarmsHint:
+      "Законные операции, по которым правила регулярно требуют подтверждения.",
+    blindFalseAlarmSummary: "Ложных тревог {rate} ({flagged} из {total})",
+    blindNoHistoryTitle: "Сценарии без истории (серых более {threshold})",
+    blindNoHistoryHint:
+      "При отсутствии истории система честно отвечает «не знаю» (серый вердикт) вместо угадывания.",
+    blindNoHistorySummary: "Серых {rate} ({grey} из {total})",
   },
   prod: {
     roles: {
@@ -683,6 +776,11 @@ export const ru = {
       errorTooManyAttempts:
         "Слишком много неудачных попыток входа. Попробуйте позже.",
       sessionExpired: "Сессия завершена. Войдите снова.",
+      demoLoginsTitle: "Быстрый выбор логина",
+      demoLoginsHint: "Подставляется только логин — пароль введите вручную.",
+      demoLoginAccountant: "Войти как бухгалтер",
+      demoLoginDirector: "Войти как директор",
+      demoLoginAnalyst: "Войти как аналитик",
     },
     access: {
       deniedTitle: "Нет доступа к разделу",
@@ -859,6 +957,16 @@ export const ru = {
       verdictChangedToast: "Вердикт изменился, проверьте платёж ещё раз",
       verdictChangedDescription:
         "Ниже показан актуальный разбор с сервера. Повторно оцените риски перед дальнейшими действиями.",
+      documentMismatchToast: "Документ изменился, платёж обновлён",
+      signatureBinding: {
+        signingDocument: "Подписывается документ",
+        check: "проверка",
+        rules: "правила",
+        modeHint:
+          "Подпись выполняется через локальный NCALayer; если NCALayer недоступен — используется демонстрационная имитация ЭЦП (не NCALayer).",
+        modeSimulated: "Имитация ЭЦП, не NCALayer",
+        modeNcaLayer: "ЭЦП НУЦ РК (NCALayer)",
+      },
       signedBannerTitle: "Платёж подписан",
       signedBannerWithAck: "Подписан с подтверждением звонка поставщику.",
       cancelledBannerTitle: "Платёж отменён",
@@ -897,14 +1005,24 @@ export const ru = {
         approval_pending: "Подписание заблокировано до решения директора.",
         approval_rejected:
           "Платёж отклонён директором. Измените реквизиты или отмените платёж.",
+        approval_required_after_rejection:
+          "Платёж или его реквизиты ранее были отклонены директором — для подписания требуется новое одобрение директора.",
         verdict_changed:
           "Вердикт ухудшился при перепроверке. Требуется повторная проверка.",
+        document_mismatch:
+          "Реквизиты платежа или результаты проверки изменились после загрузки документа. Обновите платёж и повторите подписание.",
+        signature_verification_unavailable:
+          "Серверная проверка ЭЦП НУЦ РК (NCALayer) недоступна в текущей конфигурации.",
         invalid_requisites:
           "Некорректные реквизиты. Исправьте ошибки перед подписанием.",
         red_requires_approval:
           "Красный вердикт: подписание без одобрения директора запрещено сервером.",
+        identity_requires_approval:
+          "Сомнения в личности получателя: подтверждения звонка недостаточно — требуется одобрение директора.",
         threshold_requires_approval:
           "Сумма платежа достигла порога согласования компании: требуется одобрение директора.",
+        duplicate_requires_approval:
+          "Обнаружен дубликат уже существующего или подписанного платежа: требуется одобрение директора.",
         ack_or_approval_required:
           "Для подписания требуется подтверждение звонка бухгалтером или одобрение директора.",
         forbidden_role: "Ваша роль не позволяет подписывать платежи.",
@@ -1133,6 +1251,13 @@ export const ru = {
       passwordChangedToast: "Пароль успешно изменён",
       passwordChangedRevoked:
         "Пароль обновлён. Завершено других активных сессий: {count}.",
+      passwordChangeRequiredTitle: "Требуется смена пароля",
+      passwordChangeRequiredSubtitle:
+        "Обновите пароль, чтобы перейти к работе в системе.",
+      passwordChangeRequiredDescription:
+        "Вы вошли с временным или первичным паролем. Установите новый пароль, чтобы продолжить работу в системе.",
+      passwordChangeRateLimited:
+        "Слишком много неудачных попыток смены пароля. Повторите через 15 минут.",
     },
     company: {
       title: "Компания и сотрудники",

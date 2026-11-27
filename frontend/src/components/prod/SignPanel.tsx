@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { notifyProdNotificationsUpdated } from "@/components/prod/NotificationBell";
 import { notifyProdApprovalsUpdated } from "@/components/prod/ProdShell";
+import { SignatureBindingNote } from "@/components/prod/SignatureBindingNote";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,6 +28,7 @@ import {
   sendPaymentToDirector,
   signPayment,
 } from "@/lib/prod/api";
+import { signPaymentDocument, type SignerKind } from "@/lib/prod/ncalayer";
 import type { Payment } from "@/lib/prod/types";
 import { notify } from "@/lib/toast";
 
@@ -66,10 +68,21 @@ export function SignPanel({
 
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [lastSignOutcome, setLastSignOutcome] = useState<{
+    paymentId: string;
+    signer: SignerKind;
+    simulated: boolean;
+  } | null>(null);
 
   const [noteDialog, setNoteDialog] = useState<NoteDialogKind>(null);
   const [noteText, setNoteText] = useState("");
   const [dialogError, setDialogError] = useState<string | null>(null);
+
+  const documentDigest = payment.document_digest?.trim() || null;
+  const matchedSignOutcome =
+    lastSignOutcome && lastSignOutcome.paymentId === payment.id
+      ? lastSignOutcome
+      : null;
 
   const hasAnyAction =
     permissions.can_sign ||
@@ -89,6 +102,12 @@ export function SignPanel({
 
   // Terminal status banners when no actions remain.
   if (payment.status === "signed" && !hasAnyAction) {
+    const signedModeNote = matchedSignOutcome
+      ? matchedSignOutcome.simulated
+        ? t.prod.detail.signatureBinding.modeSimulated
+        : t.prod.detail.signatureBinding.modeNcaLayer
+      : undefined;
+
     return (
       <div role="status" className="ui-notice ui-notice-ok space-y-1">
         <div className="text-sm font-semibold text-foreground">
@@ -106,6 +125,22 @@ export function SignPanel({
           <p className="text-xs text-muted-foreground">
             {t.prod.detail.signedBannerWithAck}
           </p>
+        )}
+        {documentDigest ? (
+          <SignatureBindingNote
+            documentDigest={documentDigest}
+            checkId={payment.check.check_id}
+            rulesetVersion={payment.check.ruleset_version ?? "—"}
+            labels={t.prod.detail.signatureBinding}
+            signerNote={signedModeNote}
+            className="pt-1"
+          />
+        ) : (
+          signedModeNote && (
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              {signedModeNote}
+            </p>
+          )
         )}
       </div>
     );
@@ -127,23 +162,31 @@ export function SignPanel({
   }
 
   const handleSign = async () => {
-    if (!permissions.can_sign || busyAction) return;
+    if (!permissions.can_sign || busyAction || !documentDigest) return;
     if (permissions.sign_requires_ack && !accountantAck) return;
 
     setActionError(null);
     setBusyAction("sign");
     try {
-      const updated = await signPayment(
-        payment.id,
-        {
-          accountant_ack: permissions.sign_requires_ack ? accountantAck : false,
-        },
-        lang
-      );
-      onPaymentUpdated(updated);
+      const outcome = await signPaymentDocument(payment.id, documentDigest, {
+        accountantAck: permissions.sign_requires_ack ? accountantAck : false,
+        lang,
+        post: (pid, body) => signPayment(pid, body, lang),
+      });
+      setLastSignOutcome({
+        paymentId: payment.id,
+        signer: outcome.signer,
+        simulated: outcome.simulated,
+      });
+      onPaymentUpdated(outcome.payment);
       notifyProdApprovalsUpdated();
       notifyProdNotificationsUpdated();
-      notify.success(t.prod.detail.toastSigned);
+      notify.success(
+        t.prod.detail.toastSigned,
+        outcome.simulated
+          ? t.prod.detail.signatureBinding.modeSimulated
+          : t.prod.detail.signatureBinding.modeNcaLayer
+      );
     } catch (err) {
       notifyProdNotificationsUpdated();
       if (err instanceof ApiError && err.code === "verdict_changed") {
@@ -155,6 +198,23 @@ export function SignPanel({
           void onReloadPayment();
         }
         notify.warning(t.prod.detail.verdictChangedToast, err.detail);
+      } else if (err instanceof ApiError && err.code === "document_mismatch") {
+        setAccountantAck(false);
+        const message =
+          err.detail || t.prod.detail.blockCodes.document_mismatch;
+        setActionError(message);
+        notify.warning(t.prod.detail.documentMismatchToast, message);
+        void onReloadPayment();
+      } else if (
+        err instanceof ApiError &&
+        err.code === "signature_verification_unavailable"
+      ) {
+        const message =
+          err.detail ||
+          t.prod.detail.blockCodes.signature_verification_unavailable;
+        setActionError(message);
+        notify.error(t.check.actionErrorTitle, message);
+        void onReloadPayment();
       } else {
         const message = getProdErrorMessage(err);
         setActionError(message);
@@ -231,7 +291,9 @@ export function SignPanel({
   };
 
   const isSignDisabled =
-    busyAction !== null || (permissions.sign_requires_ack && !accountantAck);
+    busyAction !== null ||
+    !documentDigest ||
+    (permissions.sign_requires_ack && !accountantAck);
   const decideIsPrimary = Boolean(
     permissions.can_decide && onOpenDecide && !permissions.can_sign
   );
@@ -310,6 +372,16 @@ export function SignPanel({
                 <span>{t.check.actionSign}</span>
               )}
             </Button>
+
+            {documentDigest && (
+              <SignatureBindingNote
+                documentDigest={documentDigest}
+                checkId={payment.check.check_id}
+                rulesetVersion={payment.check.ruleset_version ?? "—"}
+                labels={t.prod.detail.signatureBinding}
+                signerNote={t.prod.detail.signatureBinding.modeHint}
+              />
+            )}
           </div>
         )}
 
