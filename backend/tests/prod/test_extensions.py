@@ -22,7 +22,7 @@ from app.prod.db import MIGRATIONS_DIR, connect, get_schema_version, migrate, tx
 from app.prod.deps import CSRF_HEADER_NAME, CSRF_HEADER_VALUE
 from app.settings import Settings
 from app.store import DEFAULT_DATA_DIR
-from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY
+from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY, build_sign_payload
 
 CSRF: dict[str, str] = {CSRF_HEADER_NAME: CSRF_HEADER_VALUE}
 
@@ -100,9 +100,9 @@ class TestMigration002Upgrade:
                     (ts,),
                 )
 
-            # Now run migrate() -> applies 002_extensions.sql cleanly
-            assert migrate(conn) == 2
-            assert get_schema_version(conn) == 2
+            # Now run migrate() -> applies pending migrations cleanly
+            assert migrate(conn) == 3
+            assert get_schema_version(conn) == 3
 
             user_row = conn.execute("SELECT login, default_lang FROM users WHERE id = 1").fetchone()
             assert user_row is not None
@@ -326,18 +326,24 @@ class TestCompanyAndUserManagement:
         assert inv_data["user"]["role"] == "director"
         assert inv_data["user"]["is_active"] is True
 
-        # Duplicate login (case-insensitive) -> 409 login_already_exists
+        # Duplicate login (case-insensitive) -> 409 invalid_login
         dup_inv = director.post(
             "/api/v1/company/users",
             json={"login": "DIRECTOR2", "full_name": "Дубль", "role": "accountant"},
             headers=CSRF,
         )
         assert dup_inv.status_code == 409
-        assert dup_inv.json()["code"] == "login_already_exists"
+        assert dup_inv.json()["code"] == "invalid_login"
 
-        # Invited user can log in with temp password
+        # Invited user logs in with temp password and changes it before accessing /me
         with TestClient(prod_app) as dir2_client:
             _login(dir2_client, "director2", temp_pw)
+            ch_pw = dir2_client.post(
+                "/api/v1/me/password",
+                json={"current_password": temp_pw, "new_password": "Dir2-Permanent-Pass-1!"},
+                headers=CSRF,
+            )
+            assert ch_pw.status_code == 200
             assert dir2_client.get("/api/v1/me").status_code == 200
 
             # Now demote director2 to accountant -> allowed since director1 is still active director
@@ -532,11 +538,19 @@ class TestCompanySettingsAndThresholdPolicy:
         assert p_large["permissions"]["can_send_to_director"] is True
 
         # Direct sign of large green -> 409 threshold_requires_approval (accountant AND director)
-        r_acc_sign = acc.post(f"/api/v1/payments/{p_large['id']}/sign", json={}, headers=CSRF)
+        r_acc_sign = acc.post(
+            f"/api/v1/payments/{p_large['id']}/sign",
+            json=build_sign_payload(acc, p_large["id"]),
+            headers=CSRF,
+        )
         assert r_acc_sign.status_code == 409
         assert r_acc_sign.json()["code"] == "threshold_requires_approval"
 
-        r_dir_sign = director.post(f"/api/v1/payments/{p_large['id']}/sign", json={}, headers=CSRF)
+        r_dir_sign = director.post(
+            f"/api/v1/payments/{p_large['id']}/sign",
+            json=build_sign_payload(director, p_large["id"]),
+            headers=CSRF,
+        )
         assert r_dir_sign.status_code == 409
         assert r_dir_sign.json()["code"] == "threshold_requires_approval"
 
@@ -570,7 +584,11 @@ class TestCompanySettingsAndThresholdPolicy:
             headers=CSRF,
         )
         assert dec.status_code == 200
-        signed_after = acc.post(f"/api/v1/payments/{p_large['id']}/sign", json={}, headers=CSRF)
+        signed_after = acc.post(
+            f"/api/v1/payments/{p_large['id']}/sign",
+            json=build_sign_payload(acc, p_large["id"]),
+            headers=CSRF,
+        )
         assert signed_after.status_code == 200
         assert signed_after.json()["status"] == "signed"
 
@@ -607,8 +625,22 @@ class TestNotifications:
         assert p_red["check"]["verdict"] == "red"
 
         # Trigger sign_denied on both yellow (no ack) and red
-        assert acc.post(f"/api/v1/payments/{p_yellow['id']}/sign", json={}, headers=CSRF).status_code == 409
-        assert acc.post(f"/api/v1/payments/{p_red['id']}/sign", json={}, headers=CSRF).status_code == 409
+        assert (
+            acc.post(
+                f"/api/v1/payments/{p_yellow['id']}/sign",
+                json=build_sign_payload(acc, p_yellow["id"]),
+                headers=CSRF,
+            ).status_code
+            == 409
+        )
+        assert (
+            acc.post(
+                f"/api/v1/payments/{p_red['id']}/sign",
+                json=build_sign_payload(acc, p_red["id"]),
+                headers=CSRF,
+            ).status_code
+            == 409
+        )
 
         # Send both to director
         apr_y = acc.post(
@@ -853,3 +885,171 @@ class TestPaymentsExport:
             assert verify_chain(conn).ok is True
         finally:
             conn.close()
+
+    @pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r"])
+    def test_csv_export_neutralizes_formula_injection_prefixes_and_keeps_numbers(
+        self, prefix: str
+    ) -> None:
+        from app.prod.schemas import (
+            ApprovalBrief,
+            Payment,
+            PaymentPermissions,
+            SupplierRef,
+            UserBrief,
+        )
+        from app.schemas import (
+            CheckRequest,
+            CheckResult,
+            Evidence,
+            HistorySummary,
+            NextAction,
+            Signal,
+        )
+
+        user = UserBrief(id=1, login="accountant", full_name="Айгуль Нурланова", role="accountant")
+        # Use model_construct for request so we also verify a negative numeric amount stays numeric.
+        req = CheckRequest.model_construct(
+            payer_id="client-technostroy",
+            recipient_name=f"{prefix}CMD|' /C calc'!A0",
+            recipient_bin="160542439625",
+            recipient_iik="KZ246010005016525808",
+            recipient_bik="HSBKKZKX",
+            amount_kzt=-1500.5,
+            purpose=f"{prefix}HYPERLINK(\"http://example.test\")",
+            kbe="17",
+            knp="710",
+        )
+        chk = CheckResult(
+            check_id="chk-csv-1",
+            verdict="yellow",
+            score=45,
+            headline_ru=f"{prefix}Заголовок",
+            headline=f"{prefix}Заголовок",
+            signals=[
+                Signal(
+                    rule_id="iik_changed",
+                    points=35,
+                    severity="primary",
+                    reason_ru=f"{prefix}Причина",
+                    reason=f"{prefix}Причина",
+                    evidence=Evidence(field="iik"),
+                )
+            ],
+            comparison=[],
+            next_action=NextAction(
+                text_ru=f"{prefix}Совет",
+                text=f"{prefix}Совет",
+                primary="send_to_director",
+            ),
+            history=HistorySummary(payments_count=1),
+        )
+        payment = Payment.model_construct(
+            id="pay-csv-inj",
+            company_id="client-technostroy",
+            status="checked",
+            source="manual",
+            batch_id=None,
+            line_no=None,
+            doc_number=f"{prefix}DOC-1",
+            doc_date="2026-11-26",
+            request=req,
+            check=chk,
+            approval=ApprovalBrief.model_construct(
+                id="apr-1",
+                status=f"{prefix}approved",
+                accountant_note="",
+                director_comment=f"{prefix}comment",
+                trust_account=False,
+                created_by=user,
+                created_at="2026-11-26T10:00:00+00:00",
+                decided_by=None,
+                decided_at=None,
+            ),
+            accountant_ack=False,
+            supplier=SupplierRef(
+                id=1,
+                known=True,
+                account_known=False,
+                requisites_changed_days_ago=None,
+            ),
+            duplicate_of=None,
+            permissions=PaymentPermissions(
+                can_edit=True,
+                can_sign=False,
+                sign_requires_ack=False,
+                sign_block_code=None,
+                can_send_to_director=True,
+                can_postpone=True,
+                can_resume=False,
+                can_cancel=True,
+                can_decide=False,
+            ),
+            created_by=user,
+            created_at="2026-11-26T10:00:00+00:00",
+            updated_at="2026-11-26T10:00:00+00:00",
+            signed_by=None,
+            signed_at=None,
+        )
+
+        raw = export_service.render_payments_csv([payment], lang="ru")
+        rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig"))))
+        assert len(rows) == 2
+        row = rows[1]
+
+        # Every free-text cell starting with a formula prefix is neutralized with a leading single quote
+        for idx in (2, 6, 11, 12, 13, 14, 15):
+            assert row[idx].startswith("'"), f"Col {idx} was not neutralized for {prefix!r}: {row[idx]!r}"
+
+        # Numeric columns stay numeric (including negative amount)
+        assert row[5] == "45"
+        assert row[10] == "-1500.50"
+
+    def test_csv_export_leaves_normal_values_untouched_and_neutralizes_via_api(
+        self, ext_env: tuple[FastAPI, Path, TestClient, TestClient, TestClient]
+    ) -> None:
+        _, _, acc, _, _ = ext_env
+        queue = _load_queue_by_id()
+
+        normal = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(
+                queue["Q-001"],
+                recipient_name='ТОО "Алатау-Снаб"',
+                doc_number="INV-101",
+                purpose="Оплата по счёту № 214",
+            ),
+            headers=CSRF,
+        ).json()
+        injected = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(
+                queue["Q-001"],
+                recipient_name="=SUM(1+1)",
+                doc_number="@A1",
+                purpose="+1+1",
+            ),
+            headers=CSRF,
+        ).json()
+
+        resp = acc.get("/api/v1/payments/export?format=csv&scope=queue&lang=ru")
+        assert resp.status_code == 200
+        rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+        by_id = {r[0]: r for r in rows[1:]}
+
+        normal_row = by_id[normal["id"]]
+        assert normal_row[2] == "INV-101"
+        assert normal_row[6] == 'ТОО "Алатау-Снаб"'
+        assert normal_row[10] == f"{queue['Q-001']['amount_kzt']:.2f}"
+        assert normal_row[11] == "Оплата по счёту № 214"
+        assert not normal_row[6].startswith("'")
+        assert not normal_row[11].startswith("'")
+
+        inj_row = by_id[injected["id"]]
+        assert inj_row[2] == "'@A1"
+        assert inj_row[6] == "'=SUM(1+1)"
+        assert inj_row[10] == f"{queue['Q-001']['amount_kzt']:.2f}"
+        assert inj_row[11] == "'+1+1"
+
+        # Space-padded formula is also neutralized while normal text is unchanged
+        assert export_service.sanitize_csv_cell("   =1+1", clean=True) == "'=1+1"
+        assert export_service.sanitize_csv_cell("Normal-Supplier", clean=True) == "Normal-Supplier"

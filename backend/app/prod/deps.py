@@ -6,36 +6,60 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import Depends, Query, Request
+from fastapi import Depends, Query, Request, Response
 
-from app.i18n import DEFAULT_LANG, Lang
+from app.i18n import DEFAULT_LANG, MESSAGES, Lang
 from app.prod.db import get_db
 from app.prod.errors import ProdError
 from app.prod.schemas import Company, Role, User
 from app.prod.security import (
-    SESSION_COOKIE_NAME,
     LoginRateLimiter,
     hash_session_token,
+    read_session_token,
+    slide_session_expiry,
     utc_now,
 )
 from app.settings import Settings, load_settings
 
 CSRF_HEADER_NAME: str = "X-Shield-Request"
 CSRF_HEADER_VALUE: str = "1"
+MUST_CHANGE_PASSWORD_HEADER: str = "X-Shield-Must-Change-Password"
 _SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
+_PASSWORD_CHANGE_ALLOWED_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/api/v1/auth/me"),
+        ("POST", "/api/v1/auth/logout"),
+        ("POST", "/api/v1/me/password"),
+    }
+)
 
 LangQuery = Annotated[Lang, Query()]
 
 
 @dataclass(frozen=True)
 class AuthContext:
-    """Resolved authenticated user, company (None for analyst), and session token hash."""
+    """Resolved authenticated user, company (None for analyst), session hash, and password flag."""
 
     user: User
     company: Company | None
     token_hash: str
+    must_change_password: bool = False
+
+
+def serialize_session(ctx: AuthContext) -> dict[str, Any]:
+    """Serialize an AuthContext into a session payload including must_change_password."""
+    return {
+        "user": ctx.user.model_dump(),
+        "company": ctx.company.model_dump() if ctx.company is not None else None,
+        "must_change_password": ctx.must_change_password,
+    }
+
+
+def _is_password_change_allowed(request: Request) -> bool:
+    path = request.url.path.rstrip("/") or "/"
+    return (request.method.upper(), path) in _PASSWORD_CHANGE_ALLOWED_ROUTES
 
 
 def require_csrf_header(request: Request) -> None:
@@ -74,10 +98,12 @@ def _parse_iso_utc(raw: str) -> datetime:
 
 def current_session(
     request: Request,
+    response: Response,
     conn: Annotated[sqlite3.Connection, Depends(get_db)],
 ) -> AuthContext:
-    """Authenticate request strictly from the shield_session cookie (ignores X-Role)."""
-    token = request.cookies.get(SESSION_COOKIE_NAME)
+    """Authenticate request strictly from the session cookie (ignores X-Role)."""
+    cfg = get_app_settings(request)
+    token = read_session_token(request.cookies, cfg.cookie_secure)
     if not token:
         raise ProdError(401, "not_authenticated")
 
@@ -86,6 +112,7 @@ def current_session(
         """
         SELECT
             s.token_hash,
+            s.created_at,
             s.expires_at,
             s.revoked_at,
             u.id AS user_id,
@@ -94,6 +121,7 @@ def current_session(
             u.role,
             u.company_id,
             u.is_active,
+            u.must_change_password,
             c.id AS c_id,
             c.name AS c_name,
             c.bin AS c_bin,
@@ -118,8 +146,29 @@ def current_session(
         expires_at = _parse_iso_utc(str(row["expires_at"]))
     except ValueError as exc:
         raise ProdError(401, "not_authenticated") from exc
-    if expires_at <= utc_now():
+    now = utc_now()
+    if expires_at <= now:
         raise ProdError(401, "not_authenticated")
+
+    slide_session_expiry(
+        conn,
+        token_hash=token_hash,
+        created_at=str(row["created_at"]),
+        expires_at=str(row["expires_at"]),
+        ttl_seconds=cfg.session_ttl_hours * 3600,
+        idle_seconds=cfg.session_idle_minutes * 60,
+        now=now,
+    )
+
+    must_change_password = bool(row["must_change_password"])
+    response.headers[MUST_CHANGE_PASSWORD_HEADER] = "1" if must_change_password else "0"
+    if must_change_password and not _is_password_change_allowed(request):
+        detail = (
+            None
+            if "error.prod.password_change_required" in MESSAGES
+            else "Password change is required before accessing other endpoints."
+        )
+        raise ProdError(403, "password_change_required", detail=detail)
 
     user = User(
         id=int(row["user_id"]),
@@ -139,7 +188,12 @@ def current_session(
         if row["c_id"] is not None
         else None
     )
-    return AuthContext(user=user, company=company, token_hash=token_hash)
+    return AuthContext(
+        user=user,
+        company=company,
+        token_hash=token_hash,
+        must_change_password=must_change_password,
+    )
 
 
 def current_user(

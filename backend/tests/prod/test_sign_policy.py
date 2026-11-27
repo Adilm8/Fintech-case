@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.i18n import t
 from app.main import (
     MIN_DIRECTOR_COMMENT_LEN as DEMO_MIN_DIRECTOR_COMMENT_LEN,
 )
@@ -26,6 +29,7 @@ from app.prod.audit_db import list_audit, verify_chain
 from app.prod.db import connect, tx
 from app.prod.deps import CSRF_HEADER_NAME, CSRF_HEADER_VALUE
 from app.prod.security import hash_password, utc_now_iso
+from app.risk.config import IDENTITY_SIGNAL_IDS
 from app.schemas import (
     Approval as DemoApproval,
 )
@@ -38,9 +42,9 @@ from app.schemas import (
     Signal,
     Verdict,
 )
-from app.settings import Settings
+from app.settings import BACKEND_DIR, Settings
 from app.store import DEFAULT_DATA_DIR
-from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY
+from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY, build_sign_payload
 
 CSRF: dict[str, str] = {CSRF_HEADER_NAME: CSRF_HEADER_VALUE}
 
@@ -127,22 +131,102 @@ class TestPolicyUnitAndDemoParity:
             recipient_bik="IRTYKZKA",
             amount_kzt=700000,
         )
-        cases = [
-            _dummy_check("yellow", [_dummy_signal("iik_changed")]),
-            _dummy_check("yellow", [_dummy_signal("bank_changed")]),
-            _dummy_check("yellow", [_dummy_signal("amount_anomaly")]),
-            _dummy_check(
-                "yellow",
-                [_dummy_signal("iik_changed"), _dummy_signal("bcc_account_other_owner", "block")],
+        info_first = Signal(
+            rule_id="first_payment",
+            points=0,
+            severity="info",
+            reason_ru="Первый платёж",
+            evidence=Evidence(field="bin"),
+        )
+        info_verified = Signal(
+            rule_id="bcc_owner_verified",
+            points=0,
+            severity="info",
+            reason_ru="Подтверждено",
+            evidence=Evidence(field="iik"),
+        )
+        cases: list[tuple[CheckResult, bool]] = [
+            (_dummy_check("yellow", [_dummy_signal("iik_changed")]), True),
+            # Single trust rule: weighted signals must include iik_changed (bank change alone is not enough).
+            (_dummy_check("yellow", [_dummy_signal("bank_changed")]), False),
+            (
+                _dummy_check(
+                    "yellow", [_dummy_signal("iik_changed"), _dummy_signal("bank_changed")]
+                ),
+                True,
             ),
-            _dummy_check("red", [_dummy_signal("iik_changed")]),
-            _dummy_check("green", []),
-            _dummy_check("grey", [_dummy_signal("first_payment", "info")]),
-            _dummy_check("invalid", [_dummy_signal("invalid_iik", "block")]),
+            (_dummy_check("yellow", [_dummy_signal("amount_anomaly")]), False),
+            (
+                _dummy_check(
+                    "yellow",
+                    [_dummy_signal("iik_changed"), _dummy_signal("bcc_account_other_owner", "block")],
+                ),
+                False,
+            ),
+            (_dummy_check("red", [_dummy_signal("iik_changed")]), True),
+            (_dummy_check("red", [_dummy_signal("bank_changed")]), False),
+            (
+                _dummy_check(
+                    "red",
+                    [_dummy_signal("iik_changed"), _dummy_signal("bank_changed")],
+                ),
+                True,
+            ),
+            (
+                _dummy_check(
+                    "red",
+                    [_dummy_signal("iik_changed"), _dummy_signal("bank_changed"), info_first],
+                ),
+                True,
+            ),
+            (
+                _dummy_check(
+                    "red",
+                    [_dummy_signal("iik_changed"), _dummy_signal("bank_changed"), info_verified],
+                ),
+                True,
+            ),
+            (
+                _dummy_check(
+                    "red",
+                    [
+                        _dummy_signal("iik_changed"),
+                        _dummy_signal("bank_changed"),
+                        _dummy_signal("lookalike_supplier"),
+                    ],
+                ),
+                False,
+            ),
+            (
+                _dummy_check(
+                    "red",
+                    [
+                        _dummy_signal("iik_changed"),
+                        _dummy_signal("bank_changed"),
+                        _dummy_signal("iik_on_watchlist", "block"),
+                    ],
+                ),
+                False,
+            ),
+            (
+                _dummy_check(
+                    "red",
+                    [
+                        _dummy_signal("iik_changed"),
+                        _dummy_signal("bank_changed"),
+                        _dummy_signal("urgent_wording", "amplifier"),
+                    ],
+                ),
+                False,
+            ),
+            (_dummy_check("green", []), False),
+            (_dummy_check("grey", [info_first]), False),
+            (_dummy_check("invalid", [_dummy_signal("invalid_iik", "block")]), False),
         ]
-        for chk in cases:
+        for chk, expected in cases:
             demo_apr = DemoApproval(id="apr-1", request=req, check=chk)
-            assert policy.can_trust(chk) == demo_can_trust_approval(demo_apr)
+            assert policy.can_trust(chk) is expected
+            assert demo_can_trust_approval(demo_apr) is expected
 
     def test_sign_decision_all_11_rows_unit(self) -> None:
         sha = "sha-current"
@@ -272,14 +356,22 @@ class TestSignRuleTableAPI:
 
         # Row 8: Accountant signs green payment
         p1 = acc.post("/api/v1/payments", json=_to_payment_input(queue["Q-001"]), headers=CSRF).json()
-        s1 = acc.post(f"/api/v1/payments/{p1['id']}/sign", json={}, headers=CSRF)
+        s1 = acc.post(
+            f"/api/v1/payments/{p1['id']}/sign",
+            json=build_sign_payload(acc, p1["id"]),
+            headers=CSRF,
+        )
         assert s1.status_code == 200
         assert s1.json()["status"] == "signed"
         assert s1.json()["signed_by"]["login"] == "accountant"
         assert s1.json()["signed_at"] is not None
 
         # Row 1: Double sign -> 409 already_signed + sign_denied in audit_log
-        s2 = acc.post(f"/api/v1/payments/{p1['id']}/sign", json={}, headers=CSRF)
+        s2 = acc.post(
+            f"/api/v1/payments/{p1['id']}/sign",
+            json=build_sign_payload(acc, p1["id"]),
+            headers=CSRF,
+        )
         assert s2.status_code == 409
         assert s2.json()["code"] == "already_signed"
         self._assert_sign_denied_logged(db_path, p1["id"], "already_signed")
@@ -290,7 +382,11 @@ class TestSignRuleTableAPI:
             json=_to_payment_input(queue["Q-008"]),
             headers=CSRF,
         ).json()
-        d_sign = director.post(f"/api/v1/payments/{p2['id']}/sign", headers=CSRF)
+        d_sign = director.post(
+            f"/api/v1/payments/{p2['id']}/sign",
+            json=build_sign_payload(director, p2["id"]),
+            headers=CSRF,
+        )
         assert d_sign.status_code == 200
         assert d_sign.json()["status"] == "signed"
         assert d_sign.json()["signed_by"]["login"] == "director"
@@ -303,14 +399,22 @@ class TestSignRuleTableAPI:
 
         p_post = acc.post("/api/v1/payments", json=_to_payment_input(queue["Q-001"]), headers=CSRF).json()
         assert acc.post(f"/api/v1/payments/{p_post['id']}/postpone", headers=CSRF).status_code == 200
-        r_post = acc.post(f"/api/v1/payments/{p_post['id']}/sign", headers=CSRF)
+        r_post = acc.post(
+            f"/api/v1/payments/{p_post['id']}/sign",
+            json=build_sign_payload(acc, p_post["id"]),
+            headers=CSRF,
+        )
         assert r_post.status_code == 409
         assert r_post.json()["code"] == "not_signable_status"
         self._assert_sign_denied_logged(db_path, p_post["id"], "not_signable_status")
 
         p_canc = acc.post("/api/v1/payments", json=_to_payment_input(queue["Q-008"]), headers=CSRF).json()
         assert acc.post(f"/api/v1/payments/{p_canc['id']}/cancel", headers=CSRF).status_code == 200
-        r_canc = acc.post(f"/api/v1/payments/{p_canc['id']}/sign", headers=CSRF)
+        r_canc = acc.post(
+            f"/api/v1/payments/{p_canc['id']}/sign",
+            json=build_sign_payload(acc, p_canc["id"]),
+            headers=CSRF,
+        )
         assert r_canc.status_code == 409
         assert r_canc.json()["code"] == "not_signable_status"
         self._assert_sign_denied_logged(db_path, p_canc["id"], "not_signable_status")
@@ -332,7 +436,7 @@ class TestSignRuleTableAPI:
         # Row 3: pending_approval -> 409 approval_pending
         r_pend = acc.post(
             f"/api/v1/payments/{p['id']}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, p["id"], accountant_ack=True),
             headers=CSRF,
         )
         assert r_pend.status_code == 409
@@ -350,7 +454,7 @@ class TestSignRuleTableAPI:
 
         r_rej = acc.post(
             f"/api/v1/payments/{p['id']}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, p["id"], accountant_ack=True),
             headers=CSRF,
         )
         assert r_rej.status_code == 409
@@ -387,7 +491,11 @@ class TestSignRuleTableAPI:
         assert p2["check"]["verdict"] == "yellow"
 
         # Now signing p1 re-runs engine -> duplicate_invoice -> yellow (worse than green) -> 409 verdict_changed
-        r_chg = acc.post(f"/api/v1/payments/{p1['id']}/sign", json={}, headers=CSRF)
+        r_chg = acc.post(
+            f"/api/v1/payments/{p1['id']}/sign",
+            json=build_sign_payload(acc, p1["id"]),
+            headers=CSRF,
+        )
         assert r_chg.status_code == 409
         body = r_chg.json()
         assert body["code"] == "verdict_changed"
@@ -433,7 +541,11 @@ class TestSignRuleTableAPI:
             headers=CSRF,
         )
 
-        r_worsened = acc.post(f"/api/v1/payments/{p_y['id']}/sign", json={}, headers=CSRF)
+        r_worsened = acc.post(
+            f"/api/v1/payments/{p_y['id']}/sign",
+            json=build_sign_payload(acc, p_y["id"]),
+            headers=CSRF,
+        )
         assert r_worsened.status_code == 409
         w_body = r_worsened.json()
         assert w_body["code"] == "verdict_changed"
@@ -460,7 +572,7 @@ class TestSignRuleTableAPI:
         p_inv = acc.post("/api/v1/payments", json=_to_payment_input(queue["Q-007"]), headers=CSRF).json()
         r_inv = acc.post(
             f"/api/v1/payments/{p_inv['id']}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, p_inv["id"], accountant_ack=True),
             headers=CSRF,
         )
         assert r_inv.status_code == 409
@@ -472,14 +584,18 @@ class TestSignRuleTableAPI:
         assert p_red["check"]["verdict"] == "red"
         r_red_acc = acc.post(
             f"/api/v1/payments/{p_red['id']}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, p_red["id"], accountant_ack=True),
             headers=CSRF,
         )
         assert r_red_acc.status_code == 409
         assert r_red_acc.json()["code"] == "red_requires_approval"
         self._assert_sign_denied_logged(db_path, p_red["id"], "red_requires_approval")
 
-        r_red_dir = director.post(f"/api/v1/payments/{p_red['id']}/sign", json={}, headers=CSRF)
+        r_red_dir = director.post(
+            f"/api/v1/payments/{p_red['id']}/sign",
+            json=build_sign_payload(director, p_red["id"]),
+            headers=CSRF,
+        )
         assert r_red_dir.status_code == 409
         assert r_red_dir.json()["code"] == "red_requires_approval"
         self._assert_sign_denied_logged(db_path, p_red["id"], "red_requires_approval")
@@ -501,7 +617,11 @@ class TestSignRuleTableAPI:
         assert dec.status_code == 200
         assert dec.json()["status"] == "approved"
 
-        signed = acc.post(f"/api/v1/payments/{p_red['id']}/sign", json={}, headers=CSRF)
+        signed = acc.post(
+            f"/api/v1/payments/{p_red['id']}/sign",
+            json=build_sign_payload(acc, p_red["id"]),
+            headers=CSRF,
+        )
         assert signed.status_code == 200
         assert signed.json()["status"] == "signed"
 
@@ -516,7 +636,11 @@ class TestSignRuleTableAPI:
             assert p["check"]["verdict"] == expected_verdict
 
             # Row 11: accountant without ack -> 409 ack_or_approval_required
-            no_ack = acc.post(f"/api/v1/payments/{p['id']}/sign", json={}, headers=CSRF)
+            no_ack = acc.post(
+                f"/api/v1/payments/{p['id']}/sign",
+                json=build_sign_payload(acc, p["id"]),
+                headers=CSRF,
+            )
             assert no_ack.status_code == 409
             assert no_ack.json()["code"] == "ack_or_approval_required"
             self._assert_sign_denied_logged(db_path, p["id"], "ack_or_approval_required")
@@ -524,7 +648,7 @@ class TestSignRuleTableAPI:
             # Row 11: director with accountant_ack=True -> STILL rejected!
             dir_ack = director.post(
                 f"/api/v1/payments/{p['id']}/sign",
-                json={"accountant_ack": True},
+                json=build_sign_payload(director, p["id"], accountant_ack=True),
                 headers=CSRF,
             )
             assert dir_ack.status_code == 409
@@ -534,7 +658,7 @@ class TestSignRuleTableAPI:
             # Row 10: accountant with accountant_ack=True -> signed + accountant_ack=True
             ok = acc.post(
                 f"/api/v1/payments/{p['id']}/sign",
-                json={"accountant_ack": True},
+                json=build_sign_payload(acc, p["id"], accountant_ack=True),
                 headers=CSRF,
             )
             assert ok.status_code == 200
@@ -545,7 +669,14 @@ class TestSignRuleTableAPI:
         with TestClient(prod_app) as analyst:
             _login(analyst, "analyst")
             p_g = acc.post("/api/v1/payments", json=_to_payment_input(queue["Q-001"]), headers=CSRF).json()
-            assert analyst.post(f"/api/v1/payments/{p_g['id']}/sign", headers=CSRF).status_code == 403
+            assert (
+                analyst.post(
+                    f"/api/v1/payments/{p_g['id']}/sign",
+                    json=build_sign_payload(analyst, p_g["id"]),
+                    headers=CSRF,
+                ).status_code
+                == 403
+            )
 
 
 class TestApprovalSupersedingAndDirectorRules:
@@ -595,7 +726,11 @@ class TestApprovalSupersedingAndDirectorRules:
         assert edited.json()["approval"] is None
 
         # Signing is now forbidden again (red_requires_approval)
-        resign = acc.post(f"/api/v1/payments/{p_red['id']}/sign", json={}, headers=CSRF)
+        resign = acc.post(
+            f"/api/v1/payments/{p_red['id']}/sign",
+            json=build_sign_payload(acc, p_red["id"]),
+            headers=CSRF,
+        )
         assert resign.status_code == 409
         assert resign.json()["code"] == "red_requires_approval"
 
@@ -791,7 +926,7 @@ class TestSignedHistoryDirectoryAndAuditAtomicity:
     def test_signed_payment_enters_history_updates_directory_and_keeps_audit_valid(
         self, sign_env: tuple[FastAPI, Path, TestClient, TestClient]
     ) -> None:
-        _, db_path, acc, _ = sign_env
+        _, db_path, acc, director = sign_env
         queue = _load_queue_by_id()
 
         # 1. First payment to new supplier (Q-004) -> grey, not in directory
@@ -806,7 +941,7 @@ class TestSignedHistoryDirectoryAndAuditAtomicity:
         # Sign with accountant_ack=True -> directory updated immediately
         signed_first = acc.post(
             f"/api/v1/payments/{p_first['id']}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, p_first["id"], accountant_ack=True),
             headers=CSRF,
         ).json()
         assert signed_first["status"] == "signed"
@@ -831,20 +966,61 @@ class TestSignedHistoryDirectoryAndAuditAtomicity:
         assert p_switch["check"]["verdict"] == "yellow"
         signed_switch = acc.post(
             f"/api/v1/payments/{p_switch['id']}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, p_switch["id"], accountant_ack=True),
             headers=CSRF,
         ).json()
         assert signed_switch["status"] == "signed"
         assert signed_switch["supplier"]["account_known"] is True
         assert signed_switch["supplier"]["requisites_changed_days_ago"] == 0
 
-        # Next payment to the switched account is now green (in signed history)
+        # Account confirmation rule (H1): signed by the accountant alone, the new account is NOT
+        # yet trusted history, so the next usual payment must not be green.
         p_after_switch = acc.post(
             "/api/v1/payments",
             json=_to_payment_input(queue["Q-002"], purpose="Оплата услуг по счёту № 319"),
             headers=CSRF,
         ).json()
-        assert p_after_switch["check"]["verdict"] == "green"
+        assert p_after_switch["check"]["verdict"] != "green"
+        assert {x["rule_id"] for x in p_after_switch["check"]["signals"]} & {
+            "iik_changed",
+            "bank_changed",
+            "iik_recently_changed",
+        }
+
+        # The director approves the change; after a director-approved signature the account is
+        # confirmed and the next usual payment to it is green.
+        apr = acc.post(
+            f"/api/v1/payments/{p_after_switch['id']}/send-to-director",
+            json={"accountant_note": "Реквизиты подтверждены по телефону из договора"},
+            headers=CSRF,
+        ).json()["approval"]["id"]
+        decided = director.post(
+            f"/api/v1/approvals/{apr}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "Подтверждено лично по телефону из договора",
+            },
+            headers=CSRF,
+        )
+        assert decided.status_code == 200, decided.text
+        signed_after = acc.post(
+            f"/api/v1/payments/{p_after_switch['id']}/sign",
+            json=build_sign_payload(acc, p_after_switch["id"]),
+            headers=CSRF,
+        )
+        assert signed_after.status_code == 200, signed_after.text
+        assert signed_after.json()["status"] == "signed"
+
+        p_confirmed = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(queue["Q-002"], purpose="Оплата услуг по счёту № 320"),
+            headers=CSRF,
+        ).json()
+        # Only the aggregate 72h structuring signal may remain (three payments in one test day);
+        # the account-change signals are gone and the verdict is not worsened by them.
+        confirmed_rules = {x["rule_id"] for x in p_confirmed["check"]["signals"]}
+        assert not confirmed_rules & {"iik_changed", "bank_changed", "iik_recently_changed"}
+        assert confirmed_rules <= {"structuring_72h"}
 
         conn = connect(db_path)
         try:
@@ -873,7 +1049,11 @@ class TestSignedHistoryDirectoryAndAuditAtomicity:
 
         with TestClient(prod_app, raise_server_exceptions=False) as non_raising:
             _login(non_raising, "accountant")
-            resp = non_raising.post(f"/api/v1/payments/{p['id']}/sign", json={}, headers=CSRF)
+            resp = non_raising.post(
+                f"/api/v1/payments/{p['id']}/sign",
+                json=build_sign_payload(non_raising, p["id"]),
+                headers=CSRF,
+            )
             assert resp.status_code == 500
 
         # Payment status MUST still be 'checked' (rolled back atomically!)
@@ -886,3 +1066,410 @@ class TestSignedHistoryDirectoryAndAuditAtomicity:
             assert verify_chain(conn).ok is True
         finally:
             conn.close()
+
+
+class TestIdentitySignalSignPolicy:
+    def test_identity_signal_constant_matches_spec_and_frontend(self) -> None:
+        expected = frozenset(
+            {
+                "lookalike_supplier",
+                "bin_name_mismatch",
+                "entity_type_mismatch",
+                "kbe_mismatch",
+                "iik_belongs_to_other_counterparty",
+                "mixed_script_name",
+                "iik_reported_by_clients",
+                "fresh_iik_many_payers",
+            }
+        )
+        assert IDENTITY_SIGNAL_IDS == expected
+
+        ts_path = BACKEND_DIR.parent / "frontend" / "src" / "lib" / "identitySignals.ts"
+        ts_src = ts_path.read_text(encoding="utf-8")
+        block = re.search(
+            r"export const IDENTITY_SIGNAL_IDS\s*=\s*\[(.*?)\]\s*as const",
+            ts_src,
+            re.DOTALL,
+        )
+        assert block is not None
+        ts_ids = frozenset(re.findall(r'"([a-z0-9_]+)"', block.group(1)))
+        assert ts_ids == IDENTITY_SIGNAL_IDS
+
+    @pytest.mark.parametrize("signal_id", sorted(IDENTITY_SIGNAL_IDS))
+    @pytest.mark.parametrize("verdict", ["yellow", "grey"])
+    def test_sign_decision_and_permissions_block_every_identity_signal_unit(
+        self, signal_id: str, verdict: Verdict
+    ) -> None:
+        sha = "sha-identity-unit"
+
+        for role in ("accountant", "director"):
+            for ack in (False, True):
+                res = policy.sign_decision(
+                    role=role,
+                    status="checked",
+                    previous_verdict=verdict,
+                    fresh_verdict=verdict,
+                    payment_request_sha256=sha,
+                    approval_status=None,
+                    approval_request_sha256=None,
+                    accountant_ack=ack,
+                    signal_ids=[signal_id],
+                )
+                assert res.allowed is False
+                assert res.block_code == "identity_requires_approval"
+
+        # Permissions for accountant (pass generator to verify single-pass iterables work safely)
+        perms = policy.permissions_for(
+            role="accountant",
+            status="checked",
+            verdict=verdict,
+            payment_request_sha256=sha,
+            signal_ids=(s for s in (signal_id,)),
+        )
+        assert perms.can_sign is False
+        assert perms.sign_requires_ack is False
+        assert perms.sign_block_code == "identity_requires_approval"
+        assert perms.can_send_to_director is True
+
+        # Director approval unlocks signing even when identity signals are present
+        approved_res = policy.sign_decision(
+            role="accountant",
+            status="approved",
+            previous_verdict=verdict,
+            fresh_verdict=verdict,
+            payment_request_sha256=sha,
+            approval_status="approved",
+            approval_request_sha256=sha,
+            accountant_ack=False,
+            signal_ids=[signal_id],
+        )
+        assert approved_res.allowed is True
+        approved_perms = policy.permissions_for(
+            role="accountant",
+            status="approved",
+            verdict=verdict,
+            payment_request_sha256=sha,
+            approval_status="approved",
+            approval_request_sha256=sha,
+            signal_ids=[signal_id],
+        )
+        assert approved_perms.can_sign is True
+        assert approved_perms.sign_requires_ack is False
+        assert approved_perms.sign_block_code is None
+
+    @pytest.mark.parametrize("signal_id", sorted(IDENTITY_SIGNAL_IDS))
+    @pytest.mark.parametrize("verdict", ["yellow", "grey"])
+    def test_api_sign_rejects_each_identity_signal_with_409_and_audit(
+        self,
+        sign_env: tuple[FastAPI, Path, TestClient, TestClient],
+        monkeypatch: pytest.MonkeyPatch,
+        signal_id: str,
+        verdict: Verdict,
+    ) -> None:
+        _, db_path, acc, director = sign_env
+        queue = _load_queue_by_id()
+
+        def _fake_check_payment(*args: Any, **kwargs: Any) -> CheckResult:
+            return CheckResult(
+                check_id=f"chk-id-{uuid.uuid4().hex[:10]}",
+                verdict=verdict,
+                score=40 if verdict == "yellow" else 25,
+                headline_ru="Сомнения в получателе",
+                signals=[_dummy_signal(signal_id)],
+                comparison=[],
+                next_action=NextAction(text_ru="Отправьте директору", primary="send_to_director"),
+                history=HistorySummary(payments_count=0),
+            )
+
+        monkeypatch.setattr(payments_service, "check_payment", _fake_check_payment)
+
+        created = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(queue["Q-004"]),
+            headers=CSRF,
+        )
+        assert created.status_code == 201
+        payment = created.json()
+        assert payment["permissions"]["can_sign"] is False
+        assert payment["permissions"]["sign_requires_ack"] is False
+        assert payment["permissions"]["sign_block_code"] == "identity_requires_approval"
+        assert payment["permissions"]["can_send_to_director"] is True
+
+        # Signing with accountant_ack=True must return 409 identity_requires_approval
+        denied = acc.post(
+            f"/api/v1/payments/{payment['id']}/sign",
+            json=build_sign_payload(acc, payment["id"], accountant_ack=True),
+            headers=CSRF,
+        )
+        assert denied.status_code == 409
+        assert denied.json()["code"] == "identity_requires_approval"
+        assert denied.json()["detail"] == t("error.prod.identity_requires_approval", "ru")
+
+        # Audit log records sign_denied with identity_requires_approval and intact hash chain
+        conn = connect(db_path)
+        try:
+            entries = list_audit(conn, payment_id=payment["id"], action="sign_denied", limit=5)
+            assert len(entries) == 1
+            assert entries[0].details.get("code") == "identity_requires_approval"
+            assert signal_id in entries[0].signal_ids
+            assert verify_chain(conn).ok is True
+        finally:
+            conn.close()
+
+        # Director approval path still unlocks signing
+        sent = acc.post(
+            f"/api/v1/payments/{payment['id']}/send-to-director",
+            json={"accountant_note": "Проверить личность получателя"},
+            headers=CSRF,
+        )
+        assert sent.status_code == 200
+        apr_id = sent.json()["approval"]["id"]
+        dec = director.post(
+            f"/api/v1/approvals/{apr_id}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "Подтвердили реквизиты поставщика напрямую",
+            },
+            headers=CSRF,
+        )
+        assert dec.status_code == 200
+
+        signed = acc.post(
+            f"/api/v1/payments/{payment['id']}/sign",
+            json=build_sign_payload(acc, payment["id"]),
+            headers=CSRF,
+        )
+        assert signed.status_code == 200
+        assert signed.json()["status"] == "signed"
+
+    def test_real_engine_identity_yellow_vs_regular_yellow_and_i18n(
+        self, sign_env: tuple[FastAPI, Path, TestClient, TestClient]
+    ) -> None:
+        _, db_path, acc, director = sign_env
+        queue = _load_queue_by_id()
+
+        # 1. Q-010 triggers real entity_type_mismatch on yellow -> blocked for accountant ack
+        p_id = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(queue["Q-010"]),
+            headers=CSRF,
+        ).json()
+        assert p_id["check"]["verdict"] == "yellow"
+        assert "entity_type_mismatch" in {s["rule_id"] for s in p_id["check"]["signals"]}
+        assert p_id["permissions"]["can_sign"] is False
+        assert p_id["permissions"]["sign_requires_ack"] is False
+        assert p_id["permissions"]["sign_block_code"] == "identity_requires_approval"
+        assert p_id["permissions"]["can_send_to_director"] is True
+
+        for lang in ("ru", "kk", "en"):
+            resp = acc.post(
+                f"/api/v1/payments/{p_id['id']}/sign?lang={lang}",
+                json=build_sign_payload(acc, p_id["id"], accountant_ack=True),
+                headers=CSRF,
+            )
+            assert resp.status_code == 409
+            assert resp.json() == {
+                "code": "identity_requires_approval",
+                "detail": t("error.prod.identity_requires_approval", lang),
+            }
+
+        conn = connect(db_path)
+        try:
+            denied_entries = list_audit(conn, payment_id=p_id["id"], action="sign_denied", limit=10)
+            assert len(denied_entries) == 3
+            assert all(e.details.get("code") == "identity_requires_approval" for e in denied_entries)
+            assert verify_chain(conn).ok is True
+        finally:
+            conn.close()
+
+        # Director approval unlocks Q-010
+        apr_id = acc.post(
+            f"/api/v1/payments/{p_id['id']}/send-to-director",
+            json={"accountant_note": "ИИН вместо БИН в наименовании ТОО"},
+            headers=CSRF,
+        ).json()["approval"]["id"]
+        assert (
+            director.post(
+                f"/api/v1/approvals/{apr_id}/decision",
+                json={
+                    "decision": "approved",
+                    "director_comment": "Проверено с руководителем контрагента",
+                },
+                headers=CSRF,
+            ).status_code
+            == 200
+        )
+        refreshed = acc.get(f"/api/v1/payments/{p_id['id']}").json()
+        assert refreshed["permissions"]["can_sign"] is True
+        assert refreshed["permissions"]["sign_requires_ack"] is False
+        assert refreshed["permissions"]["sign_block_code"] is None
+        signed_id = acc.post(
+            f"/api/v1/payments/{p_id['id']}/sign",
+            json=build_sign_payload(acc, p_id["id"]),
+            headers=CSRF,
+        )
+        assert signed_id.status_code == 200
+        assert signed_id.json()["status"] == "signed"
+
+        # 2. Q-002 (yellow without identity signal: iik_changed + bank_changed) remains signable with ack
+        p_regular = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(queue["Q-002"]),
+            headers=CSRF,
+        ).json()
+        assert p_regular["check"]["verdict"] == "yellow"
+        assert not (IDENTITY_SIGNAL_IDS & {s["rule_id"] for s in p_regular["check"]["signals"]})
+        assert p_regular["permissions"]["can_sign"] is True
+        assert p_regular["permissions"]["sign_requires_ack"] is True
+        assert p_regular["permissions"]["sign_block_code"] is None
+
+        signed_reg = acc.post(
+            f"/api/v1/payments/{p_regular['id']}/sign",
+            json=build_sign_payload(acc, p_regular["id"], accountant_ack=True),
+            headers=CSRF,
+        )
+        assert signed_reg.status_code == 200
+        assert signed_reg.json()["status"] == "signed"
+        assert signed_reg.json()["accountant_ack"] is True
+
+
+class TestRedBankChangeTrustFlow:
+    def test_prod_red_bank_change_only_can_be_approved_and_trusted(
+        self, sign_env: tuple[FastAPI, Path, TestClient, TestClient]
+    ) -> None:
+        _, db_path, acc, director = sign_env
+        queue = _load_queue_by_id()
+
+        # Q-002 at 850k (>= supplier median 820k) yields RED (65) with ONLY iik_changed + bank_changed
+        red_bank_payload = _to_payment_input(
+            queue["Q-002"],
+            amount_kzt=850_000,
+            purpose="Оплата транспортных услуг по счёту № 601",
+        )
+        p_red_bank = acc.post("/api/v1/payments", json=red_bank_payload, headers=CSRF).json()
+        assert p_red_bank["check"]["verdict"] == "red"
+        assert p_red_bank["check"]["score"] == 65
+        assert {s["rule_id"] for s in p_red_bank["check"]["signals"]} == {
+            "iik_changed",
+            "bank_changed",
+        }
+
+        apr_id = acc.post(
+            f"/api/v1/payments/{p_red_bank['id']}/send-to-director",
+            json={"accountant_note": "Поставщик перешёл в другой банк"},
+            headers=CSRF,
+        ).json()["approval"]["id"]
+
+        # GET /approvals exposes can_trust=True for this red bank-change payment
+        aprs = {item["id"]: item for item in director.get("/api/v1/approvals").json()}
+        assert aprs[apr_id]["can_trust"] is True
+
+        # Comment < 10 chars -> 422 trust_comment_required
+        short_resp = director.post(
+            f"/api/v1/approvals/{apr_id}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "коротко",
+                "trust_account": True,
+            },
+            headers=CSRF,
+        )
+        assert short_resp.status_code == 422
+        assert short_resp.json()["code"] == "trust_comment_required"
+
+        # Valid >= 10 char comment -> 200 approved + trust_account=True
+        ok_resp = director.post(
+            f"/api/v1/approvals/{apr_id}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "Позвонили поставщику по договору и подтвердили новый банк",
+                "trust_account": True,
+            },
+            headers=CSRF,
+        )
+        assert ok_resp.status_code == 200
+        assert ok_resp.json()["status"] == "approved"
+        assert ok_resp.json()["trust_account"] is True
+
+        # Later payment to the same trusted BIN+IIK evaluates as green with trusted=True
+        later_payload = _to_payment_input(
+            queue["Q-002"],
+            amount_kzt=850_000,
+            purpose="Оплата транспортных услуг по счёту № 602",
+        )
+        p_later = acc.post("/api/v1/payments", json=later_payload, headers=CSRF).json()
+        assert p_later["check"]["verdict"] == "green"
+        assert p_later["check"]["trusted"] is True
+        assert p_later["check"]["trusted_info"] is not None
+        later_rule_ids = {s["rule_id"] for s in p_later["check"]["signals"]}
+        assert "trusted_account" in later_rule_ids
+        assert "iik_changed" not in later_rule_ids
+        assert "bank_changed" not in later_rule_ids
+
+        # Original approved red payment can be signed cleanly
+        signed = acc.post(
+            f"/api/v1/payments/{p_red_bank['id']}/sign",
+            json=build_sign_payload(acc, p_red_bank["id"]),
+            headers=CSRF,
+        )
+        assert signed.status_code == 200
+        assert signed.json()["status"] == "signed"
+
+        conn = connect(db_path)
+        try:
+            assert verify_chain(conn).ok is True
+        finally:
+            conn.close()
+
+    def test_prod_red_with_other_signals_refuses_trust(
+        self, sign_env: tuple[FastAPI, Path, TestClient, TestClient]
+    ) -> None:
+        _, _, acc, director = sign_env
+        queue = _load_queue_by_id()
+
+        # 1. Q-002 at 850k + urgent wording -> red with 3 weighted signals -> can_trust=False
+        p_urgent = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(
+                queue["Q-002"],
+                amount_kzt=850_000,
+                purpose="Оплата срочно по счёту № 603",
+            ),
+            headers=CSRF,
+        ).json()
+        assert p_urgent["check"]["verdict"] == "red"
+        apr_urgent = acc.post(
+            f"/api/v1/payments/{p_urgent['id']}/send-to-director",
+            json={"accountant_note": "Срочный счёт"},
+            headers=CSRF,
+        ).json()["approval"]["id"]
+
+        # 2. Q-003 (lookalike + mixed script + block/other signals) -> can_trust=False
+        p_attack = acc.post(
+            "/api/v1/payments",
+            json=_to_payment_input(queue["Q-003"]),
+            headers=CSRF,
+        ).json()
+        assert p_attack["check"]["verdict"] == "red"
+        apr_attack = acc.post(
+            f"/api/v1/payments/{p_attack['id']}/send-to-director",
+            json={"accountant_note": "Подозрительная подмена"},
+            headers=CSRF,
+        ).json()["approval"]["id"]
+
+        aprs = {item["id"]: item for item in director.get("/api/v1/approvals").json()}
+        assert aprs[apr_urgent]["can_trust"] is False
+        assert aprs[apr_attack]["can_trust"] is False
+
+        for apr_id in (apr_urgent, apr_attack):
+            refused = director.post(
+                f"/api/v1/approvals/{apr_id}/decision",
+                json={
+                    "decision": "approved",
+                    "director_comment": "Попытка доверить подозрительный красный счёт",
+                    "trust_account": True,
+                },
+                headers=CSRF,
+            )
+            assert refused.status_code == 422
+            assert refused.json()["code"] == "trust_not_allowed"

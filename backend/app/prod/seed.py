@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
+import string
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,43 @@ SEED_USERS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+_PW_UPPER: str = string.ascii_uppercase
+_PW_LOWER: str = string.ascii_lowercase
+_PW_DIGITS: str = string.digits
+_PW_SYMBOLS: str = "-_!@#%"
+_PW_ALPHABET: str = _PW_UPPER + _PW_LOWER + _PW_DIGITS + _PW_SYMBOLS
+_GENERATED_PASSWORD_LENGTH: int = 20
+
+
+def _generate_strong_password(length: int = _GENERATED_PASSWORD_LENGTH) -> str:
+    """Generate a cryptographically strong password with mixed character classes."""
+    target_len = max(length, 16)
+    chars = [
+        secrets.choice(_PW_UPPER),
+        secrets.choice(_PW_LOWER),
+        secrets.choice(_PW_DIGITS),
+        secrets.choice(_PW_SYMBOLS),
+        *(secrets.choice(_PW_ALPHABET) for _ in range(target_len - 4)),
+    ]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
+
+
+def _resolve_seed_password(role: str, fallback_password: str | None) -> tuple[str, bool, bool]:
+    """Resolve password for a seeded role.
+
+    Returns (plaintext_password, is_generated, used_fallback).
+    Priority: SHIELD_SEED_PASSWORD_<ROLE> -> explicit fallback -> fresh random password.
+    """
+    role_env_key = f"SHIELD_SEED_PASSWORD_{role.upper()}"
+    role_env_val = os.environ.get(role_env_key)
+    if role_env_val:
+        return role_env_val, False, False
+    if fallback_password:
+        return fallback_password, False, True
+    return _generate_strong_password(), True, False
+
+
 @dataclass(frozen=True)
 class SeedSummary:
     """Summary returned after seeding the production SQLite database."""
@@ -42,6 +81,9 @@ class SeedSummary:
     suppliers_count: int
     password: str
     generated_password: bool
+    passwords: dict[str, str] = field(default_factory=dict)
+    generated_passwords: dict[str, str] = field(default_factory=dict)
+    used_fallback_password: bool = False
 
 
 def _remove_db_files(db_path: Path) -> None:
@@ -78,11 +120,9 @@ def seed_database(
     if reset:
         _remove_db_files(resolved_db_path)
 
-    effective_password = password if password is not None else cfg.seed_password
-    generated_password = False
-    if not effective_password:
-        effective_password = secrets.token_urlsafe(12)
-        generated_password = True
+    fallback_password = password if password is not None else cfg.seed_password
+    if fallback_password == "":
+        fallback_password = None
 
     raw_history = _read_json(resolved_data_dir / "history.json")
     client_raw: dict[str, Any] = dict(raw_history["client"])
@@ -92,6 +132,10 @@ def seed_database(
 
     shift_days = (effective_today - DEMO_TODAY).days
     now_iso = utc_now_iso()
+
+    resolved_passwords: dict[str, str] = {}
+    generated_passwords: dict[str, str] = {}
+    used_fallback_password = False
 
     conn = connect(resolved_db_path)
     try:
@@ -127,19 +171,31 @@ def seed_database(
                 if existing_user is not None:
                     user_ids[login] = int(existing_user["id"])
                 else:
+                    user_password, is_generated, used_fallback = _resolve_seed_password(
+                        role,
+                        fallback_password,
+                    )
+                    resolved_passwords[login] = user_password
+                    if is_generated:
+                        generated_passwords[login] = user_password
+                    if used_fallback:
+                        used_fallback_password = True
+                    must_change = 1 if is_generated else 0
                     user_company = None if role == "analyst" else company_id
                     cur = conn.execute(
                         """
                         INSERT INTO users (
-                            company_id, login, full_name, role, password_hash, is_active, created_at
-                        ) VALUES (?, ?, ?, ?, ?, 1, ?)
+                            company_id, login, full_name, role, password_hash,
+                            is_active, must_change_password, created_at
+                        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                         """,
                         (
                             user_company,
                             login,
                             full_name,
                             role,
-                            hash_password(effective_password),
+                            hash_password(user_password),
+                            must_change,
                             now_iso,
                         ),
                     )
@@ -357,6 +413,19 @@ def seed_database(
         )
         suppliers_count = int(conn.execute("SELECT COUNT(*) FROM suppliers").fetchone()[0])
 
+        if used_fallback_password:
+            print(
+                "WARNING: SHIELD_SEED_PASSWORD shared fallback is demo-only; "
+                "set SHIELD_SEED_PASSWORD_<ROLE> per role or omit it to generate "
+                "distinct random passwords.",
+                file=sys.stderr,
+            )
+        for login, gen_password in generated_passwords.items():
+            print(f"Generated seed password (printed once) for {login}: {gen_password}")
+
+        unique_passwords = set(resolved_passwords.values())
+        shared_password = next(iter(unique_passwords)) if len(unique_passwords) == 1 else ""
+
         return SeedSummary(
             db_path=resolved_db_path,
             company_id=company_id,
@@ -364,8 +433,11 @@ def seed_database(
             signed_payments_count=signed_count,
             queue_payments_count=queue_count,
             suppliers_count=suppliers_count,
-            password=effective_password,
-            generated_password=generated_password,
+            password=shared_password,
+            generated_password=bool(generated_passwords),
+            passwords=resolved_passwords,
+            generated_passwords=generated_passwords,
+            used_fallback_password=used_fallback_password,
         )
     finally:
         conn.close()
@@ -397,8 +469,6 @@ def main(argv: list[str] | None = None) -> int:
         f"users={summary.users_count}, signed_payments={summary.signed_payments_count}, "
         f"queue_payments={summary.queue_payments_count}, suppliers={summary.suppliers_count}"
     )
-    if summary.generated_password:
-        print(f"Generated seed password (printed once): {summary.password}")
     return 0
 
 

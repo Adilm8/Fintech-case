@@ -1,4 +1,10 @@
-"""Environment-driven settings for BCC Business Shield backend (stdlib only)."""
+"""Environment-driven settings for BCC Business Shield backend (stdlib only).
+
+In ``APP_MODE=prod`` session cookies default to ``Secure`` (using the ``__Host-``
+cookie prefix). For local plain ``http://localhost`` prod runs you MUST set
+``SHIELD_COOKIE_INSECURE=1`` because browsers drop ``Secure`` and ``__Host-``
+cookies over plain HTTP.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ AppMode = Literal["demo", "prod"]
 BACKEND_DIR: Path = Path(__file__).resolve().parents[1]
 DEFAULT_DB_PATH: Path = BACKEND_DIR / "var" / "shield.db"
 DEFAULT_SESSION_TTL_HOURS: int = 12
+DEFAULT_SESSION_IDLE_MINUTES: int = 60
 
 _TRUTHY: frozenset[str] = frozenset({"1", "true", "yes"})
 _FALSY: frozenset[str] = frozenset({"0", "false", "no", ""})
@@ -28,6 +35,7 @@ class Settings:
     cookie_secure: bool = False
     today_override: date | None = None
     seed_password: str | None = None
+    session_idle_minutes: int = DEFAULT_SESSION_IDLE_MINUTES
 
     def today(self) -> date:
         """Return effective current date (SHIELD_TODAY if set, else local date.today())."""
@@ -89,11 +97,34 @@ def load_settings() -> Settings:
         os.environ.get("SHIELD_SESSION_TTL_HOURS"),
         DEFAULT_SESSION_TTL_HOURS,
     )
-    cookie_secure = _parse_bool(
-        "SHIELD_COOKIE_SECURE",
-        os.environ.get("SHIELD_COOKIE_SECURE"),
-        False,
+    session_idle_minutes = _parse_positive_int(
+        "SHIELD_SESSION_IDLE_MINUTES",
+        os.environ.get("SHIELD_SESSION_IDLE_MINUTES"),
+        DEFAULT_SESSION_IDLE_MINUTES,
     )
+
+    # SHIELD_COOKIE_INSECURE=1 is REQUIRED for local http://localhost prod runs
+    # because browsers drop Secure cookies and __Host- cookies on plain HTTP.
+    raw_cookie_insecure = os.environ.get("SHIELD_COOKIE_INSECURE")
+    raw_cookie_secure = os.environ.get("SHIELD_COOKIE_SECURE")
+    cookie_insecure = _parse_bool("SHIELD_COOKIE_INSECURE", raw_cookie_insecure, False)
+    cookie_secure_explicit: bool | None = (
+        None
+        if raw_cookie_secure is None or not raw_cookie_secure.strip()
+        else _parse_bool("SHIELD_COOKIE_SECURE", raw_cookie_secure, False)
+    )
+    if cookie_insecure and cookie_secure_explicit is True:
+        raise ValueError(
+            "Conflicting cookie settings: SHIELD_COOKIE_INSECURE=1 cannot be combined "
+            "with SHIELD_COOKIE_SECURE=1."
+        )
+    if cookie_insecure:
+        cookie_secure = False
+    elif cookie_secure_explicit is not None:
+        cookie_secure = cookie_secure_explicit
+    else:
+        cookie_secure = app_mode == "prod"
+
     today_override = _parse_optional_date("SHIELD_TODAY", os.environ.get("SHIELD_TODAY"))
 
     raw_seed_pw = os.environ.get("SHIELD_SEED_PASSWORD")
@@ -106,6 +137,7 @@ def load_settings() -> Settings:
         cookie_secure=cookie_secure,
         today_override=today_override,
         seed_password=seed_password,
+        session_idle_minutes=session_idle_minutes,
     )
 
 

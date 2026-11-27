@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -11,11 +12,13 @@ from app.prod.schemas import (
     ProdApprovalStatus,
     Role,
 )
-from app.schemas import CheckResult, Verdict, clean_text_field, meaningful_length
+from app.risk.config import IDENTITY_SIGNAL_IDS, can_trust_check
+from app.risk.config import TRUST_ALLOWED_SIGNAL_IDS as _TRUST_ALLOWED_SIGNAL_IDS
+from app.schemas import CheckResult, Signal, Verdict, clean_text_field, meaningful_length
 
 # Kept in lockstep with app.main (verified by unit tests).
 MIN_DIRECTOR_COMMENT_LEN: int = 10
-TRUST_ALLOWED_SIGNAL_IDS: frozenset[str] = frozenset({"iik_changed", "bank_changed"})
+TRUST_ALLOWED_SIGNAL_IDS: frozenset[str] = _TRUST_ALLOWED_SIGNAL_IDS
 
 VERDICT_RANK: dict[Verdict, int] = {
     "green": 0,
@@ -40,6 +43,7 @@ class SignDecision:
     block_code: str | None = None
     set_accountant_ack: bool = False
     supersede_approval: bool = False
+    block_reason: str | None = None
 
 
 def verdict_rank(verdict: Verdict) -> int:
@@ -54,11 +58,7 @@ def verdict_worsened(previous: Verdict, fresh: Verdict) -> bool:
 
 def can_trust(check: CheckResult) -> bool:
     """Return True if a payment check is eligible for director account trust (mirrors demo)."""
-    if check.verdict != "yellow":
-        return False
-    has_account_change = any(s.rule_id in TRUST_ALLOWED_SIGNAL_IDS for s in check.signals)
-    has_block = any(s.severity == "block" for s in check.signals)
-    return has_account_change and not has_block
+    return can_trust_check(check.verdict, check.signals)
 
 
 def validate_director_decision(
@@ -67,6 +67,7 @@ def validate_director_decision(
     check: CheckResult,
     director_comment: str | None,
     trust_account: bool,
+    requisites_previously_rejected: bool = False,
 ) -> str | None:
     """Validate director approval rules and return a 422 error code or None if valid."""
     if decision != "approved":
@@ -79,7 +80,7 @@ def validate_director_decision(
     comment_len = meaningful_length(cleaned_comment)
 
     if trust_account:
-        if not can_trust(check):
+        if requisites_previously_rejected or not can_trust(check):
             return "trust_not_allowed"
         if comment_len < MIN_DIRECTOR_COMMENT_LEN:
             return "trust_comment_required"
@@ -103,6 +104,38 @@ def pre_sign_status_check(status: PaymentStatus) -> str | None:
     return None
 
 
+def has_identity_signal(signal_ids: Iterable[str] | None) -> bool:
+    """Return True if any signal rule_id casts doubt on the recipient's identity."""
+    if not signal_ids:
+        return False
+    return any(rule_id in IDENTITY_SIGNAL_IDS for rule_id in signal_ids)
+
+
+def find_new_critical_signals(
+    previous_signal_ids: Iterable[str] | None,
+    fresh_signals: Iterable[Signal | tuple[str, str]] | None,
+) -> list[str]:
+    """Return sorted rule_ids of new identity or block-severity signals absent at approval time.
+
+    Accepts either Signal objects or (rule_id, severity) pairs in ``fresh_signals``.
+    A signal is considered critical if ``rule_id in IDENTITY_SIGNAL_IDS`` or ``severity == 'block'``.
+    """
+    if not fresh_signals:
+        return []
+    prev_ids = set(previous_signal_ids) if previous_signal_ids is not None else set()
+    new_critical: set[str] = set()
+    for item in fresh_signals:
+        if isinstance(item, tuple):
+            rule_id, severity = item
+        else:
+            rule_id, severity = item.rule_id, item.severity
+        if rule_id in prev_ids:
+            continue
+        if severity == "block" or rule_id in IDENTITY_SIGNAL_IDS:
+            new_critical.add(rule_id)
+    return sorted(new_critical)
+
+
 def sign_decision(
     *,
     role: Role,
@@ -115,6 +148,13 @@ def sign_decision(
     accountant_ack: bool,
     amount_tiyn: int | None = None,
     approval_threshold_tiyn: int | None = None,
+    aggregate_72h_tiyn: int | None = None,
+    signal_ids: Iterable[str] | None = None,
+    prior_rejection: bool = False,
+    prior_rejected_requisites: bool = False,
+    is_duplicate: bool = False,
+    previous_signal_ids: Iterable[str] | None = None,
+    fresh_signals: Iterable[Signal | tuple[str, str]] | None = None,
 ) -> SignDecision:
     """Evaluate all rows of the §5 server-side signing rule table plus approval threshold."""
     # Rows 1-4: non-signable lifecycle statuses
@@ -122,12 +162,41 @@ def sign_decision(
     if pre_block is not None:
         return SignDecision(allowed=False, block_code=pre_block)
 
-    # Row 5: fresh verdict worsened compared to the verdict used for the previous check/decision
+    # Row 5: fresh verdict worsened compared to the verdict used for the previous check/decision.
+    # For an unapproved exact duplicate whose verdict worsened only due to non-critical signals
+    # (e.g. duplicate_invoice / structuring_72h after its original was just signed), preserve
+    # duplicate_requires_approval so both direct /sign and batch/sign-green report the duplicate
+    # block while sign_payment still persists the refreshed check_id.
     if verdict_worsened(previous_verdict, fresh_verdict):
+        if (
+            is_duplicate
+            and approval_status != "approved"
+            and fresh_verdict != "invalid"
+            and not prior_rejection
+            and not prior_rejected_requisites
+            and not (
+                fresh_signals is not None
+                and find_new_critical_signals(previous_signal_ids, fresh_signals)
+            )
+        ):
+            return SignDecision(allowed=False, block_code="duplicate_requires_approval")
         return SignDecision(
             allowed=False,
             block_code="verdict_changed",
             supersede_approval=True,
+        )
+
+    # Row 5b: an approved approval is invalidated if re-check reveals new identity or block signals
+    if (
+        approval_status == "approved"
+        and fresh_signals is not None
+        and find_new_critical_signals(previous_signal_ids, fresh_signals)
+    ):
+        return SignDecision(
+            allowed=False,
+            block_code="verdict_changed",
+            supersede_approval=True,
+            block_reason="new_signals",
         )
 
     # Row 6: invalid requisites can never be signed
@@ -143,17 +212,44 @@ def sign_decision(
     if has_matching_approval:
         return SignDecision(allowed=True)
 
+    # Prior director rejection on this payment requires a new director approval regardless of verdict
+    if prior_rejection:
+        return SignDecision(allowed=False, block_code="approval_required_after_rejection")
+
     # Row 8: red verdict without matching approval
     if fresh_verdict == "red":
         return SignDecision(allowed=False, block_code="red_requires_approval")
 
-    # Threshold policy: payments >= company approval threshold require director approval even if green
+    # Prior director rejection on the same (BIN, IIK) requisites cannot be bypassed via ack/green
+    if prior_rejected_requisites:
+        return SignDecision(allowed=False, block_code="approval_required_after_rejection")
+
+    # Exact duplicate of another signed or active-pending payment requires director approval
+    if is_duplicate:
+        return SignDecision(allowed=False, block_code="duplicate_requires_approval")
+
+    # Identity doubt on yellow/grey requires director approval (accountant ack cannot unlock it)
+    if fresh_verdict in ("yellow", "grey") and has_identity_signal(signal_ids):
+        return SignDecision(allowed=False, block_code="identity_requires_approval")
+
+    # Threshold policy: single payment OR 72h rolling supplier aggregate >= threshold requires director approval
     if (
         approval_threshold_tiyn is not None
+        and approval_threshold_tiyn > 0
         and amount_tiyn is not None
-        and amount_tiyn >= approval_threshold_tiyn
     ):
-        return SignDecision(allowed=False, block_code="threshold_requires_approval")
+        if amount_tiyn >= approval_threshold_tiyn:
+            return SignDecision(allowed=False, block_code="threshold_requires_approval")
+        if (
+            aggregate_72h_tiyn is not None
+            and aggregate_72h_tiyn > 0
+            and (amount_tiyn + aggregate_72h_tiyn) >= approval_threshold_tiyn
+        ):
+            return SignDecision(
+                allowed=False,
+                block_code="threshold_requires_approval",
+                block_reason="threshold_aggregate",
+            )
 
     # Row 9: green verdict (below threshold or no threshold set)
     if fresh_verdict == "green":
@@ -177,6 +273,11 @@ def permissions_for(
     approval_request_sha256: str | None = None,
     amount_tiyn: int | None = None,
     approval_threshold_tiyn: int | None = None,
+    aggregate_72h_tiyn: int | None = None,
+    signal_ids: Iterable[str] | None = None,
+    prior_rejection: bool = False,
+    prior_rejected_requisites: bool = False,
+    is_duplicate: bool = False,
 ) -> PaymentPermissions:
     """Compute server-authoritative UI and API permissions derived from sign_decision()."""
     is_accountant = role == "accountant"
@@ -202,6 +303,8 @@ def permissions_for(
             can_decide=False,
         )
 
+    signals_tuple = tuple(signal_ids) if signal_ids is not None else ()
+
     without_ack = sign_decision(
         role=role,
         status=status,
@@ -213,6 +316,11 @@ def permissions_for(
         accountant_ack=False,
         amount_tiyn=amount_tiyn,
         approval_threshold_tiyn=approval_threshold_tiyn,
+        aggregate_72h_tiyn=aggregate_72h_tiyn,
+        signal_ids=signals_tuple,
+        prior_rejection=prior_rejection,
+        prior_rejected_requisites=prior_rejected_requisites,
+        is_duplicate=is_duplicate,
     )
     if without_ack.allowed:
         can_sign = True
@@ -230,6 +338,11 @@ def permissions_for(
             accountant_ack=True,
             amount_tiyn=amount_tiyn,
             approval_threshold_tiyn=approval_threshold_tiyn,
+            aggregate_72h_tiyn=aggregate_72h_tiyn,
+            signal_ids=signals_tuple,
+            prior_rejection=prior_rejection,
+            prior_rejected_requisites=prior_rejected_requisites,
+            is_duplicate=is_duplicate,
         )
         if with_ack.allowed:
             can_sign = True

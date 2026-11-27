@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.risk.config import DEMO_TODAY
+from app.risk.profiles import DEFAULT_CACHE_MAXSIZE, ClientProfiles, ProfileCache
 from app.schemas import Approval, CheckRequest, TrustedInfo, compute_request_sha256
 from app.validators.kz import BankRecord
 
@@ -40,6 +41,7 @@ class Store:
         self.approvals: list[Approval] = []
         self.trusted_accounts: dict[tuple[str, str, str], TrustedInfo] = {}
         self.recent_checks: list[dict[str, Any]] = []
+        self._profile_cache: ProfileCache = ProfileCache(maxsize=DEFAULT_CACHE_MAXSIZE)
 
         self.reload()
 
@@ -66,6 +68,7 @@ class Store:
         self.client = dict(raw_history.get("client", {}))
         self.history = list(raw_history.get("payments", []))
         self.history.sort(key=lambda p: (p.get("paid_at", ""), p.get("id", "")))
+        self._profile_cache.clear()
 
         self.queue = list(self._read_json("queue.json"))
 
@@ -191,6 +194,16 @@ class Store:
         return [
             p for p in self.get_client_history(payer_id) if p.get("recipient_bin") == recipient_bin
         ]
+
+    def get_profiles(self, payer_id: str | None = None) -> ClientProfiles:
+        """Return cached per-supplier profiles and client percentiles for payer_id."""
+        resolved = self.resolve_payer_id(payer_id)
+        history = self.get_client_history(resolved)
+        return self._profile_cache.get(resolved, history, banks_by_bik=self.banks_by_bik)
+
+    def invalidate_profiles_cache(self, payer_id: str | None = None) -> None:
+        """Clear cached supplier profiles for payer_id (or all payers if None)."""
+        self._profile_cache.invalidate(payer_id)
 
     def record_check(
         self,

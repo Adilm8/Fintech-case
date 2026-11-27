@@ -94,6 +94,7 @@ from app.risk.names import (
     sanitize_unicode,
     transliterate_cyr_to_lat,
 )
+from app.risk.profiles import ClientProfiles, confirm_supplier_accounts, profiles_enabled
 from app.schemas import (
     AnalystDetails,
     AnalystSignalDetail,
@@ -139,7 +140,11 @@ def _make_evidence(
     exp_val = t(expected_key, lang, **exp_p) if expected_key else expected
     act_val = t(actual_key, lang, **act_p) if actual_key else actual
     field_lbl_key = f"ev.field.{field}"
-    field_lbl = t(field_lbl_key, lang) if field in ("bin", "iik", "bik", "bank", "name", "amount", "purpose") else field
+    field_lbl = (
+        t(field_lbl_key, lang)
+        if field in ("bin", "iik", "bik", "bank", "name", "amount", "purpose")
+        else field
+    )
     return Evidence(
         field=field,
         field_label=field_lbl,
@@ -177,6 +182,22 @@ def _make_signal(
     )
 
 
+_UNSET: Any = object()
+
+
+def _resolve_profiles(
+    store: Store,
+    payer_id: str | None,
+    profiles: ClientProfiles | None,
+) -> ClientProfiles | None:
+    """Return provided profiles, or fetch from store unless BCC_DISABLE_PROFILES is active."""
+    if profiles is not None:
+        return profiles
+    if not profiles_enabled():
+        return None
+    return store.get_profiles(payer_id)
+
+
 def _compute_percentile(sorted_amounts: list[float], pct: float) -> float:
     pos = pct * (len(sorted_amounts) - 1)
     lo = math.floor(pos)
@@ -184,8 +205,16 @@ def _compute_percentile(sorted_amounts: list[float], pct: float) -> float:
     return sorted_amounts[lo] + (sorted_amounts[hi] - sorted_amounts[lo]) * (pos - lo)
 
 
-def compute_client_p90(store: Store, payer_id: str | None = None) -> float | None:
+def compute_client_p90(
+    store: Store,
+    payer_id: str | None = None,
+    *,
+    profiles: ClientProfiles | None = None,
+) -> float | None:
     """Compute the 90th percentile of all historical payment amounts for the client."""
+    prof = _resolve_profiles(store, payer_id, profiles)
+    if prof is not None:
+        return prof.client_p90
     history = store.get_client_history(payer_id)
     if len(history) < CLIENT_P90_MIN_HISTORY:
         return None
@@ -195,8 +224,16 @@ def compute_client_p90(store: Store, payer_id: str | None = None) -> float | Non
     return _compute_percentile(amounts, 0.9)
 
 
-def compute_client_median(store: Store, payer_id: str | None = None) -> float | None:
+def compute_client_median(
+    store: Store,
+    payer_id: str | None = None,
+    *,
+    profiles: ClientProfiles | None = None,
+) -> float | None:
     """Compute the median of all historical payment amounts for the client."""
+    prof = _resolve_profiles(store, payer_id, profiles)
+    if prof is not None:
+        return prof.client_median
     history = store.get_client_history(payer_id)
     amounts = [float(p["amount_kzt"]) for p in history if float(p["amount_kzt"]) > 0]
     if len(amounts) < CLIENT_P90_MIN_HISTORY:
@@ -239,16 +276,30 @@ def extract_invoice_number(purpose: str | None) -> str | None:
     return None
 
 
-def is_bcc_bank_verified_new_account(req: CheckRequest, store: Store) -> bool:
+def is_bcc_bank_verified_new_account(
+    req: CheckRequest,
+    store: Store,
+    *,
+    profiles: ClientProfiles | None = None,
+) -> bool:
     """Return True when a known supplier switches to a new BCC IIK owned by the exact same BIN."""
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
-    if not supplier_history:
-        return False
-    if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
-        return False
-    known_iiks = {p["recipient_iik"] for p in supplier_history}
-    if req.recipient_iik in known_iiks:
-        return False
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        sup = prof.get_supplier(req.recipient_bin)
+        if sup is None:
+            return False
+        if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+            return False
+        if req.recipient_iik in sup.known_iiks:
+            return False
+    else:
+        supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+        if not supplier_history:
+            return False
+        if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+            return False
+        if req.recipient_iik in confirm_supplier_accounts(supplier_history).known_iiks:
+            return False
     if iik_bank_code(req.recipient_iik) != BCC_BANK_CODE:
         return False
     account = store.bcc_accounts.get(req.recipient_iik)
@@ -355,9 +406,7 @@ def rule_iik_bank_code_vs_bik(
     )
     act_key = "ev.bank_code_bik" if actual_bank is not None else "ev.bank_code_only"
     act_params = (
-        {"code": code, "bik": actual_bank["bik"]}
-        if actual_bank is not None
-        else {"code": code}
+        {"code": code, "bik": actual_bank["bik"]} if actual_bank is not None else {"code": code}
     )
     return _make_signal(
         rule_id="iik_bank_code_vs_bik",
@@ -691,7 +740,11 @@ def _matches_abbreviated_supplier(
 
     Example: 'ТОО «А-Снаб»' (['а', 'снаб']) against 'ТОО «Алатау Снаб»' (['алатау', 'снаб']).
     """
-    if len(sup_cyr_tokens) < 2 or len(cand_cyr_tokens) != len(sup_cyr_tokens) or not distinctive_cyr:
+    if (
+        len(sup_cyr_tokens) < 2
+        or len(cand_cyr_tokens) != len(sup_cyr_tokens)
+        or not distinctive_cyr
+    ):
         return False
     distinctive_set = set(distinctive_cyr)
     has_abbr = False
@@ -760,7 +813,9 @@ def _score_lookalike_pair(
         if sup_compact in cand_compact:
             return max(sim, LOOKALIKE_SIMILARITY_THRESHOLD), sim
         if _all_supplier_tokens_matched(sup_tokens, cand_tokens):
-            return max(sim, float(fuzz.token_set_ratio(cand, sup)), LOOKALIKE_SIMILARITY_THRESHOLD), sim
+            return max(
+                sim, float(fuzz.token_set_ratio(cand, sup)), LOOKALIKE_SIMILARITY_THRESHOLD
+            ), sim
 
     # 4. Distinctive token match with lowered similarity threshold (~70).
     if sim >= LOOKALIKE_DISTINCTIVE_THRESHOLD and _has_distinctive_token_match(
@@ -771,7 +826,12 @@ def _score_lookalike_pair(
     return 0.0, sim
 
 
-def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] | None:
+def find_lookalike_supplier(
+    req: CheckRequest,
+    store: Store,
+    *,
+    profiles: ClientProfiles | None = None,
+) -> dict[str, Any] | None:
     """Find the closest known client supplier with lookalike similarity and a different BIN.
 
     Skipped (M1) if recipient_bin already has its own payment history or is trusted.
@@ -780,7 +840,11 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] |
     Returns dict with bin, name, first_seen, similarity (true normalized similarity 0..100),
     and match_score.
     """
-    if store.get_supplier_history(req.recipient_bin, req.payer_id):
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        if prof.get_supplier(req.recipient_bin) is not None:
+            return None
+    elif store.get_supplier_history(req.recipient_bin, req.payer_id):
         return None
     if store.is_bin_trusted(req.recipient_bin, payer_id=req.payer_id):
         return None
@@ -792,9 +856,96 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] |
         return None
 
     cand_is_ie = (
-        detect_legal_form_kind(req.recipient_name) == "iin"
-        or bin_kind(req.recipient_bin) == "iin"
+        detect_legal_form_kind(req.recipient_name) == "iin" or bin_kind(req.recipient_bin) == "iin"
     )
+
+    if prof is not None:
+        cand_ie_init = extract_ie_initials(req.recipient_name) if cand_is_ie else ()
+        norm_req_tokens = norm_req.split()
+        cyr_req_tokens = cyr_req.split()
+        trans_req_tokens = trans_req.split()
+        trans_req_compact = "".join(trans_req_tokens)
+        cand_core = _strip_wrapper_phrases(trans_req_tokens) if trans_req_tokens else []
+
+        best_match: dict[str, Any] | None = None
+        best_score = 0.0
+        best_similarity = 0.0
+        for supplier in prof.suppliers.values():
+            if supplier.recipient_bin == req.recipient_bin:
+                continue
+            if cand_is_ie and supplier.is_ie and supplier.ie_initials:
+                if not cand_ie_init:
+                    continue
+                min_len = min(len(cand_ie_init), len(supplier.ie_initials))
+                if cand_ie_init[:min_len] != supplier.ie_initials[:min_len]:
+                    continue
+
+            norm_sup = supplier.normalized_name
+            cyr_sup = supplier.translit_cyr
+            lat_sup = supplier.translit_lat
+            trans_sup = supplier.translated_name
+            if not norm_sup and not cyr_sup:
+                continue
+
+            sup_base_cyr_tokens = list(supplier.base_cyr_tokens)
+            distinctive_cyr = list(supplier.distinctive_cyr_tokens)
+            distinctive_lat = list(supplier.distinctive_lat_tokens)
+            sup_is_ie = supplier.is_ie
+
+            view_results = (
+                _score_lookalike_pair(norm_req, norm_sup, distinctive_cyr),
+                _score_lookalike_pair(cyr_req, cyr_sup, distinctive_cyr),
+                _score_lookalike_pair(lat_req, lat_sup, distinctive_lat),
+            )
+            matched_score = max(score for score, _ in view_results)
+            true_sim = max(sim for _, sim in view_results)
+
+            # 5. Translated business-term equivalence (e.g. 'Alatau Supply' -> 'алатау снаб').
+            if trans_req and trans_sup and distinctive_cyr:
+                trans_sim = _true_pair_similarity(trans_req, trans_sup)
+                if trans_sim >= LOOKALIKE_SIMILARITY_THRESHOLD and _has_distinctive_token_match(
+                    distinctive_cyr, trans_req_tokens, trans_req_compact
+                ):
+                    matched_score = max(
+                        matched_score,
+                        min(trans_sim, LOOKALIKE_BLOCK_SIMILARITY_THRESHOLD - 1.0),
+                    )
+
+            # 6. Entity-wrapper clone (e.g. 'Торговый дом Алатау' -> ['алатау'] vs 'Алатау Снаб').
+            if (
+                not sup_is_ie
+                and trans_req
+                and distinctive_cyr
+                and cand_core
+                and cand_core != trans_req_tokens
+                and len("".join(distinctive_cyr)) >= LOOKALIKE_DISTINCTIVE_WRAPPER_MIN_LEN
+                and cand_core == distinctive_cyr
+            ):
+                matched_score = max(matched_score, LOOKALIKE_DISTINCTIVE_THRESHOLD)
+
+            # 7. Initial-letter abbreviation of distinctive brand token (e.g. 'А-Снаб' vs 'Алатау Снаб').
+            if not sup_is_ie and not cand_is_ie and distinctive_cyr:
+                for cand_toks in (norm_req_tokens, cyr_req_tokens, trans_req_tokens):
+                    if _matches_abbreviated_supplier(
+                        cand_toks, sup_base_cyr_tokens, distinctive_cyr
+                    ):
+                        matched_score = max(matched_score, LOOKALIKE_DISTINCTIVE_THRESHOLD)
+                        break
+
+            if matched_score > best_score or (
+                matched_score > 0.0 and matched_score == best_score and true_sim > best_similarity
+            ):
+                best_score = matched_score
+                best_similarity = true_sim
+                best_match = {
+                    "bin": supplier.recipient_bin,
+                    "name": supplier.first_name,
+                    "first_seen": supplier.first_paid_at,
+                    "similarity": true_sim,
+                    "match_score": matched_score,
+                }
+
+        return best_match
 
     history = store.get_client_history(req.payer_id)
     suppliers_by_bin: dict[str, dict[str, str]] = {}
@@ -809,21 +960,21 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] |
                 "first_seen": payment["paid_at"],
             }
 
-    best_match: dict[str, Any] | None = None
+    best_match = None
     best_score = 0.0
     best_similarity = 0.0
-    for supplier in suppliers_by_bin.values():
+    for supplier_raw in suppliers_by_bin.values():
         if not _ie_initials_compatible(
             req.recipient_name,
-            supplier["name"],
+            supplier_raw["name"],
             req.recipient_bin,
-            supplier["bin"],
+            supplier_raw["bin"],
         ):
             continue
 
-        norm_sup = normalize_company_name(supplier["name"])
-        cyr_sup, lat_sup = normalize_company_name_translit(supplier["name"])
-        trans_sup = normalize_company_name_translated(supplier["name"])
+        norm_sup = normalize_company_name(supplier_raw["name"])
+        cyr_sup, lat_sup = normalize_company_name_translit(supplier_raw["name"])
+        trans_sup = normalize_company_name_translated(supplier_raw["name"])
         if not norm_sup and not cyr_sup:
             continue
 
@@ -832,8 +983,8 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] |
             sup_base_cyr_tokens
         )
         sup_is_ie = (
-            detect_legal_form_kind(supplier["name"]) == "iin"
-            or bin_kind(supplier["bin"]) == "iin"
+            detect_legal_form_kind(supplier_raw["name"]) == "iin"
+            or bin_kind(supplier_raw["bin"]) == "iin"
         )
 
         view_results = (
@@ -881,7 +1032,7 @@ def find_lookalike_supplier(req: CheckRequest, store: Store) -> dict[str, Any] |
             best_score = matched_score
             best_similarity = true_sim
             best_match = {
-                **supplier,
+                **supplier_raw,
                 "similarity": true_sim,
                 "match_score": matched_score,
             }
@@ -894,6 +1045,8 @@ def rule_lookalike_supplier(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
+    lookalike_match: Any = _UNSET,
 ) -> Signal | None:
     """Detect supplier name impersonation against known client suppliers with a different BIN.
 
@@ -901,7 +1054,11 @@ def rule_lookalike_supplier(
     block (red, 100 pts) regardless of BIN age because a legal entity's BIN never changes.
     Fuzzy/variant/wrapper/translated/abbreviated lookalikes return primary (60 pts).
     """
-    match = find_lookalike_supplier(req, store)
+    match = (
+        find_lookalike_supplier(req, store, profiles=profiles)
+        if lookalike_match is _UNSET
+        else lookalike_match
+    )
     if match is None:
         return None
 
@@ -954,6 +1111,7 @@ def rule_bin_name_mismatch(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Flag when the recipient name does not match the legal entity registered for this BIN.
 
@@ -966,8 +1124,17 @@ def rule_bin_name_mismatch(
     if name_similarity(req.recipient_name, registered_name) >= LOOKALIKE_SIMILARITY_THRESHOLD:
         return None
 
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
-    pair_in_history = any(p["recipient_iik"] == req.recipient_iik for p in supplier_history)
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        sup = prof.get_supplier(req.recipient_bin)
+        pair_in_history = sup is not None and req.recipient_iik in sup.known_iiks
+        since_date = sup.last_paid_at if sup is not None else None
+    else:
+        supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+        pair_in_history = (
+            req.recipient_iik in confirm_supplier_accounts(supplier_history).known_iiks
+        )
+        since_date = supplier_history[-1]["paid_at"] if supplier_history else None
 
     if pair_in_history:
         return _make_signal(
@@ -980,7 +1147,7 @@ def rule_bin_name_mismatch(
                 lang=lang,
                 expected=registered_name,
                 actual=req.recipient_name,
-                since=supplier_history[-1]["paid_at"],
+                since=since_date,
             ),
             lang=lang,
             registered_name=registered_name,
@@ -1007,44 +1174,78 @@ def rule_iik_belongs_to_other_counterparty(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Flag when the IIK was previously paid or trusted under a different supplier BIN (M7)."""
-    history = store.get_client_history(req.payer_id)
-    other_payments = [
-        p
-        for p in history
-        if p["recipient_iik"] == req.recipient_iik and p["recipient_bin"] != req.recipient_bin
-    ]
-    if other_payments:
-        last_other = other_payments[-1]
-        other_name = last_other["recipient_name"]
-        other_bin = last_other["recipient_bin"]
-        return _make_signal(
-            rule_id="iik_belongs_to_other_counterparty",
-            points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
-            severity="primary",
-            message_key="rule.iik_belongs_to_other_counterparty",
-            evidence=_make_evidence(
-                "iik",
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        last_usage = prof.find_other_counterparty_for_iik(req.recipient_iik, req.recipient_bin)
+        if last_usage is not None:
+            return _make_signal(
+                rule_id="iik_belongs_to_other_counterparty",
+                points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
+                severity="primary",
+                message_key="rule.iik_belongs_to_other_counterparty",
+                evidence=_make_evidence(
+                    "iik",
+                    lang=lang,
+                    expected_key="ev.account_for_bin",
+                    expected_params={"bin": req.recipient_bin},
+                    actual_key="ev.used_for_other",
+                    actual_params={
+                        "name": last_usage.recipient_name,
+                        "bin": last_usage.recipient_bin,
+                    },
+                    since=last_usage.paid_at,
+                ),
                 lang=lang,
-                expected_key="ev.account_for_bin",
-                expected_params={"bin": req.recipient_bin},
-                actual_key="ev.used_for_other",
-                actual_params={"name": other_name, "bin": other_bin},
-                since=last_other["paid_at"],
-            ),
-            lang=lang,
-            other_name=other_name,
-        )
+                other_name=last_usage.recipient_name,
+            )
+    else:
+        history = store.get_client_history(req.payer_id)
+        other_payments = [
+            p
+            for p in history
+            if p["recipient_iik"] == req.recipient_iik and p["recipient_bin"] != req.recipient_bin
+        ]
+        if other_payments:
+            last_other = other_payments[-1]
+            other_name = last_other["recipient_name"]
+            other_bin = last_other["recipient_bin"]
+            return _make_signal(
+                rule_id="iik_belongs_to_other_counterparty",
+                points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
+                severity="primary",
+                message_key="rule.iik_belongs_to_other_counterparty",
+                evidence=_make_evidence(
+                    "iik",
+                    lang=lang,
+                    expected_key="ev.account_for_bin",
+                    expected_params={"bin": req.recipient_bin},
+                    actual_key="ev.used_for_other",
+                    actual_params={"name": other_name, "bin": other_bin},
+                    since=last_other["paid_at"],
+                ),
+                lang=lang,
+                other_name=other_name,
+            )
 
     for trusted_bin, trusted_iik, info in store.get_trusted_entries_for_payer(req.payer_id):
         if trusted_iik == req.recipient_iik and trusted_bin != req.recipient_bin:
-            other_hist = store.get_supplier_history(trusted_bin, req.payer_id)
-            other_name = (
-                other_hist[-1]["recipient_name"]
-                if other_hist
-                else store.registry.get(trusted_bin, f"БИН {trusted_bin}")
-            )
+            if prof is not None:
+                other_sup = prof.get_supplier(trusted_bin)
+                other_name = (
+                    other_sup.last_name
+                    if other_sup is not None
+                    else store.registry.get(trusted_bin, f"БИН {trusted_bin}")
+                )
+            else:
+                other_hist = store.get_supplier_history(trusted_bin, req.payer_id)
+                other_name = (
+                    other_hist[-1]["recipient_name"]
+                    if other_hist
+                    else store.registry.get(trusted_bin, f"БИН {trusted_bin}")
+                )
             return _make_signal(
                 rule_id="iik_belongs_to_other_counterparty",
                 points=WEIGHT_IIK_BELONGS_TO_OTHER_COUNTERPARTY,
@@ -1071,21 +1272,39 @@ def rule_iik_changed(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Flag a new, untrusted IIK for a known supplier BIN (skipped if BCC-verified same BIN)."""
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
-    if not supplier_history:
-        return None
-    if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
-        return None
-    if is_bcc_bank_verified_new_account(req, store):
-        return None
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        sup = prof.get_supplier(req.recipient_bin)
+        if sup is None:
+            return None
+        if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+            return None
+        if is_bcc_bank_verified_new_account(req, store, profiles=prof):
+            return None
+        if req.recipient_iik in sup.known_iiks:
+            return None
+        expected_iik = sup.last_known_iik
+        since_date = sup.last_known_paid_at
+    else:
+        supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+        if not supplier_history:
+            return None
+        if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+            return None
+        if is_bcc_bank_verified_new_account(req, store):
+            return None
 
-    known_iiks = {p["recipient_iik"] for p in supplier_history}
-    if req.recipient_iik in known_iiks:
-        return None
+        confirmation = confirm_supplier_accounts(supplier_history)
+        if req.recipient_iik in confirmation.known_iiks:
+            return None
 
-    last_payment = supplier_history[-1]
+        last_payment = supplier_history[confirmation.last_known_index]
+        expected_iik = last_payment["recipient_iik"]
+        since_date = last_payment["paid_at"]
+
     return _make_signal(
         rule_id="iik_changed",
         points=WEIGHT_IIK_CHANGED,
@@ -1094,9 +1313,9 @@ def rule_iik_changed(
         evidence=_make_evidence(
             "iik",
             lang=lang,
-            expected=last_payment["recipient_iik"],
+            expected=expected_iik,
             actual=req.recipient_iik,
-            since=last_payment["paid_at"],
+            since=since_date,
         ),
         lang=lang,
     )
@@ -1107,33 +1326,53 @@ def rule_bank_changed(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Flag a known supplier switching to a new untrusted IIK in another bank."""
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
-    if not supplier_history:
-        return None
-    if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
-        return None
-    if is_bcc_bank_verified_new_account(req, store):
-        return None
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        sup = prof.get_supplier(req.recipient_bin)
+        if sup is None:
+            return None
+        if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+            return None
+        if is_bcc_bank_verified_new_account(req, store, profiles=prof):
+            return None
+        if req.recipient_iik in sup.known_iiks:
+            return None
+        if req.recipient_bik in sup.known_biks:
+            return None
+        median_amount = sup.amount_median
+        old_bank = sup.last_known_bank
+        since_date = sup.last_known_paid_at
+    else:
+        supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+        if not supplier_history:
+            return None
+        if store.is_trusted(req.recipient_bin, req.recipient_iik, payer_id=req.payer_id):
+            return None
+        if is_bcc_bank_verified_new_account(req, store):
+            return None
 
-    known_iiks = {p["recipient_iik"] for p in supplier_history}
-    if req.recipient_iik in known_iiks:
-        return None
+        confirmation = confirm_supplier_accounts(supplier_history)
+        if req.recipient_iik in confirmation.known_iiks:
+            return None
 
-    known_biks = {p["recipient_bik"] for p in supplier_history}
-    if req.recipient_bik in known_biks:
-        return None
+        if req.recipient_bik in confirmation.known_biks:
+            return None
 
-    last_payment = supplier_history[-1]
-    median_amount = statistics.median(float(p["amount_kzt"]) for p in supplier_history)
+        last_payment = supplier_history[confirmation.last_known_index]
+        median_amount = statistics.median(float(p["amount_kzt"]) for p in supplier_history)
+        old_bank = (
+            store.get_bank_name_by_bik(last_payment["recipient_bik"])
+            or last_payment["recipient_bik"]
+        )
+        since_date = last_payment["paid_at"]
+
     points = (
         WEIGHT_BANK_CHANGED_HIGH_AMOUNT
         if req.amount_kzt >= median_amount
         else WEIGHT_BANK_CHANGED_AMPLIFIER
-    )
-    old_bank = (
-        store.get_bank_name_by_bik(last_payment["recipient_bik"]) or last_payment["recipient_bik"]
     )
     new_bank = store.get_bank_name_by_bik(req.recipient_bik) or req.recipient_bik
     return _make_signal(
@@ -1146,7 +1385,7 @@ def rule_bank_changed(
             lang=lang,
             expected=old_bank,
             actual=new_bank,
-            since=last_payment["paid_at"],
+            since=since_date,
         ),
         lang=lang,
         old_bank=old_bank,
@@ -1203,14 +1442,26 @@ def rule_knp_unusual(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Amplifier (+15 pts) when optional KNP differs from supplier's historical KNP values."""
     if not req.knp:
         return None
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
-    known_knps = sorted({str(p.get("knp", "")).strip() for p in supplier_history if p.get("knp")})
-    if not known_knps or req.knp in known_knps:
-        return None
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        sup = prof.get_supplier(req.recipient_bin)
+        if sup is None or not sup.known_knps or req.knp in sup.known_knps:
+            return None
+        known_knps = sorted(sup.known_knps)
+        since_date = sup.last_paid_at
+    else:
+        supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+        known_knps = sorted(
+            {str(p.get("knp", "")).strip() for p in supplier_history if p.get("knp")}
+        )
+        if not known_knps or req.knp in known_knps:
+            return None
+        since_date = supplier_history[-1]["paid_at"]
     expected_knp = ", ".join(known_knps)
     return _make_signal(
         rule_id="knp_unusual",
@@ -1224,7 +1475,7 @@ def rule_knp_unusual(
             expected_params={"knp": expected_knp},
             actual_key="ev.knp_label",
             actual_params={"knp": req.knp},
-            since=supplier_history[-1]["paid_at"],
+            since=since_date,
         ),
         lang=lang,
         actual_knp=req.knp,
@@ -1509,6 +1760,7 @@ def rule_amount_anomaly(
     *,
     reference_bin: str | None = None,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Evaluate payment amount against supplier median + MAD, or client p90 on first payment (H2).
 
@@ -1519,10 +1771,21 @@ def rule_amount_anomaly(
       * amount > client p90 -> amplifier, 10..20 pts
     """
     target_bin = reference_bin or req.recipient_bin
-    supplier_history = store.get_supplier_history(target_bin, req.payer_id)
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        sup = prof.get_supplier(target_bin)
+        has_history = sup is not None
+        payments_count = sup.payments_count if sup is not None else 0
+    else:
+        sup = None
+        supplier_history = store.get_supplier_history(target_bin, req.payer_id)
+        has_history = len(supplier_history) > 0
+        payments_count = len(supplier_history)
 
-    if len(supplier_history) == 0:
-        client_p90 = compute_client_p90(store, req.payer_id)
+    if not has_history:
+        client_p90 = (
+            prof.client_p90 if prof is not None else compute_client_p90(store, req.payer_id)
+        )
         if client_p90 is None or client_p90 <= 0 or req.amount_kzt <= client_p90:
             return None
         ratio_p90 = req.amount_kzt / client_p90
@@ -1559,16 +1822,25 @@ def rule_amount_anomaly(
             client_p90_kzt=client_p90_kzt,
         )
 
-    if len(supplier_history) < AMOUNT_ANOMALY_MIN_HISTORY:
+    if payments_count < AMOUNT_ANOMALY_MIN_HISTORY:
         return None
 
-    amounts = [float(p["amount_kzt"]) for p in supplier_history]
-    median_amount = statistics.median(amounts)
+    if sup is not None:
+        median_amount = sup.amount_median
+        supplier_p90 = sup.amount_p90
+        mad = sup.amount_mad
+        first_paid_at = sup.first_paid_at
+    else:
+        amounts = [float(p["amount_kzt"]) for p in supplier_history]
+        median_amount = statistics.median(amounts)
+        supplier_p90 = _compute_percentile(sorted(amounts), 0.9)
+        mad = statistics.median([abs(x - median_amount) for x in amounts])
+        first_paid_at = supplier_history[0]["paid_at"]
+
     if median_amount <= 0:
         return None
 
     ratio = req.amount_kzt / median_amount
-    supplier_p90 = _compute_percentile(sorted(amounts), 0.9)
     if supplier_p90 > 0 and req.amount_kzt >= AMOUNT_SUPPLIER_EXTREME_P90_MULT * supplier_p90:
         median_kzt = _format_kzt(median_amount)
         return _make_signal(
@@ -1582,7 +1854,7 @@ def rule_amount_anomaly(
                 expected_key="ev.amount_around",
                 expected_params={"amount": median_kzt},
                 actual=_format_kzt(req.amount_kzt),
-                since=supplier_history[0]["paid_at"],
+                since=first_paid_at,
             ),
             lang=lang,
             ratio=f"{ratio:.1f}",
@@ -1592,7 +1864,6 @@ def rule_amount_anomaly(
     if ratio < 1.5:
         return None
 
-    mad = statistics.median([abs(x - median_amount) for x in amounts])
     severity: Severity
     if mad > 0:
         mod_z = 0.6745 * (req.amount_kzt - median_amount) / mad
@@ -1636,7 +1907,7 @@ def rule_amount_anomaly(
             expected_key="ev.amount_around",
             expected_params={"amount": median_kzt},
             actual=_format_kzt(req.amount_kzt),
-            since=supplier_history[0]["paid_at"],
+            since=first_paid_at,
         ),
         lang=lang,
         ratio=f"{ratio:.1f}",
@@ -1649,10 +1920,14 @@ def rule_first_payment(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Info signal when the client has no payment history with this recipient BIN."""
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
-    if supplier_history:
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        if prof.get_supplier(req.recipient_bin) is not None:
+            return None
+    elif store.get_supplier_history(req.recipient_bin, req.payer_id):
         return None
     return _make_signal(
         rule_id="first_payment",
@@ -1692,26 +1967,23 @@ def _fold_urgent_text(text: str) -> str:
 
 def _build_phrase_pattern(folded_phrase: str) -> re.Pattern[str]:
     return re.compile(
-        r"(?<!\w)"
-        + r"\s+".join(re.escape(part) for part in folded_phrase.split())
-        + r"(?!\w)",
+        r"(?<!\w)" + r"\s+".join(re.escape(part) for part in folded_phrase.split()) + r"(?!\w)",
         flags=re.UNICODE,
     )
 
 
-_CYR_URGENT_PHRASES: tuple[str, ...] = tuple(
-    p for p in URGENT_PHRASES if not p.isascii()
-)
+_CYR_URGENT_PHRASES: tuple[str, ...] = tuple(p for p in URGENT_PHRASES if not p.isascii())
 
 _URGENT_CYR_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (
         stem,
-        re.compile(r"(?<!\w)" + re.escape(_fold_urgent_text(stem)) + r"\w*(?!\w)", flags=re.UNICODE),
+        re.compile(
+            r"(?<!\w)" + re.escape(_fold_urgent_text(stem)) + r"\w*(?!\w)", flags=re.UNICODE
+        ),
     )
     for stem in URGENT_CYRILLIC_STEMS
 ) + tuple(
-    (phrase, _build_phrase_pattern(_fold_urgent_text(phrase)))
-    for phrase in _CYR_URGENT_PHRASES
+    (phrase, _build_phrase_pattern(_fold_urgent_text(phrase))) for phrase in _CYR_URGENT_PHRASES
 )
 
 _URGENT_LAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
@@ -1720,10 +1992,7 @@ _URGENT_LAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         re.compile(r"(?<!\w)" + re.escape(stem.lower()) + r"[a-z]*(?!\w)", flags=re.UNICODE),
     )
     for stem in URGENT_LATIN_STEMS
-) + tuple(
-    (phrase, _build_phrase_pattern(phrase.lower()))
-    for phrase in URGENT_LATIN_PHRASES
-)
+) + tuple((phrase, _build_phrase_pattern(phrase.lower())) for phrase in URGENT_LATIN_PHRASES)
 
 
 def rule_bin_young(
@@ -1840,9 +2109,10 @@ def rule_bcc_owner_verified(
     store: Store,
     *,
     lang: Lang = DEFAULT_LANG,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Info signal when a known supplier's new BCC IIK is confirmed to belong to the same BIN."""
-    if not is_bcc_bank_verified_new_account(req, store):
+    if not is_bcc_bank_verified_new_account(req, store, profiles=profiles):
         return None
     return _make_signal(
         rule_id="bcc_owner_verified",
@@ -1867,24 +2137,27 @@ def rule_duplicate_invoice(
     today: date = DEMO_TODAY,
     lang: Lang = DEFAULT_LANG,
     include_recent_memory: bool = True,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Flag duplicate invoice number to the same recipient within 90 days (history + memory)."""
     invoice_no = extract_invoice_number(req.purpose)
     if not invoice_no:
         return None
 
+    prof = _resolve_profiles(store, req.payer_id, profiles)
     matched_dates: list[str] = []
-    for p in store.get_supplier_history(req.recipient_bin, req.payer_id):
-        paid_at_str = str(p.get("paid_at", ""))
-        try:
-            paid_dt = date.fromisoformat(paid_at_str[:10])
-        except ValueError:
-            continue
-        days_ago = max(0, (today - paid_dt).days)
-        if days_ago > DUPLICATE_INVOICE_WINDOW_DAYS:
-            continue
-        if extract_invoice_number(p.get("purpose", "")) == invoice_no:
-            matched_dates.append(paid_at_str[:10])
+    if prof is None or prof.get_supplier(req.recipient_bin) is not None:
+        for p in store.get_supplier_history(req.recipient_bin, req.payer_id):
+            paid_at_str = str(p.get("paid_at", ""))
+            try:
+                paid_dt = date.fromisoformat(paid_at_str[:10])
+            except ValueError:
+                continue
+            days_ago = max(0, (today - paid_dt).days)
+            if days_ago > DUPLICATE_INVOICE_WINDOW_DAYS:
+                continue
+            if extract_invoice_number(p.get("purpose", "")) == invoice_no:
+                matched_dates.append(paid_at_str[:10])
 
     if include_recent_memory:
         req_hash = compute_request_sha256(
@@ -1931,11 +2204,16 @@ def rule_new_recipient_accumulated(
     today: date = DEMO_TODAY,
     lang: Lang = DEFAULT_LANG,
     include_recent_memory: bool = True,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Flag cumulative amount to a new recipient across multiple checks within 7 days."""
     if not include_recent_memory:
         return None
-    if store.get_supplier_history(req.recipient_bin, req.payer_id):
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    if prof is not None:
+        if prof.get_supplier(req.recipient_bin) is not None:
+            return None
+    elif store.get_supplier_history(req.recipient_bin, req.payer_id):
         return None
 
     req_hash = compute_request_sha256(req, resolved_payer_id=store.resolve_payer_id(req.payer_id))
@@ -1951,8 +2229,10 @@ def rule_new_recipient_accumulated(
 
     count = len(recent) + 1
     accum_total = sum(float(c["amount_kzt"]) for c in recent) + req.amount_kzt
-    client_p90 = compute_client_p90(store, req.payer_id)
-    client_median = compute_client_median(store, req.payer_id)
+    client_p90 = prof.client_p90 if prof is not None else compute_client_p90(store, req.payer_id)
+    client_median = (
+        prof.client_median if prof is not None else compute_client_median(store, req.payer_id)
+    )
 
     severity: Severity
     if client_p90 and accum_total > AMOUNT_FIRST_PAYMENT_RED_P90_MULT * client_p90:
@@ -2002,9 +2282,16 @@ def rule_structuring_72h(
     today: date = DEMO_TODAY,
     lang: Lang = DEFAULT_LANG,
     include_recent_memory: bool = True,
+    profiles: ClientProfiles | None = None,
 ) -> Signal | None:
     """Detect payment splitting over 72 hours (history + in-memory checks) against median."""
-    supplier_history = store.get_supplier_history(req.recipient_bin, req.payer_id)
+    prof = _resolve_profiles(store, req.payer_id, profiles)
+    sup = prof.get_supplier(req.recipient_bin) if prof is not None else None
+    supplier_history = (
+        store.get_supplier_history(req.recipient_bin, req.payer_id)
+        if (prof is None or sup is not None)
+        else []
+    )
     window_days = max(1, STRUCTURING_WINDOW_HOURS // 24)
 
     hist_72h = []
@@ -2040,14 +2327,23 @@ def rule_structuring_72h(
     )
 
     severity: Severity
-    if supplier_history:
-        amounts = [float(p["amount_kzt"]) for p in supplier_history if float(p["amount_kzt"]) > 0]
-        if not amounts:
-            return None
-        median_amount = float(statistics.median(amounts))
-        if median_amount <= 0:
-            return None
-        supplier_p90 = _compute_percentile(sorted(amounts), 0.9)
+    has_supplier_history = (sup is not None) if prof is not None else bool(supplier_history)
+    if has_supplier_history:
+        if sup is not None:
+            if sup.positive_amount_median is None or sup.positive_amount_median <= 0:
+                return None
+            median_amount = sup.positive_amount_median
+            supplier_p90 = sup.positive_amount_p90 or 0.0
+        else:
+            amounts = [
+                float(p["amount_kzt"]) for p in supplier_history if float(p["amount_kzt"]) > 0
+            ]
+            if not amounts:
+                return None
+            median_amount = float(statistics.median(amounts))
+            if median_amount <= 0:
+                return None
+            supplier_p90 = _compute_percentile(sorted(amounts), 0.9)
         ratio = total_72h / median_amount
 
         if supplier_p90 > 0 and total_72h >= AMOUNT_SUPPLIER_EXTREME_P90_MULT * supplier_p90:
@@ -2067,8 +2363,12 @@ def rule_structuring_72h(
             return None
         ref_amount_kzt = _format_kzt(median_amount)
     else:
-        client_median = compute_client_median(store, req.payer_id)
-        client_p90 = compute_client_p90(store, req.payer_id)
+        client_median = (
+            prof.client_median if prof is not None else compute_client_median(store, req.payer_id)
+        )
+        client_p90 = (
+            prof.client_p90 if prof is not None else compute_client_p90(store, req.payer_id)
+        )
         if not client_median or client_median <= 0:
             return None
         ratio = total_72h / client_median

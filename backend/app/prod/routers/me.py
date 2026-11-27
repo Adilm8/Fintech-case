@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
+from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
-from app.i18n import DEFAULT_LANG, Lang
+from app.i18n import DEFAULT_LANG, MESSAGES, Lang
 from app.prod.audit_db import append_audit
 from app.prod.db import get_db, tx
-from app.prod.deps import AuthContext, LangQuery, current_session
+from app.prod.deps import (
+    MUST_CHANGE_PASSWORD_HEADER,
+    AuthContext,
+    LangQuery,
+    current_session,
+)
 from app.prod.errors import ProdError
 from app.prod.schemas import (
     ChangePasswordRequest,
@@ -19,9 +26,28 @@ from app.prod.schemas import (
     UpdateProfileRequest,
     UserProfile,
 )
-from app.prod.security import hash_password, utc_now_iso, verify_password
+from app.prod.security import hash_password, utc_now, utc_now_iso, verify_password
 
 router = APIRouter(prefix="/me", tags=["profile"])
+
+PASSWORD_CHANGE_MAX_FAILURES: int = 5
+PASSWORD_CHANGE_WINDOW_SECONDS: int = 15 * 60
+
+FORBIDDEN_FULL_NAME_ROLE_WORDS: tuple[str, ...] = (
+    "директор",
+    "director",
+    "бухгалтер",
+    "accountant",
+    "аналитик",
+    "analyst",
+    "админ",
+    "admin",
+)
+
+
+def _contains_forbidden_role_word(full_name: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", full_name).casefold()
+    return any(word in normalized for word in FORBIDDEN_FULL_NAME_ROLE_WORDS)
 
 
 def _load_profile(conn: sqlite3.Connection, user_id: int) -> UserProfile:
@@ -89,7 +115,19 @@ def update_my_profile(
     lang: LangQuery = DEFAULT_LANG,
 ) -> UserProfile:
     """Update the authenticated user's full_name and/or default_lang and record audit entry."""
-    _ = lang
+    if payload.full_name is not None and _contains_forbidden_role_word(payload.full_name):
+        fallback_msg = (
+            "Full name must not contain role titles (director, accountant, analyst, admin)."
+        )
+        i18n_entry = MESSAGES.get("error.prod.full_name_role_word")
+        message = i18n_entry[lang] if i18n_entry is not None else fallback_msg
+        raise ProdError(
+            422,
+            "validation_error",
+            detail=message,
+            extra={"errors": [{"field": "full_name", "message": message}]},
+        )
+
     now_iso = utc_now_iso()
     with tx(conn):
         current = _load_profile(conn, ctx.user.id)
@@ -122,12 +160,34 @@ def update_my_profile(
 @router.post("/password", response_model=PasswordChangeResponse)
 def change_my_password(
     payload: ChangePasswordRequest,
+    response: Response,
     ctx: Annotated[AuthContext, Depends(current_session)],
     conn: Annotated[sqlite3.Connection, Depends(get_db)],
     lang: LangQuery = DEFAULT_LANG,
 ) -> PasswordChangeResponse:
     """Verify current password, store new scrypt hash, revoke all other sessions, and audit."""
-    _ = lang
+    now = utc_now()
+    now_iso = now.isoformat()
+    cutoff_iso = (now - timedelta(seconds=PASSWORD_CHANGE_WINDOW_SECONDS)).isoformat()
+
+    active_row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM password_change_attempts
+        WHERE user_id = ? AND attempted_at > ?
+        """,
+        (ctx.user.id, cutoff_iso),
+    ).fetchone()
+    active_failures = int(active_row["cnt"]) if active_row is not None else 0
+    if active_failures >= PASSWORD_CHANGE_MAX_FAILURES:
+        i18n_entry = MESSAGES.get("error.prod.too_many_password_attempts")
+        detail = (
+            i18n_entry[lang]
+            if i18n_entry is not None
+            else "Too many failed password change attempts. Please try again in 15 minutes."
+        )
+        raise ProdError(429, "too_many_attempts", detail=detail)
+
     row = conn.execute(
         "SELECT password_hash FROM users WHERE id = ?",
         (ctx.user.id,),
@@ -137,9 +197,24 @@ def change_my_password(
 
     if not verify_password(payload.current_password, str(row["password_hash"])):
         with tx(conn):
+            conn.execute(
+                """
+                DELETE FROM password_change_attempts
+                WHERE user_id = ? AND attempted_at <= ?
+                """,
+                (ctx.user.id, cutoff_iso),
+            )
+            conn.execute(
+                """
+                INSERT INTO password_change_attempts (user_id, attempted_at)
+                VALUES (?, ?)
+                """,
+                (ctx.user.id, now_iso),
+            )
             append_audit(
                 conn,
                 action="password_change_failed",
+                timestamp=now_iso,
                 user_id=ctx.user.id,
                 user_login=ctx.user.login,
                 role=ctx.user.role,
@@ -152,11 +227,19 @@ def change_my_password(
         raise ProdError(422, "password_same_as_current")
 
     new_hash = hash_password(payload.new_password)
-    now_iso = utc_now_iso()
+    changed_iso = utc_now_iso()
     with tx(conn):
         conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            """
+            UPDATE users
+            SET password_hash = ?, must_change_password = 0
+            WHERE id = ?
+            """,
             (new_hash, ctx.user.id),
+        )
+        conn.execute(
+            "DELETE FROM password_change_attempts WHERE user_id = ?",
+            (ctx.user.id,),
         )
         cur = conn.execute(
             """
@@ -166,13 +249,13 @@ def change_my_password(
               AND token_hash != ?
               AND revoked_at IS NULL
             """,
-            (now_iso, ctx.user.id, ctx.token_hash),
+            (changed_iso, ctx.user.id, ctx.token_hash),
         )
         revoked_count = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
         append_audit(
             conn,
             action="password_changed",
-            timestamp=now_iso,
+            timestamp=changed_iso,
             user_id=ctx.user.id,
             user_login=ctx.user.login,
             role=ctx.user.role,
@@ -180,4 +263,5 @@ def change_my_password(
             details={"revoked_sessions": revoked_count},
         )
 
+    response.headers[MUST_CHANGE_PASSWORD_HEADER] = "0"
     return PasswordChangeResponse(ok=True, revoked_sessions=revoked_count)

@@ -18,6 +18,7 @@ from app.risk.config import (
     THRESHOLD_YELLOW,
 )
 from app.risk.names import find_mixed_script_positions
+from app.risk.profiles import SupplierProfile, confirm_supplier_accounts, profiles_enabled
 from app.risk.rules import (
     build_analyst_details,
     compute_client_p90,
@@ -92,10 +93,18 @@ def _format_kzt(amount: float) -> str:
 
 
 def _diff_positions(in_invoice: str, in_history: str) -> list[int]:
-    """Return 0-based character positions in in_invoice that differ from in_history."""
-    return [
+    """Return 0-based character positions in in_invoice that differ from in_history.
+
+    Returns positions only when at most 4 characters differ; otherwise returns []
+    so callers highlight the entire value as a single block.
+    """
+    positions = [
         idx for idx, ch in enumerate(in_invoice) if idx >= len(in_history) or ch != in_history[idx]
     ]
+    total_diffs = len(positions) + max(0, len(in_history) - len(in_invoice))
+    if total_diffs > 4:
+        return []
+    return positions
 
 
 def _build_history_summary(
@@ -131,10 +140,21 @@ def _build_comparison(
     last = reference_payments[-1] if reference_payments else None
     last_seen = last["paid_at"] if last is not None else None
 
+    # Account rows compare with the last confirmed account when the invoice IIK was only paid
+    # without confirmation (H1): the table must show the change the signals report.
+    acct = last
+    if last is not None and any(
+        p["recipient_iik"] == req.recipient_iik for p in reference_payments
+    ):
+        confirmation = confirm_supplier_accounts(reference_payments)
+        if req.recipient_iik not in confirmation.known_iiks:
+            acct = reference_payments[confirmation.last_known_index]
+    acct_seen = acct["paid_at"] if acct is not None else None
+
     invoice_bank = store.get_bank_name_by_bik(req.recipient_bik) or req.recipient_bik
     history_bank = (
-        (store.get_bank_name_by_bik(last["recipient_bik"]) or last["recipient_bik"])
-        if last is not None
+        (store.get_bank_name_by_bik(acct["recipient_bik"]) or acct["recipient_bik"])
+        if acct is not None
         else None
     )
 
@@ -152,14 +172,14 @@ def _build_comparison(
         last is not None and req.recipient_name != last["recipient_name"]
     )
 
-    iik_differs = not is_trusted and last is not None and req.recipient_iik != last["recipient_iik"]
+    iik_differs = not is_trusted and acct is not None and req.recipient_iik != acct["recipient_iik"]
     iik_diff_pos = (
-        _diff_positions(req.recipient_iik, last["recipient_iik"])
-        if iik_differs and last is not None
+        _diff_positions(req.recipient_iik, acct["recipient_iik"])
+        if iik_differs and acct is not None
         else []
     )
-    bik_differs = not is_trusted and last is not None and req.recipient_bik != last["recipient_bik"]
-    bank_differs = not is_trusted and last is not None and invoice_bank != history_bank
+    bik_differs = not is_trusted and acct is not None and req.recipient_bik != acct["recipient_bik"]
+    bank_differs = not is_trusted and acct is not None and invoice_bank != history_bank
 
     return [
         FieldDiff(
@@ -180,23 +200,149 @@ def _build_comparison(
         FieldDiff(
             field="iik",
             in_invoice=req.recipient_iik,
-            in_history=last["recipient_iik"] if last is not None else None,
-            last_seen=last_seen,
+            in_history=acct["recipient_iik"] if acct is not None else None,
+            last_seen=acct_seen,
             differs=iik_differs,
             diff_positions=iik_diff_pos,
         ),
         FieldDiff(
             field="bik",
             in_invoice=req.recipient_bik,
-            in_history=last["recipient_bik"] if last is not None else None,
-            last_seen=last_seen,
+            in_history=acct["recipient_bik"] if acct is not None else None,
+            last_seen=acct_seen,
             differs=bik_differs,
         ),
         FieldDiff(
             field="bank",
             in_invoice=invoice_bank,
             in_history=history_bank,
+            last_seen=acct_seen,
+            differs=bank_differs,
+        ),
+        FieldDiff(
+            field="amount",
+            in_invoice=invoice_amount,
+            in_history=history_amount,
             last_seen=last_seen,
+            differs=amount_differs,
+        ),
+    ]
+
+
+def _build_history_summary_from_profile(
+    profile: SupplierProfile | None,
+    *,
+    compared_with: str | None = None,
+) -> HistorySummary:
+    if profile is None:
+        return HistorySummary(
+            payments_count=0,
+            last_payment_date=None,
+            median_amount_kzt=None,
+            compared_with=compared_with,
+        )
+    return HistorySummary(
+        payments_count=profile.payments_count,
+        last_payment_date=profile.last_paid_at,
+        median_amount_kzt=profile.amount_median,
+        compared_with=compared_with,
+    )
+
+
+def _build_comparison_from_profile(
+    req: CheckRequest,
+    store: Store,
+    reference_profile: SupplierProfile | None,
+    *,
+    has_amount_anomaly: bool,
+    is_trusted: bool = False,
+) -> list[FieldDiff]:
+    """Build FieldDiff rows from a cached SupplierProfile without scanning history."""
+    last_seen = reference_profile.last_paid_at if reference_profile is not None else None
+    invoice_bank = store.get_bank_name_by_bik(req.recipient_bik) or req.recipient_bik
+    # Account rows compare with the last confirmed account when the invoice IIK was only paid
+    # without confirmation (H1): the table must show the change the signals report.
+    hist_iik: str | None = None
+    hist_bik: str | None = None
+    history_bank: str | None = None
+    acct_seen: str | None = None
+    if reference_profile is not None:
+        if (
+            req.recipient_iik in reference_profile.seen_iiks
+            and req.recipient_iik not in reference_profile.known_iiks
+        ):
+            hist_iik = reference_profile.last_known_iik
+            hist_bik = reference_profile.last_known_bik
+            history_bank = reference_profile.last_known_bank
+            acct_seen = reference_profile.last_known_paid_at
+        else:
+            hist_iik = reference_profile.last_iik
+            hist_bik = reference_profile.last_bik
+            history_bank = reference_profile.last_bank
+            acct_seen = last_seen
+
+    invoice_amount = _format_kzt(req.amount_kzt)
+    history_amount = (
+        _format_kzt(reference_profile.last_amount_kzt) if reference_profile is not None else None
+    )
+    amount_differs = False
+    if reference_profile is not None:
+        last_amt = reference_profile.last_amount_kzt
+        amount_differs = has_amount_anomaly or (
+            last_amt > 0 and abs(req.amount_kzt - last_amt) / last_amt >= 0.25
+        )
+
+    mixed_name_positions = find_mixed_script_positions(req.recipient_name)
+    name_differs = bool(mixed_name_positions) or (
+        reference_profile is not None and req.recipient_name != reference_profile.last_name
+    )
+
+    iik_differs = not is_trusted and hist_iik is not None and req.recipient_iik != hist_iik
+    iik_diff_pos = (
+        _diff_positions(req.recipient_iik, hist_iik) if iik_differs and hist_iik is not None else []
+    )
+    bik_differs = not is_trusted and hist_bik is not None and req.recipient_bik != hist_bik
+    bank_differs = not is_trusted and reference_profile is not None and invoice_bank != history_bank
+
+    return [
+        FieldDiff(
+            field="name",
+            in_invoice=req.recipient_name,
+            in_history=reference_profile.last_name if reference_profile is not None else None,
+            last_seen=last_seen,
+            differs=name_differs,
+            diff_positions=mixed_name_positions,
+        ),
+        FieldDiff(
+            field="bin",
+            in_invoice=req.recipient_bin,
+            in_history=reference_profile.recipient_bin if reference_profile is not None else None,
+            last_seen=last_seen,
+            differs=(
+                reference_profile is not None
+                and req.recipient_bin != reference_profile.recipient_bin
+            ),
+        ),
+        FieldDiff(
+            field="iik",
+            in_invoice=req.recipient_iik,
+            in_history=hist_iik,
+            last_seen=acct_seen,
+            differs=iik_differs,
+            diff_positions=iik_diff_pos,
+        ),
+        FieldDiff(
+            field="bik",
+            in_invoice=req.recipient_bik,
+            in_history=hist_bik,
+            last_seen=acct_seen,
+            differs=bik_differs,
+        ),
+        FieldDiff(
+            field="bank",
+            in_invoice=invoice_bank,
+            in_history=history_bank,
+            last_seen=acct_seen,
             differs=bank_differs,
         ),
         FieldDiff(
@@ -378,9 +524,7 @@ def localize_check_result(
     include_analyst_details: bool | None = None,
 ) -> CheckResult:
     """Return a copy of CheckResult with localized texts and role-appropriate analyst_details."""
-    localized_headline = (
-        t(result.headline_key, lang) if result.headline_key else result.headline_ru
-    )
+    localized_headline = t(result.headline_key, lang) if result.headline_key else result.headline_ru
     localized_signals = [
         sig.model_copy(
             update={
@@ -485,7 +629,16 @@ def check_payment(
         if req.payer_id == effective_payer_id
         else req.model_copy(update={"payer_id": effective_payer_id})
     )
-    supplier_history = store.get_supplier_history(effective_req.recipient_bin, effective_payer_id)
+    use_profiles = profiles_enabled()
+    profiles = store.get_profiles(effective_payer_id) if use_profiles else None
+    supplier_profile = (
+        profiles.get_supplier(effective_req.recipient_bin) if profiles is not None else None
+    )
+    supplier_history = (
+        []
+        if use_profiles
+        else store.get_supplier_history(effective_req.recipient_bin, effective_payer_id)
+    )
 
     # 1. Precheck (no scoring; any failure yields invalid)
     precheck_signals: list[Signal] = []
@@ -510,6 +663,28 @@ def check_payment(
     if precheck_signals:
         headline_key = _select_headline_key("invalid")
         empty_analyst = AnalystDetails()
+        precheck_comparison = (
+            _build_comparison_from_profile(
+                effective_req,
+                store,
+                supplier_profile,
+                has_amount_anomaly=False,
+                is_trusted=False,
+            )
+            if use_profiles
+            else _build_comparison(
+                effective_req,
+                store,
+                supplier_history,
+                has_amount_anomaly=False,
+                is_trusted=False,
+            )
+        )
+        precheck_history = (
+            _build_history_summary_from_profile(supplier_profile)
+            if use_profiles
+            else _build_history_summary(supplier_history)
+        )
         return CheckResult(
             check_id=check_id,
             verdict="invalid",
@@ -518,15 +693,9 @@ def check_payment(
             headline=t(headline_key, lang),
             headline_key=headline_key,
             signals=precheck_signals,
-            comparison=_build_comparison(
-                effective_req,
-                store,
-                supplier_history,
-                has_amount_anomaly=False,
-                is_trusted=False,
-            ),
+            comparison=precheck_comparison,
             next_action=_build_next_action("invalid", signals=precheck_signals, lang=lang),
-            history=_build_history_summary(supplier_history),
+            history=precheck_history,
             trusted=False,
             trusted_info=None,
             analyst_details=empty_analyst if include_analyst_details else None,
@@ -538,6 +707,28 @@ def check_payment(
         headline_key = "headline.green_budget"
         next_key = "next_action.green_budget"
         empty_analyst = AnalystDetails()
+        budget_comparison = (
+            _build_comparison_from_profile(
+                effective_req,
+                store,
+                supplier_profile,
+                has_amount_anomaly=False,
+                is_trusted=False,
+            )
+            if use_profiles
+            else _build_comparison(
+                effective_req,
+                store,
+                supplier_history,
+                has_amount_anomaly=False,
+                is_trusted=False,
+            )
+        )
+        budget_history = (
+            _build_history_summary_from_profile(supplier_profile)
+            if use_profiles
+            else _build_history_summary(supplier_history)
+        )
         return CheckResult(
             check_id=check_id,
             verdict="green",
@@ -546,13 +737,7 @@ def check_payment(
             headline=t(headline_key, lang),
             headline_key=headline_key,
             signals=[],
-            comparison=_build_comparison(
-                effective_req,
-                store,
-                supplier_history,
-                has_amount_anomaly=False,
-                is_trusted=False,
-            ),
+            comparison=budget_comparison,
             next_action=NextAction(
                 text_ru=t(next_key, "ru"),
                 text=t(next_key, lang),
@@ -560,7 +745,7 @@ def check_payment(
                 primary="sign",
                 secondary=[],
             ),
-            history=_build_history_summary(supplier_history),
+            history=budget_history,
             trusted=False,
             trusted_info=None,
             analyst_details=empty_analyst if include_analyst_details else None,
@@ -568,8 +753,31 @@ def check_payment(
         )
 
     # 2. Identify comparison / anomaly / summary reference history (direct BIN or lookalike)
-    lookalike_match = find_lookalike_supplier(effective_req, store)
-    if supplier_history:
+    lookalike_match = find_lookalike_supplier(effective_req, store, profiles=profiles)
+    comparison_profile: SupplierProfile | None = None
+    comparison_history: list[dict[str, Any]] = []
+    if use_profiles:
+        assert profiles is not None
+        if supplier_profile is not None:
+            amount_reference_bin = effective_req.recipient_bin
+            comparison_profile = supplier_profile
+            history_summary = _build_history_summary_from_profile(supplier_profile)
+        elif lookalike_match is not None:
+            comparison_profile = profiles.get_supplier(lookalike_match["bin"])
+            history_summary = _build_history_summary_from_profile(
+                comparison_profile,
+                compared_with=lookalike_match["name"],
+            )
+            # Only compare payment amount against matched supplier history when name similarity >= 92;
+            # otherwise fall back to overall client profile (p90) to avoid distorted ratios.
+            if float(lookalike_match.get("similarity", 0.0)) >= LOOKALIKE_AMOUNT_COMPARE_SIMILARITY:
+                amount_reference_bin = lookalike_match["bin"]
+            else:
+                amount_reference_bin = effective_req.recipient_bin
+        else:
+            amount_reference_bin = effective_req.recipient_bin
+            history_summary = _build_history_summary_from_profile(None)
+    elif supplier_history:
         amount_reference_bin = effective_req.recipient_bin
         comparison_history = supplier_history
         history_summary = _build_history_summary(supplier_history)
@@ -597,31 +805,49 @@ def check_payment(
         effective_req.recipient_iik,
     )
     is_trusted = trusted_info is not None
-    is_bank_verified = is_bcc_bank_verified_new_account(effective_req, store)
+    is_bank_verified = is_bcc_bank_verified_new_account(effective_req, store, profiles=profiles)
 
+    lookalike_sig = (
+        rule_lookalike_supplier(
+            effective_req,
+            store,
+            lang=lang,
+            profiles=profiles,
+            lookalike_match=lookalike_match,
+        )
+        if use_profiles
+        else rule_lookalike_supplier(effective_req, store, lang=lang)
+    )
     candidates: list[Signal | None] = [
         rule_bcc_account_other_owner(effective_req, store, lang=lang),
         rule_iik_on_watchlist(effective_req, store, lang=lang),
         rule_iik_reported_by_clients(effective_req, store, lang=lang),
         rule_fresh_iik_many_payers(effective_req, store, today=today, lang=lang),
-        rule_lookalike_supplier(effective_req, store, lang=lang),
-        rule_bin_name_mismatch(effective_req, store, lang=lang),
-        rule_iik_belongs_to_other_counterparty(effective_req, store, lang=lang),
-        rule_iik_changed(effective_req, store, lang=lang),
-        rule_bank_changed(effective_req, store, lang=lang),
+        lookalike_sig,
+        rule_bin_name_mismatch(effective_req, store, lang=lang, profiles=profiles),
+        rule_iik_belongs_to_other_counterparty(effective_req, store, lang=lang, profiles=profiles),
+        rule_iik_changed(effective_req, store, lang=lang, profiles=profiles),
+        rule_bank_changed(effective_req, store, lang=lang, profiles=profiles),
         rule_entity_type_mismatch(effective_req, lang=lang),
         rule_kbe_mismatch(effective_req, lang=lang),
-        rule_knp_unusual(effective_req, store, lang=lang),
+        rule_knp_unusual(effective_req, store, lang=lang, profiles=profiles),
         rule_mixed_script_name(effective_req, lang=lang),
         rule_new_bcc_account(effective_req, store, today=today, lang=lang),
         rule_bin_young(effective_req, today=today, lang=lang),
-        rule_amount_anomaly(effective_req, store, reference_bin=amount_reference_bin, lang=lang),
+        rule_amount_anomaly(
+            effective_req,
+            store,
+            reference_bin=amount_reference_bin,
+            lang=lang,
+            profiles=profiles,
+        ),
         rule_duplicate_invoice(
             effective_req,
             store,
             today=today,
             lang=lang,
             include_recent_memory=include_recent_memory,
+            profiles=profiles,
         ),
         rule_new_recipient_accumulated(
             effective_req,
@@ -629,6 +855,7 @@ def check_payment(
             today=today,
             lang=lang,
             include_recent_memory=include_recent_memory,
+            profiles=profiles,
         ),
         rule_structuring_72h(
             effective_req,
@@ -636,11 +863,12 @@ def check_payment(
             today=today,
             lang=lang,
             include_recent_memory=include_recent_memory,
+            profiles=profiles,
         ),
-        rule_first_payment(effective_req, store, lang=lang),
+        rule_first_payment(effective_req, store, lang=lang, profiles=profiles),
         rule_urgent_wording(effective_req, lang=lang),
         rule_trusted_account(effective_req, store, lang=lang),
-        rule_bcc_owner_verified(effective_req, store, lang=lang),
+        rule_bcc_owner_verified(effective_req, store, lang=lang, profiles=profiles),
     ]
     all_signals = [s for s in candidates if s is not None]
 
@@ -651,7 +879,14 @@ def check_payment(
     has_amount_anomaly = any(s.rule_id in AMOUNT_SIGNAL_IDS for s in all_signals)
     has_amplifiers = any(s.severity == "amplifier" for s in all_signals)
 
-    client_p90 = compute_client_p90(store, effective_payer_id) if verdict == "grey" else None
+    if verdict == "grey":
+        client_p90 = (
+            profiles.client_p90
+            if profiles is not None
+            else compute_client_p90(store, effective_payer_id)
+        )
+    else:
+        client_p90 = None
     grey_above_client_p90 = (
         verdict == "grey" and client_p90 is not None and effective_req.amount_kzt > client_p90
     )
@@ -680,6 +915,23 @@ def check_payment(
             ),
         )
 
+    final_comparison = (
+        _build_comparison_from_profile(
+            effective_req,
+            store,
+            comparison_profile,
+            has_amount_anomaly=has_amount_anomaly,
+            is_trusted=is_trusted,
+        )
+        if use_profiles
+        else _build_comparison(
+            effective_req,
+            store,
+            comparison_history,
+            has_amount_anomaly=has_amount_anomaly,
+            is_trusted=is_trusted,
+        )
+    )
     return CheckResult(
         check_id=check_id,
         ruleset_version=RULESET_VERSION,
@@ -689,13 +941,7 @@ def check_payment(
         headline=t(headline_key, lang),
         headline_key=headline_key,
         signals=ordered_signals,
-        comparison=_build_comparison(
-            effective_req,
-            store,
-            comparison_history,
-            has_amount_anomaly=has_amount_anomaly,
-            is_trusted=is_trusted,
-        ),
+        comparison=final_comparison,
         next_action=_build_next_action(
             verdict,
             signals=ordered_signals,

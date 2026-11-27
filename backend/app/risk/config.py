@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
+from typing import Protocol
 
 # Fixed reference date for synthetic data generation and recency checks.
 DEMO_TODAY: date = date(2026, 4, 20)
@@ -100,6 +102,70 @@ BANK_KNOWN_BIN_MIN_YEARS: float = 2.0
 
 # Antifraud analyst role header value (X-Role: analyst).
 ANALYST_ROLE_VALUE: str = "analyst"
+
+# Signal rule IDs casting doubt on recipient identity: yellow/grey payments carrying any of these
+# cannot be signed via accountant acknowledgement and must go through director approval.
+# Kept in sync with frontend/src/lib/identitySignals.ts.
+IDENTITY_SIGNAL_IDS: frozenset[str] = frozenset(
+    {
+        "lookalike_supplier",
+        "bin_name_mismatch",
+        "entity_type_mismatch",
+        "kbe_mismatch",
+        "iik_belongs_to_other_counterparty",
+        "mixed_script_name",
+        "iik_reported_by_clients",
+        "fresh_iik_many_payers",
+    }
+)
+
+
+class _TrustSignalLike(Protocol):
+    rule_id: str
+    severity: str
+    points: int
+
+
+# Account-change signal rule IDs eligible for director account trust.
+# Kept in sync with frontend/src/lib/approvals.ts.
+TRUST_ALLOWED_SIGNAL_IDS: frozenset[str] = frozenset({"iik_changed", "bank_changed"})
+
+# Weighted signals that always forbid director account trust next to an account change
+# (in addition to IDENTITY_SIGNAL_IDS): pressure wording typical for invoice substitution.
+TRUST_FORBIDDEN_SIGNAL_IDS: frozenset[str] = frozenset({"urgent_wording"})
+
+
+def can_trust_check(verdict: str, signals: Iterable[_TrustSignalLike]) -> bool:
+    """Return True if a check result is eligible for director account trust.
+
+    One rule for ``yellow`` and ``red`` (H2):
+    - no ``block``-level signal;
+    - the weighted (non zero-weight ``info``) signals are a subset of
+      ``TRUST_ALLOWED_SIGNAL_IDS`` and contain ``iik_changed``;
+    - explicitly: no weighted identity signal (``IDENTITY_SIGNAL_IDS``) and no
+      ``urgent_wording`` (kept even if ``TRUST_ALLOWED_SIGNAL_IDS`` grows later);
+    - zero-weight ``info`` signals are allowed.
+
+    Mirrored by ``canTrustApproval`` in ``frontend/src/lib/approvals.ts``.
+    """
+    if verdict not in ("yellow", "red"):
+        return False
+    sig_list = list(signals)
+    if any(s.severity == "block" for s in sig_list):
+        return False
+    weighted = {s.rule_id for s in sig_list if not (s.severity == "info" and s.points == 0)}
+    if weighted & (IDENTITY_SIGNAL_IDS | TRUST_FORBIDDEN_SIGNAL_IDS):
+        return False
+    return "iik_changed" in weighted and weighted <= TRUST_ALLOWED_SIGNAL_IDS
+
+
+# H1 «прогрев счёта»: a supplier IIK counts as known history only after confirmation.
+# Confirmed if: it is the supplier's first account in history; a payment to it was approved by
+# the director; it comes from legacy/imported history without signing metadata; or there are
+# at least ACCOUNT_CONFIRM_MIN_PAYMENTS signed payments to it spanning
+# ACCOUNT_CONFIRM_MIN_SPAN_DAYS days or more.
+ACCOUNT_CONFIRM_MIN_PAYMENTS: int = 2
+ACCOUNT_CONFIRM_MIN_SPAN_DAYS: int = 14
 
 # Digits that visually spoof Cyrillic letters when embedded inside Cyrillic words.
 CONFUSABLE_DIGITS: frozenset[str] = frozenset({"0", "3", "4", "6", "1"})

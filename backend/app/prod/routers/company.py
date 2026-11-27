@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 import sqlite3
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field, field_validator
 
-from app.i18n import DEFAULT_LANG, Lang
+from app.i18n import DEFAULT_LANG, MESSAGES, Lang
 from app.prod.audit_db import append_audit
 from app.prod.company_settings import get_company_settings
 from app.prod.db import get_db, tx
@@ -16,17 +18,47 @@ from app.prod.deps import LangQuery, company_scope_id, require_role
 from app.prod.errors import ProdError
 from app.prod.schemas import (
     CompanyDetail,
+    CompanyRole,
     CompanySettings,
     CompanyUser,
-    InviteUserRequest,
     InviteUserResponse,
     UpdateCompanySettingsRequest,
     UpdateCompanyUserRequest,
     User,
 )
 from app.prod.security import hash_password, utc_now_iso
+from app.schemas import clean_text_field, meaningful_length
 
 router = APIRouter(prefix="/company", tags=["company"])
+
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_LOGIN_MIN_LEN = 3
+_LOGIN_MAX_LEN = 64
+
+
+class _InviteCompanyUserBody(BaseModel):
+    """Invite payload deferring login format validation so invalid and taken logins match (409)."""
+
+    login: str
+    full_name: str = Field(min_length=1, max_length=120)
+    role: CompanyRole
+
+    @field_validator("full_name")
+    @classmethod
+    def _validate_full_name(cls, value: str) -> str:
+        cleaned = clean_text_field(value)
+        if not cleaned or meaningful_length(cleaned) == 0:
+            raise ValueError("Укажите имя и фамилию.")
+        return cleaned
+
+
+def _invalid_login_error() -> ProdError:
+    detail = (
+        None
+        if "error.prod.invalid_login" in MESSAGES
+        else "This login is invalid or cannot be used."
+    )
+    return ProdError(409, "invalid_login", detail=detail)
 
 
 def _row_to_company_user(row: sqlite3.Row) -> CompanyUser:
@@ -91,7 +123,7 @@ def get_company(
 
 @router.post("/users", response_model=InviteUserResponse, status_code=201)
 def invite_company_user(
-    payload: InviteUserRequest,
+    payload: _InviteCompanyUserBody,
     conn: Annotated[sqlite3.Connection, Depends(get_db)],
     user: Annotated[User, Depends(require_role("director"))],
     lang: LangQuery = DEFAULT_LANG,
@@ -99,29 +131,37 @@ def invite_company_user(
     """Director-only: create a new company user and return a one-time temporary password."""
     _ = lang
     company_id = _require_user_company_id(user)
-    temp_password = secrets.token_urlsafe(12)
+    login_clean = payload.login.strip()
+    if (
+        len(login_clean) < _LOGIN_MIN_LEN
+        or len(login_clean) > _LOGIN_MAX_LEN
+        or not _LOGIN_RE.match(login_clean)
+    ):
+        raise _invalid_login_error()
+
+    temp_password = secrets.token_urlsafe(16)
     pw_hash = hash_password(temp_password)
     now_iso = utc_now_iso()
 
     with tx(conn):
         existing = conn.execute(
             "SELECT id FROM users WHERE login = ?",
-            (payload.login,),
+            (login_clean,),
         ).fetchone()
         if existing is not None:
-            raise ProdError(409, "login_already_exists")
+            raise _invalid_login_error()
 
         try:
             cur = conn.execute(
                 """
                 INSERT INTO users (
                     company_id, login, full_name, role, password_hash,
-                    is_active, default_lang, created_at
-                ) VALUES (?, ?, ?, ?, ?, 1, 'ru', ?)
+                    is_active, default_lang, must_change_password, created_at
+                ) VALUES (?, ?, ?, ?, ?, 1, 'ru', 1, ?)
                 """,
                 (
                     company_id,
-                    payload.login,
+                    login_clean,
                     payload.full_name,
                     payload.role,
                     pw_hash,
@@ -129,7 +169,7 @@ def invite_company_user(
                 ),
             )
         except sqlite3.IntegrityError as exc:
-            raise ProdError(409, "login_already_exists") from exc
+            raise _invalid_login_error() from exc
 
         assert cur.lastrowid is not None
         new_id = int(cur.lastrowid)
@@ -143,7 +183,7 @@ def invite_company_user(
             company_id=company_id,
             details={
                 "target_user_id": new_id,
-                "target_login": payload.login,
+                "target_login": login_clean,
                 "target_role": payload.role,
             },
         )
@@ -311,9 +351,7 @@ def update_settings(
             (company_id, new_notify_on, new_threshold_tiyn, now_iso),
         )
 
-        new_threshold_kzt = (
-            new_threshold_tiyn / 100.0 if new_threshold_tiyn is not None else None
-        )
+        new_threshold_kzt = new_threshold_tiyn / 100.0 if new_threshold_tiyn is not None else None
         append_audit(
             conn,
             action="company_settings_updated",

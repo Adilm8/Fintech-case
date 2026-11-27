@@ -18,7 +18,13 @@ from app.explain import router as explain_router
 from app.i18n import DEFAULT_LANG, Lang, field_label, resolve_lang, t
 from app.invoice_ai.env import load_env_file
 from app.invoice_ai.service import router as invoice_router
-from app.risk.config import ANALYST_ROLE_VALUE
+from app.risk.config import (
+    ANALYST_ROLE_VALUE,
+    can_trust_check,
+)
+from app.risk.config import (
+    TRUST_ALLOWED_SIGNAL_IDS as _TRUST_ALLOWED_SIGNAL_IDS,
+)
 from app.risk.engine import check_payment, localize_check_result
 from app.risk.evaluation import DEFAULT_EVAL_FILENAME, evaluate_dataset, localize_metrics
 from app.schemas import (
@@ -48,7 +54,7 @@ CORS_ORIGIN_REGEX: str = (
 )
 
 MIN_DIRECTOR_COMMENT_LEN: int = 10
-TRUST_ALLOWED_SIGNAL_IDS: frozenset[str] = frozenset({"iik_changed", "bank_changed"})
+TRUST_ALLOWED_SIGNAL_IDS: frozenset[str] = _TRUST_ALLOWED_SIGNAL_IDS
 
 _VALUE_ERROR_KEYS: dict[str, str] = {
     "Укажите название получателя.": "val.recipient_name_required",
@@ -192,12 +198,7 @@ def _resolve_request_payer(req: CheckRequest, *, lang: Lang = DEFAULT_LANG) -> C
 
 def _can_trust_approval(approval: Approval) -> bool:
     """Return True if an approval is eligible for director account trust."""
-    if approval.check.verdict != "yellow":
-        return False
-    signals = approval.check.signals
-    has_account_change = any(s.rule_id in TRUST_ALLOWED_SIGNAL_IDS for s in signals)
-    has_block = any(s.severity == "block" for s in signals)
-    return has_account_change and not has_block
+    return can_trust_check(approval.check.verdict, approval.check.signals)
 
 
 def _is_analyst_role(x_role: str | None) -> bool:

@@ -11,6 +11,7 @@ from typing import Any
 from app.i18n import DEFAULT_LANG, Lang, kind_label, t
 from app.risk.config import DEMO_TODAY, RULESET_VERSION
 from app.risk.engine import check_payment
+from app.risk.profiles import DIRECTOR_APPROVED_KEY
 from app.risk.rules import extract_invoice_number
 from app.schemas import (
     CheckRequest,
@@ -26,6 +27,8 @@ from app.schemas import (
 from app.store import DEFAULT_DATA_DIR, Store
 
 POSITIVE_VERDICTS: frozenset[Verdict] = frozenset({"yellow", "red"})
+# Yellow payments with these signals need the director in the signing flow.
+REPLAY_DIRECTOR_SIGNAL_IDS: frozenset[str] = frozenset({"iik_changed", "bank_changed"})
 DEFAULT_EVAL_FILENAME: str = "eval_set.json"
 EVAL_DISCLAIMER_RU: str = t("metrics.disclaimer", "ru")
 
@@ -73,7 +76,13 @@ def run_history_replay(data_dir: Path | None = None) -> HistoryReplayMetrics:
             record_in_memory=False,
         )
         verdicts.append(result.verdict)
-        isolated_store.history.append(payment)
+        # Model the signing flow (H1): red and account-change yellow go through the director,
+        # everything else is signed by the accountant alone and does not confirm a new IIK.
+        signal_ids = {sig.rule_id for sig in result.signals}
+        director_approved = result.verdict == "red" or (
+            result.verdict == "yellow" and bool(signal_ids & REPLAY_DIRECTOR_SIGNAL_IDS)
+        )
+        isolated_store.history.append({**payment, DIRECTOR_APPROVED_KEY: director_approved})
 
     counts = _count_verdicts(verdicts)
     total = len(verdicts)
@@ -264,8 +273,7 @@ def evaluate_cases(
 def localize_metrics(metrics: MetricsResponse, lang: Lang = DEFAULT_LANG) -> MetricsResponse:
     """Return a lightweight localized view of a cached MetricsResponse without recomputing."""
     localized_kinds = [
-        row.model_copy(update={"label_text": kind_label(row.kind, lang)})
-        for row in metrics.by_kind
+        row.model_copy(update={"label_text": kind_label(row.kind, lang)}) for row in metrics.by_kind
     ]
     return metrics.model_copy(
         update={

@@ -11,6 +11,7 @@ from app.prod.importers.common import (
     ParsedDoc,
     ParsedFile,
     UnsupportedFileError,
+    cap_errors,
     decode_bytes,
     parse_amount,
     parse_date,
@@ -190,4 +191,11 @@ def parse_1c(data: bytes) -> ParsedFile:
             raise EmptyFileError("1C file contains no payment documents.")
         raise UnsupportedFileError("Unrecognized 1C file structure.")
 
-    return ParsedFile(source="1c", docs=docs, errors=errors, encoding=encoding)
+    capped_errors, errors_omitted = cap_errors(errors)
+    return ParsedFile(
+        source="1c",
+        docs=docs,
+        errors=capped_errors,
+        encoding=encoding,
+        errors_omitted=errors_omitted,
+    )

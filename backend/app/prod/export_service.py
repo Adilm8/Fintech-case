@@ -128,8 +128,24 @@ def _format_amount_plain(amount_kzt: float) -> str:
     return f"{amount_kzt:,.2f}".replace(",", " ")
 
 
+_CSV_FORMULA_PREFIXES: tuple[str, ...] = ("=", "+", "-", "@", "\t", "\r")
+
+
 def _clean_cell(text: str) -> str:
     return " ".join(text.replace("\r", " ").replace("\n", " ").split())
+
+
+def sanitize_csv_cell(text: str, *, clean: bool = False) -> str:
+    """Neutralize CSV formula injection on free-text cells by prefixing a single quote."""
+    if not text:
+        return ""
+    starts_dangerous = text[0] in _CSV_FORMULA_PREFIXES
+    value = _clean_cell(text) if clean else text
+    if not value:
+        return "'" + text if starts_dangerous else ""
+    if starts_dangerous or value[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + value
+    return value
 
 
 def render_payments_csv(
@@ -147,32 +163,30 @@ def render_payments_csv(
         status_label = t(f"prod.status.{p.status}", lang)
         verdict_label = t(f"prod.verdict.{p.check.verdict}", lang)
         headline = p.check.headline or p.check.headline_ru
-        reasons = "; ".join(
-            _clean_cell(sig.reason or sig.reason_ru) for sig in p.check.signals
-        )
-        advice = _clean_cell(p.check.next_action.text or p.check.next_action.text_ru)
+        reasons_raw = "; ".join(sig.reason or sig.reason_ru for sig in p.check.signals)
+        advice_raw = p.check.next_action.text or p.check.next_action.text_ru
         approval_str = p.approval.status if p.approval is not None else ""
         if p.approval is not None and p.approval.director_comment:
             approval_str = f"{approval_str}: {_clean_cell(p.approval.director_comment)}"
 
         writer.writerow(
             [
-                p.id,
-                doc_date,
-                p.doc_number,
-                status_label,
-                verdict_label,
+                sanitize_csv_cell(p.id),
+                sanitize_csv_cell(doc_date),
+                sanitize_csv_cell(p.doc_number),
+                sanitize_csv_cell(status_label),
+                sanitize_csv_cell(verdict_label),
                 p.check.score,
-                _clean_cell(p.request.recipient_name),
-                p.request.recipient_bin,
-                p.request.recipient_iik,
-                p.request.recipient_bik,
+                sanitize_csv_cell(p.request.recipient_name, clean=True),
+                sanitize_csv_cell(p.request.recipient_bin),
+                sanitize_csv_cell(p.request.recipient_iik),
+                sanitize_csv_cell(p.request.recipient_bik),
                 f"{p.request.amount_kzt:.2f}",
-                _clean_cell(p.request.purpose),
-                _clean_cell(headline),
-                reasons,
-                advice,
-                approval_str,
+                sanitize_csv_cell(p.request.purpose, clean=True),
+                sanitize_csv_cell(headline, clean=True),
+                sanitize_csv_cell(reasons_raw, clean=True),
+                sanitize_csv_cell(advice_raw, clean=True),
+                sanitize_csv_cell(approval_str, clean=True),
             ]
         )
 

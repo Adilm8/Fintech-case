@@ -19,7 +19,7 @@ from app.prod.deps import CSRF_HEADER_NAME, CSRF_HEADER_VALUE
 from app.prod.errors import PROD_ERROR_CODES, localize_prod_error
 from app.settings import BACKEND_DIR, Settings
 from app.store import DEFAULT_DATA_DIR
-from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY
+from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY, build_sign_payload
 
 CSRF: dict[str, str] = {CSRF_HEADER_NAME: CSRF_HEADER_VALUE}
 OCTET_HEADERS: dict[str, str] = {**CSRF, "Content-Type": "application/octet-stream"}
@@ -271,7 +271,14 @@ class TestSuppliersAPI:
             ).status_code
             == 200
         )
-        assert acc.post(f"/api/v1/payments/{p_yellow['id']}/sign", json={}, headers=CSRF).status_code == 200
+        assert (
+            acc.post(
+                f"/api/v1/payments/{p_yellow['id']}/sign",
+                json=build_sign_payload(acc, p_yellow["id"]),
+                headers=CSRF,
+            ).status_code
+            == 200
+        )
 
         after_sign = acc.get(f"/api/v1/suppliers/{klg_id}").json()
         assert after_sign["has_pending_change"] is False
@@ -313,7 +320,14 @@ class TestAuditEndpoints:
 
         # Generate some audit entries for client-technostroy and for comp-other
         p_red = acc.post("/api/v1/payments", json=_to_payment_input(queue["Q-003"]), headers=CSRF).json()
-        assert acc.post(f"/api/v1/payments/{p_red['id']}/sign", json={}, headers=CSRF).status_code == 409
+        assert (
+            acc.post(
+                f"/api/v1/payments/{p_red['id']}/sign",
+                json=build_sign_payload(acc, p_red["id"]),
+                headers=CSRF,
+            ).status_code
+            == 409
+        )
 
         with TestClient(prod_app) as other_acc:
             _login(other_acc, "other_accountant")

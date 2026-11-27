@@ -1023,6 +1023,20 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "kk": "Қызыл деңгейлі төлемге директордың мақұлдауынсыз қол қоюға болмайды.",
         "en": "A red-verdict payment cannot be signed without director approval.",
     },
+    "error.prod.identity_requires_approval": {
+        "ru": (
+            "Обнаружены сомнения в личности получателя — "
+            "подписание без одобрения директора запрещено."
+        ),
+        "kk": (
+            "Алушының тұлғасына қатысты күмән анықталды — "
+            "директордың мақұлдауынсыз қол қоюға болмайды."
+        ),
+        "en": (
+            "Doubts about the recipient's identity were detected — "
+            "signing without director approval is blocked."
+        ),
+    },
     "error.prod.ack_or_approval_required": {
         "ru": "Для подписи требуется подтверждение бухгалтера или одобрение директора.",
         "kk": "Қол қою үшін бухгалтердің растауы немесе директордың мақұлдауы қажет.",
@@ -1149,6 +1163,96 @@ MESSAGES: dict[str, dict[Lang, str]] = {
         "ru": "Экспорт в PDF сейчас недоступен.",
         "kk": "PDF пішіміне экспорттау қазір қолжетімсіз.",
         "en": "PDF export is currently unavailable.",
+    },
+    "error.prod.document_mismatch": {
+        "ru": (
+            "Реквизиты платежа или результаты проверки изменились после загрузки документа. "
+            "Обновите платёж и повторите подписание."
+        ),
+        "kk": (
+            "Құжат жүктелгеннен кейін төлем деректемелері немесе тексеру нәтижелері өзгерген. "
+            "Төлемді жаңартып, қол қоюды қайталаңыз."
+        ),
+        "en": (
+            "Payment details or verification results changed after the document was loaded. "
+            "Refresh the payment and try signing again."
+        ),
+    },
+    "error.prod.signature_verification_unavailable": {
+        "ru": "Серверная проверка ЭЦП НУЦ РК (NCALayer) недоступна в текущей конфигурации.",
+        "kk": "ҚР ҰКО (NCALayer) ЭЦҚ-сын серверлік тексеру ағымдағы баптауда қолжетімсіз.",
+        "en": "Server-side verification of NCA RK (NCALayer) digital signatures is unavailable in the current configuration.",
+    },
+    "error.prod.approval_required_after_rejection": {
+        "ru": (
+            "Платёж или его реквизиты ранее были отклонены директором — "
+            "для подписания требуется новое одобрение директора."
+        ),
+        "kk": (
+            "Төлем шоты немесе оның деректемелері (БСН/ЖСК) бұрын директормен қабылданбаған — "
+            "қол қою үшін директордың жаңа мақұлдауы қажет."
+        ),
+        "en": (
+            "This payment or its requisites were previously rejected by the director — "
+            "a new director approval is required before signing."
+        ),
+    },
+    "error.prod.threshold_aggregate": {
+        "ru": (
+            "Совокупная сумма платежей этому поставщику за 72 часа достигла порога "
+            "согласования компании — требуется одобрение директора."
+        ),
+        "kk": (
+            "Осы жеткізушіге (БСН/ЖСК) 72 сағат ішіндегі төлемдердің жиынтық сомасы "
+            "компанияның келісу шегіне жетті — директордың мақұлдауы қажет."
+        ),
+        "en": (
+            "Cumulative payments to this supplier over the last 72 hours meet or exceed "
+            "the company approval threshold — director approval is required."
+        ),
+    },
+    "error.prod.duplicate_requires_approval": {
+        "ru": (
+            "Обнаружен дубликат уже существующего или подписанного платежа — "
+            "для подписания требуется одобрение директора."
+        ),
+        "kk": (
+            "Қолданыстағы немесе қол қойылған төлем шотының телнұсқасы анықталды — "
+            "қол қою үшін директордың мақұлдауы қажет."
+        ),
+        "en": (
+            "Duplicate of an existing or already signed payment detected — "
+            "director approval is required before signing."
+        ),
+    },
+    "error.prod.invalid_login": {
+        "ru": (
+            "Логин не может быть использован или не соответствует требованиям: "
+            "допустимы латинские буквы, цифры и . _ - (3–64 символа)."
+        ),
+        "kk": (
+            "Логинді пайдалану мүмкін емес немесе ол талаптарға сай келмейді: "
+            "тек латын әріптері, цифрлар және . _ - таңбалары рұқсат етіледі (3–64 таңба)."
+        ),
+        "en": (
+            "This login cannot be used or does not meet requirements: "
+            "only Latin letters, digits, and . _ - are allowed (3–64 characters)."
+        ),
+    },
+    "error.prod.password_change_required": {
+        "ru": "Необходимо сменить временный пароль перед продолжением работы.",
+        "kk": "Жұмысты жалғастыру үшін алдымен уақытша құпиясөзді ауыстыруыңыз қажет.",
+        "en": "You must change your temporary password before continuing.",
+    },
+    "error.prod.too_many_password_attempts": {
+        "ru": "Слишком много неудачных попыток смены пароля. Повторите попытку через 15 минут.",
+        "kk": "Құпиясөзді ауыстырудың сәтсіз әрекеттері тым көп. 15 минуттан кейін қайталап көріңіз.",
+        "en": "Too many failed password change attempts. Please try again in 15 minutes.",
+    },
+    "error.prod.full_name_role_word": {
+        "ru": "Полное имя не должно содержать названия должностей (директор, бухгалтер, аналитик, администратор).",
+        "kk": "Толық аты лауазым атауларын (директор, бухгалтер, талдаушы, әкімші) қамтуға тиіс емес.",
+        "en": "Full name must not contain role titles (director, accountant, analyst, admin).",
     },
     # --- Prod notification templates ---
     "prod.notif.approval_pending.title": {

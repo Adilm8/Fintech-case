@@ -11,6 +11,12 @@ from app.prod.db import tx
 from app.prod.schemas import Company
 from app.prod.security import utc_now_iso
 from app.risk.config import DEMO_TODAY
+from app.risk.profiles import (
+    DIRECTOR_APPROVED_KEY,
+    ClientProfiles,
+    get_profiles,
+    invalidate_profiles,
+)
 from app.schemas import CheckRequest, TrustedInfo, compute_request_sha256
 from app.settings import load_settings
 from app.store import Store
@@ -94,10 +100,40 @@ class ProdStore(Store):
         self.approvals = []
         self.recent_checks: list[dict[str, Any]] = []
         self._history_cache: list[dict[str, Any]] | None = None
+        self._profiles_cache: ClientProfiles | None = None
+        self._cache_scope: str | None = None
+
+    def _get_cache_payer_key(self, payer_id: str) -> str:
+        """Return a DB-scoped cache key so separate SQLite files never share profile entries."""
+        if self._cache_scope is None:
+            db_file = ""
+            try:
+                rows = self.conn.execute("PRAGMA database_list").fetchall()
+                for row in rows:
+                    if str(row[1]) == "main":
+                        db_file = str(row[2] or "")
+                        break
+            except sqlite3.Error:
+                db_file = ""
+            self._cache_scope = db_file if db_file else f"mem:{id(self.conn)}"
+        return f"{self._cache_scope}:{payer_id}"
 
     def invalidate_history_cache(self) -> None:
-        """Clear cached signed payment history (e.g. after signing within the same request)."""
+        """Clear cached signed payment history and supplier profiles (e.g. after signing)."""
         self._history_cache = None
+        self._profiles_cache = None
+        if self._cache_scope is not None:
+            invalidate_profiles(f"{self._cache_scope}:{self.company_id}")
+        else:
+            invalidate_profiles(self._get_cache_payer_key(self.company_id))
+        invalidate_profiles(self.company_id)
+
+    def invalidate_profiles_cache(self, payer_id: str | None = None) -> None:
+        """Clear cached supplier profiles for this company."""
+        self._profiles_cache = None
+        target = self.company_id if payer_id is None else payer_id
+        invalidate_profiles(self._get_cache_payer_key(target))
+        invalidate_profiles(target)
 
     @property
     def default_payer_id(self) -> str:
@@ -120,13 +156,18 @@ class ProdStore(Store):
             rows = self.conn.execute(
                 """
                 SELECT
-                    id, company_id, paid_at, signed_at, created_at,
-                    recipient_name, recipient_bin, recipient_iik, recipient_bik,
-                    amount_tiyn, purpose, knp
-                FROM payments
-                WHERE company_id = ? AND status = 'signed'
-                ORDER BY COALESCE(paid_at, substr(signed_at, 1, 10), substr(created_at, 1, 10)) ASC,
-                         id ASC
+                    p.id, p.company_id, p.paid_at, p.signed_at, p.created_at,
+                    p.recipient_name, p.recipient_bin, p.recipient_iik, p.recipient_bik,
+                    p.amount_tiyn, p.purpose, p.knp, p.source,
+                    EXISTS (
+                        SELECT 1 FROM approvals a
+                        WHERE a.payment_id = p.id AND a.status = 'approved'
+                    ) AS director_approved
+                FROM payments p
+                WHERE p.company_id = ? AND p.status = 'signed'
+                ORDER BY COALESCE(p.paid_at, substr(p.signed_at, 1, 10),
+                                  substr(p.created_at, 1, 10)) ASC,
+                         p.id ASC
                 """,
                 (self.company_id,),
             ).fetchall()
@@ -134,23 +175,46 @@ class ProdStore(Store):
             for row in rows:
                 paid_raw = row["paid_at"] or row["signed_at"] or row["created_at"]
                 paid_date = str(paid_raw)[:10]
-                items.append(
-                    {
-                        "id": str(row["id"]),
-                        "payer_id": str(row["company_id"]),
-                        "paid_at": paid_date,
-                        "recipient_name": str(row["recipient_name"]),
-                        "recipient_bin": str(row["recipient_bin"]),
-                        "recipient_iik": str(row["recipient_iik"]),
-                        "recipient_bik": str(row["recipient_bik"]),
-                        "amount_kzt": int(row["amount_tiyn"]) / 100.0,
-                        "purpose": str(row["purpose"]),
-                        "knp": str(row["knp"]),
-                    }
-                )
+                item: dict[str, Any] = {
+                    "id": str(row["id"]),
+                    "payer_id": str(row["company_id"]),
+                    "paid_at": paid_date,
+                    "recipient_name": str(row["recipient_name"]),
+                    "recipient_bin": str(row["recipient_bin"]),
+                    "recipient_iik": str(row["recipient_iik"]),
+                    "recipient_bik": str(row["recipient_bik"]),
+                    "amount_kzt": int(row["amount_tiyn"]) / 100.0,
+                    "purpose": str(row["purpose"]),
+                    "knp": str(row["knp"]),
+                }
+                # H1: payments signed in the app carry signing metadata; seeded history predates
+                # the confirmation rule and stays without the key (counts as confirmed).
+                if str(row["source"]) != "seed":
+                    item[DIRECTOR_APPROVED_KEY] = bool(row["director_approved"])
+                items.append(item)
             items.sort(key=lambda p: (p["paid_at"], p["id"]))
             self._history_cache = items
         return list(self._history_cache)
+
+    def get_profiles(self, payer_id: str | None = None) -> ClientProfiles:
+        """Return cached supplier profiles for this company using the cross-request LRU cache."""
+        resolved = self.resolve_payer_id(payer_id)
+        if resolved != self.company_id:
+            return get_profiles(
+                self._get_cache_payer_key(resolved),
+                (),
+                banks_by_bik=self.banks_by_bik,
+            )
+        if self._profiles_cache is None:
+            if self._history_cache is None:
+                self.get_client_history(self.company_id)
+            assert self._history_cache is not None
+            self._profiles_cache = get_profiles(
+                self._get_cache_payer_key(self.company_id),
+                self._history_cache,
+                banks_by_bik=self.banks_by_bik,
+            )
+        return self._profiles_cache
 
     def get_trusted_info(
         self,
@@ -245,7 +309,9 @@ class ProdStore(Store):
         if resolved != self.company_id:
             raise ValueError(f"Cannot trust account for foreign company {resolved!r}.")
         if decided_by is None:
-            raise ValueError("decided_by user id is required when trusting an account in ProdStore.")
+            raise ValueError(
+                "decided_by user id is required when trusting an account in ProdStore."
+            )
         ts = decided_at or utc_now_iso()
         with tx(self.conn):
             existing = self.conn.execute(

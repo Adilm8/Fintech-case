@@ -7,7 +7,7 @@ import re
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from app.i18n import Lang
 from app.schemas import (
@@ -86,6 +86,7 @@ class Session(BaseModel):
 
     user: User
     company: Company | None
+    must_change_password: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -177,10 +178,30 @@ class PaymentNoteRequest(BaseModel):
     note: str = Field(default="", max_length=1000)
 
 
-class SignPaymentRequest(BaseModel):
-    """Optional body for POST /api/v1/payments/{id}/sign."""
+SignerKind = Literal["simulated", "ncalayer"]
 
+
+class SignPaymentRequest(BaseModel):
+    """Request body for POST /api/v1/payments/{id}/sign with canonical document binding."""
+
+    document_digest: str = Field(min_length=1, max_length=128)
+    signature: str = Field(max_length=65536)
+    signer: SignerKind
     accountant_ack: bool = False
+
+    @field_validator("document_digest")
+    @classmethod
+    def _validate_document_digest(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Укажите дайджест подписываемого документа.")
+        return cleaned
+
+    @model_validator(mode="after")
+    def _validate_signature_for_signer(self) -> SignPaymentRequest:
+        if self.signer == "ncalayer" and not self.signature.strip():
+            raise ValueError("Для подписания через NCALayer требуется подпись документа.")
+        return self
 
 
 class ProdApprovalDecisionRequest(BaseModel):
@@ -259,6 +280,7 @@ class Payment(BaseModel):
     doc_date: str | None = None
     request: CheckRequest
     check: CheckResult
+    document_digest: str | None = None
     approval: ApprovalBrief | None = None
     accountant_ack: bool = False
     supplier: SupplierRef

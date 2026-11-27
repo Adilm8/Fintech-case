@@ -20,6 +20,7 @@ PROD_ERROR_CODES: frozenset[str] = frozenset(
         "verdict_changed",
         "invalid_requisites",
         "red_requires_approval",
+        "identity_requires_approval",
         "ack_or_approval_required",
         "not_editable",
         "invalid_transition",
@@ -43,6 +44,13 @@ PROD_ERROR_CODES: frozenset[str] = frozenset(
         "threshold_requires_approval",
         "invalid_date_range",
         "pdf_unavailable",
+        "document_mismatch",
+        "signature_verification_unavailable",
+        "approval_required_after_rejection",
+        "threshold_aggregate",
+        "duplicate_requires_approval",
+        "invalid_login",
+        "password_change_required",
     }
 )
 

@@ -509,6 +509,100 @@ class TestApprovalWorkflowAndTrustModel:
         assert resp.status_code == 422
         assert resp.json()["detail"] == "Доверие недоступно для этого платежа"
 
+    def test_red_bank_change_only_can_be_approved_and_trusted_then_subsequent_is_green(
+        self, client: TestClient
+    ) -> None:
+        queue = client.get("/api/payments/queue").json()
+        q2 = next(q for q in queue if q["id"] == "Q-002")
+        # Amount >= supplier median (820k) triggers iik_changed (35) + bank_changed (30) = 65 -> red
+        red_bank_change_req = {
+            **_queue_item_to_check_request(q2),
+            "amount_kzt": 850_000,
+            "purpose": "Оплата транспортных услуг по счёту № 512",
+        }
+
+        created = client.post(
+            "/api/approvals",
+            json={
+                "check_request": red_bank_change_req,
+                "accountant_note": "Поставщик сменил обслуживающий банк",
+            },
+        )
+        assert created.status_code == 200
+        approval = created.json()
+        assert approval["check"]["verdict"] == "red"
+        assert approval["check"]["score"] == 65
+        assert {s["rule_id"] for s in approval["check"]["signals"]} == {
+            "iik_changed",
+            "bank_changed",
+        }
+
+        # Short comment -> 422 (comment >= 10 chars still required)
+        short_resp = client.post(
+            f"/api/approvals/{approval['id']}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "коротко",
+                "trust_account": True,
+            },
+        )
+        assert short_resp.status_code == 422
+
+        # Valid comment -> 200 approved + trusted
+        ok_resp = client.post(
+            f"/api/approvals/{approval['id']}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "Подтвердили смену банка у поставщика по договору",
+                "trust_account": True,
+            },
+        )
+        assert ok_resp.status_code == 200
+        decided = ok_resp.json()
+        assert decided["status"] == "approved"
+        assert decided["trust_account"] is True
+
+        # Subsequent identical payment now follows the trusted account flow -> green + trusted=True
+        later = client.post("/api/payments/check", json=red_bank_change_req)
+        assert later.status_code == 200
+        later_body = later.json()
+        assert later_body["verdict"] == "green"
+        assert later_body["score"] == 0
+        assert later_body["trusted"] is True
+        assert later_body["trusted_info"] is not None
+        assert any(s["rule_id"] == "trusted_account" for s in later_body["signals"])
+
+    def test_red_bank_change_with_extra_signal_still_refuses_trust(
+        self, client: TestClient
+    ) -> None:
+        queue = client.get("/api/payments/queue").json()
+        q2 = next(q for q in queue if q["id"] == "Q-002")
+        # Adding urgent wording on top of iik_changed + bank_changed adds a 3rd weighted signal
+        red_with_urgent = {
+            **_queue_item_to_check_request(q2),
+            "amount_kzt": 850_000,
+            "purpose": "Оплата срочно по счёту № 513",
+        }
+
+        approval = client.post(
+            "/api/approvals",
+            json={"check_request": red_with_urgent},
+        ).json()
+        assert approval["check"]["verdict"] == "red"
+        rule_ids = {s["rule_id"] for s in approval["check"]["signals"]}
+        assert {"iik_changed", "bank_changed", "urgent_wording"} <= rule_ids
+
+        refused = client.post(
+            f"/api/approvals/{approval['id']}/decision",
+            json={
+                "decision": "approved",
+                "director_comment": "Подтверждено лично директором компании",
+                "trust_account": True,
+            },
+        )
+        assert refused.status_code == 422
+        assert refused.json()["detail"] == "Доверие недоступно для этого платежа"
+
     def test_red_approval_requires_10_char_comment_while_rejection_requires_none(
         self, client: TestClient
     ) -> None:

@@ -70,7 +70,7 @@ class TestDemoScenarios:
         iik_diff = next(d for d in result.comparison if d.field == "iik")
         bank_diff = next(d for d in result.comparison if d.field == "bank")
         assert iik_diff.differs is True
-        assert len(iik_diff.diff_positions) > 0
+        assert iik_diff.diff_positions == []
         assert bank_diff.differs is True
 
         # Trusting the account makes re-check green with trusted metadata and comparison overrides
@@ -150,7 +150,7 @@ class TestDemoScenarios:
         assert name_diff.differs is True
         assert name_diff.diff_positions == [12]
         assert iik_diff.differs is True
-        assert len(iik_diff.diff_positions) > 0
+        assert iik_diff.diff_positions == []
         assert amount_diff.differs is True
 
     def test_grey_scenario(self) -> None:

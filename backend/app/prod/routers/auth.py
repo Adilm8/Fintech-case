@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 
 from app.i18n import DEFAULT_LANG
 from app.prod.audit_db import append_audit
@@ -21,10 +20,11 @@ from app.prod.deps import (
 from app.prod.errors import ProdError
 from app.prod.schemas import Company, LoginRequest, Session, User
 from app.prod.security import (
-    SESSION_COOKIE_NAME,
     LoginRateLimiter,
     generate_session_token,
     hash_session_token,
+    session_cookie_name,
+    session_expiry,
     utc_now,
     utc_now_iso,
     verify_dummy_password,
@@ -35,8 +35,16 @@ from app.settings import Settings
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _client_ip(request: Request) -> str:
+    """Return direct peer address; do not trust X-Forwarded-For as clients can spoof it."""
+    if request.client is not None and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
 @router.post("/login", response_model=Session)
 def post_login(
+    request: Request,
     payload: LoginRequest,
     response: Response,
     conn: Annotated[sqlite3.Connection, Depends(get_db)],
@@ -47,8 +55,15 @@ def post_login(
     """Verify credentials, create an opaque session cookie, and return session info."""
     _ = lang
     login_clean = payload.login.strip()
-    if limiter.is_blocked(login_clean):
-        raise ProdError(429, "too_many_attempts")
+    client_ip = _client_ip(request)
+
+    ip_retry = limiter.ip_retry_after(client_ip)
+    if ip_retry > 0:
+        raise ProdError(429, "too_many_attempts", extra={"retry_after": ip_retry})
+
+    login_retry = limiter.retry_after(login_clean)
+    if login_retry > 0:
+        raise ProdError(429, "too_many_attempts", extra={"retry_after": login_retry})
 
     row = conn.execute(
         """
@@ -60,6 +75,7 @@ def post_login(
             u.company_id,
             u.password_hash,
             u.is_active,
+            u.must_change_password,
             c.id AS c_id,
             c.name AS c_name,
             c.bin AS c_bin,
@@ -72,27 +88,34 @@ def post_login(
         (login_clean,),
     ).fetchone()
 
-    if row is None or int(row["is_active"]) != 1:
+    if row is None:
         verify_dummy_password(payload.password)
         limiter.record_failure(login_clean)
-        with tx(conn):
-            append_audit(
-                conn,
-                action="login_failed",
-                user_id=int(row["user_id"]) if row is not None else None,
-                user_login=str(row["login"]) if row is not None else login_clean,
-                role=row["role"] if row is not None else None,
-                company_id=(
-                    str(row["company_id"])
-                    if row is not None and row["company_id"] is not None
-                    else None
-                ),
-                details={"reason": "invalid_credentials"},
-            )
+        limiter.record_ip_failure(client_ip)
+        audit_events = limiter.unknown_audit.note(client_ip, login_clean)
+        if audit_events:
+            with tx(conn):
+                for event in audit_events:
+                    append_audit(
+                        conn,
+                        action="login_failed",
+                        user_id=None,
+                        user_login=str(event["login"]),
+                        role=None,
+                        company_id=None,
+                        details={
+                            "reason": "invalid_credentials",
+                            "ip": event["ip"],
+                            "count": event["count"],
+                            "aggregated": event["aggregated"],
+                        },
+                    )
         raise ProdError(401, "invalid_credentials")
 
-    if not verify_password(payload.password, str(row["password_hash"])):
+    if int(row["is_active"]) != 1:
+        verify_dummy_password(payload.password)
         limiter.record_failure(login_clean)
+        limiter.record_ip_failure(client_ip)
         with tx(conn):
             append_audit(
                 conn,
@@ -101,7 +124,22 @@ def post_login(
                 user_login=str(row["login"]),
                 role=row["role"],
                 company_id=str(row["company_id"]) if row["company_id"] is not None else None,
-                details={"reason": "invalid_credentials"},
+                details={"reason": "invalid_credentials", "ip": client_ip},
+            )
+        raise ProdError(401, "invalid_credentials")
+
+    if not verify_password(payload.password, str(row["password_hash"])):
+        limiter.record_failure(login_clean)
+        limiter.record_ip_failure(client_ip)
+        with tx(conn):
+            append_audit(
+                conn,
+                action="login_failed",
+                user_id=int(row["user_id"]),
+                user_login=str(row["login"]),
+                role=row["role"],
+                company_id=str(row["company_id"]) if row["company_id"] is not None else None,
+                details={"reason": "invalid_credentials", "ip": client_ip},
             )
         raise ProdError(401, "invalid_credentials")
 
@@ -111,7 +149,13 @@ def post_login(
     token_hash = hash_session_token(token)
     now = utc_now()
     ttl_seconds = cfg.session_ttl_hours * 3600
-    expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
+    idle_seconds = cfg.session_idle_minutes * 60
+    expires_at = session_expiry(
+        now,
+        now,
+        ttl_seconds=ttl_seconds,
+        idle_seconds=idle_seconds,
+    ).isoformat()
 
     with tx(conn):
         conn.execute(
@@ -132,7 +176,7 @@ def post_login(
         )
 
     response.set_cookie(
-        key=SESSION_COOKIE_NAME,
+        key=session_cookie_name(cfg.cookie_secure),
         value=token,
         httponly=True,
         samesite="lax",
@@ -159,7 +203,11 @@ def post_login(
         if row["c_id"] is not None
         else None
     )
-    return Session(user=user, company=company)
+    return Session(
+        user=user,
+        company=company,
+        must_change_password=bool(row["must_change_password"]),
+    )
 
 
 @router.post("/logout", status_code=204)
@@ -189,7 +237,7 @@ def post_logout(
 
     resp = Response(status_code=204)
     resp.delete_cookie(
-        key=SESSION_COOKIE_NAME,
+        key=session_cookie_name(cfg.cookie_secure),
         path="/",
         httponly=True,
         samesite="lax",
@@ -205,4 +253,8 @@ def get_me(
 ) -> Session:
     """Return the authenticated user and company for the active session."""
     _ = lang
-    return Session(user=ctx.user, company=ctx.company)
+    return Session(
+        user=ctx.user,
+        company=ctx.company,
+        must_change_password=ctx.must_change_password,
+    )

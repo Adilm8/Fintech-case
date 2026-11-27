@@ -15,7 +15,7 @@ from app.prod.audit_db import append_audit
 from app.prod.db import get_db, tx
 from app.prod.deps import LangQuery, get_app_settings, require_role
 from app.prod.errors import ProdError
-from app.prod.importers import MAX_IMPORT_BYTES
+from app.prod.importers.common import MAX_IMPORT_BODY_BYTES, read_body_limited
 from app.prod.schemas import (
     Batch,
     BatchActionResult,
@@ -67,17 +67,7 @@ async def import_payments_endpoint(
     lang: LangQuery = DEFAULT_LANG,
 ) -> ImportResult:
     """Import a 1CClientBankExchange or CSV batch (raw bytes or multipart via stdlib)."""
-    content_length = request.headers.get("content-length")
-    if content_length is not None:
-        try:
-            if int(content_length) > MAX_IMPORT_BYTES and not (
-                request.headers.get("content-type", "").lower().startswith("multipart/form-data")
-            ):
-                raise ProdError(413, "file_too_large")
-        except ValueError:
-            pass
-
-    raw_body = await request.body()
+    raw_body = await read_body_limited(request, MAX_IMPORT_BODY_BYTES)
     content_type = request.headers.get("content-type", "")
     if content_type.lower().startswith("multipart/form-data"):
         file_bytes = _extract_multipart_file(content_type, raw_body)
@@ -345,21 +335,23 @@ def recheck_payment_endpoint(
 @router.post("/{payment_id}/sign", response_model=Payment)
 def sign_payment_endpoint(
     payment_id: str,
+    payload: SignPaymentRequest,
     conn: Annotated[sqlite3.Connection, Depends(get_db)],
     user: Annotated[User, Depends(require_role("accountant", "director"))],
     cfg: Annotated[Settings, Depends(get_app_settings)],
-    payload: Annotated[SignPaymentRequest | None, Body()] = None,
     lang: LangQuery = DEFAULT_LANG,
 ) -> Payment:
     """Re-verify and sign a payment under server-side §5 risk policy enforcement."""
-    ack = payload.accountant_ack if payload is not None else False
     return payments_service.sign_payment(
         conn,
         payment_id=payment_id,
         user=user,
-        accountant_ack=ack,
+        accountant_ack=payload.accountant_ack,
         today=cfg.today(),
         lang=lang,
+        document_digest=payload.document_digest,
+        signature=payload.signature,
+        signer=payload.signer,
     )
 
 

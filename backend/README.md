@@ -2,7 +2,7 @@
 
 Pre-signing verification service for SME supplier payments in Kazakhstan. Compares invoice requisites (BIN/IIN, IIK, BIK, optional KBe/KNP), supplier name, payment purpose, and amount against the client's 12-month payment history, short-term session memory, and BCC's internal account directory, returning a plain-language verdict (`green`, `yellow`, `red`, `grey`, or `invalid`) with localized explanations in Russian (`ru`), Kazakh (`kk`), and English (`en`).
 
-All data is synthetic and loaded from deterministic JSON files under `data/` (`seed=42`). No external database or runtime network calls are used.
+All data is synthetic and loaded from deterministic JSON files under `data/` (`seed=42`). Demo mode uses no external database (prod mode uses local SQLite). Core payment verification makes zero outbound network calls; the only optional outbound API calls happen in `POST /api/invoice/extract` and `POST /api/explain` when `ANTHROPIC_API_KEY` is configured (both fall back locally without a key and never affect payment verdicts).
 
 ## Prerequisites
 
@@ -41,12 +41,14 @@ uv run ruff format .
 
 | Method | Path | Query / Headers | Description |
 |---|---|---|---|
-| `POST` | `/api/payments/check` | `lang=ru\|kk\|en`, optional `X-Role: analyst` | Check payment requisites (`CheckRequest`) and return `CheckResult` (with `ruleset_version`). Appends a privacy-preserving entry to `data/audit.jsonl`. |
+| `POST` | `/api/payments/check` | `lang=ru\|kk\|en`, `commit=false\|true` (default `false`), optional `X-Role: analyst` | Check payment requisites (`CheckRequest`) and return `CheckResult` (with `ruleset_version`). Dry run by default (`commit=false`): drafts, edits, and attack-console probes are not recorded in short-term memory. Passing `commit=true` signals intent to pay and records the check in short-term memory (deduplicated by canonical request SHA-256) for `duplicate_invoice` (90d), `structuring_72h` (72h), and `new_recipient_accumulated` (7d). Appends a privacy-preserving entry to `data/audit.jsonl`. |
 | `GET` | `/api/payments/queue` | `lang=ru\|kk\|en`, optional `X-Role: analyst` | List payments awaiting signature (`Q-001`..`Q-010`) with computed `CheckResult` verdicts. |
 | `GET` | `/api/history` | — | Return SME client info (`ТОО «ТехноСтрой Астана»`) and 12-month supplier payment history. |
 | `POST` | `/api/approvals` | `lang=ru\|kk\|en`, optional `X-Role: analyst` | Submit `{ "check_request": ..., "accountant_note": "..." }` for director review (deduplicates pending requests). |
 | `GET` | `/api/approvals` | `bin`, `iik`, `lang=ru\|kk\|en`, optional `X-Role: analyst` | List submitted approvals with optional BIN/IIK filters and localized check details. |
-| `POST` | `/api/approvals/{id}/decision` | `lang=ru\|kk\|en`, optional `X-Role: analyst` | Record `{ "decision": "approved" \| "rejected", "director_comment": "...", "trust_account": bool }`. Comment (`>= 10` non-whitespace chars) is required (`422`) for `red` approvals and `trust_account: true`. Appends decision entry to `data/audit.jsonl`. |
+| `POST` | `/api/approvals/{id}/decision` | `lang=ru\|kk\|en`, optional `X-Role: analyst` | Record `{ "decision": "approved" \| "rejected", "director_comment": "...", "trust_account": bool }`. Comment (`>= 10` non-whitespace chars) is required (`422`) for `red` approvals and `trust_account: true`. `trust_account: true` is allowed on `yellow` account-change checks and on `red` checks when the only weighted signals are `iik_changed` + `bank_changed` (no blocking or other risk signals). Appends decision entry to `data/audit.jsonl`. |
+| `POST` | `/api/invoice/extract` | `filename` query, raw file body (`Content-Type`) | Optional helper: extract payment form fields from a PDF/image invoice (`<= 10 MB`) and re-validate KZ checksums. Calls an external API only when `ANTHROPIC_API_KEY` is set; falls back locally to template/regex parsing otherwise. Verdict never depends on it. |
+| `POST` | `/api/explain` | — | Optional helper: restate a computed `CheckResult` in 3–5 plain-language sentences (`ru`/`kk`/`en`). Calls an external API only when `ANTHROPIC_API_KEY` is set; falls back locally to a deterministic template otherwise. Verdict never depends on it. |
 | `GET` | `/api/metrics` | `lang=ru\|kk\|en` | Return cached evaluation metrics over `data/eval_set.json` (split into `stopped` / `escalated`), localized `by_kind` labels and disclaimer, and chronological `history_replay` over the client's 12-month history. |
 | `GET` | `/api/audit` | `limit=100` (`1..1000`) | Return latest append-only audit log entries from `data/audit.jsonl` (no plaintext PII). |
 | `POST` | `/api/demo/reset` | — | Clear approvals, trusted accounts, and short-term session memory and reload JSON datasets. |
@@ -145,6 +147,9 @@ Demo mode remains the default and is completely unchanged: running `uv run uvico
 | `SHIELD_TODAY` | *(empty)* | Optional `YYYY-MM-DD` override pinning "today" for reproducible checks and seeding. |
 | `SHIELD_SEED_PASSWORD` | *(empty)* | Password for seeded users; if unset, a random password is generated and printed once to stdout. |
 | `SHIELD_PDF_FONT` | *(empty)* | Optional path to a Unicode TrueType (`.ttf`) font for Cyrillic/Kazakh PDF export (auto-detects system Arial/Segoe UI/DejaVu/Liberation fonts by default). |
+| `ANTHROPIC_API_KEY` | *(empty)* | Optional key enabling external API calls in `/api/invoice/extract` and `/api/explain`; when unset, both fall back locally and never affect payment verdicts. |
+
+> **Frontend demo login helpers**: Setting `NEXT_PUBLIC_DEMO_LOGINS=1` in the frontend environment shows role quick-fill buttons (`accountant`, `director`, `analyst`) on prod `/login` that populate only the login input; passwords are never hardcoded and must still be typed manually.
 
 ### Seeding and Running Prod Mode
 
@@ -187,19 +192,20 @@ uv run uvicorn app.asgi:app --port 8000
 | `GET`, `PUT` | `/api/v1/company/settings` | D | Company notification filter (`notify_on`: `red` \| `red_yellow`) and `approval_threshold_kzt` (payments `>= threshold` require director approval even when `green`, returning `409 threshold_requires_approval` in `/sign` and `/batch/sign-green`). |
 | `GET`, `POST` | `/api/v1/notifications`, `/notifications/read` | any | Server-derived notifications (pending approvals, director decisions, `sign_denied`) filtered by `notify_on`, with per-user read state. |
 | `GET`, `POST` | `/api/v1/payments` | A, D, N / A | Paginated payment list with full-scope `counts`, filters, search; create & verify manual payment (`201`). |
-| `GET` | `/api/v1/payments/export` | A, D, N | Export check history (`format=csv` UTF-8 BOM for Excel; `format=pdf` A4 report «Что проверить перед подписью» with embedded Cyrillic TTF) filtered by `scope`, `from`, `to`. |
+| `GET` | `/api/v1/payments/export` | A, D, N | Export check history (`format=csv` UTF-8 BOM for Excel with formula-injection neutralization prefixing `'` on free-text cells starting with `=`, `+`, `-`, `@`, `\t`, or `\r` while keeping numeric columns numeric; `format=pdf` A4 report «Что проверить перед подписью» with embedded Cyrillic TTF) filtered by `scope`, `from`, `to`. |
 | `GET`, `PUT` | `/api/v1/payments/{id}` | A, D, N / A | View payment (`analyst_details` only for `analyst`); edit & recheck editable statuses (`checked`, `rejected`, `postponed`). |
-| `POST` | `/api/v1/payments/{id}/sign` | A, D | Server-side signing gate (rechecks at sign time, enforces approval/ack rules, updates supplier directory atomically, logs `sign` / `sign_denied`). |
+| `POST` | `/api/v1/payments/{id}/sign` | A, D | Server-side signing gate (rechecks at sign time, enforces approval/ack rules — returns `409 identity_requires_approval` when `yellow`/`grey` carries any `IDENTITY_SIGNAL_IDS` signal so director approval is required — updates supplier directory atomically, logs `sign` / `sign_denied`). |
 | `POST` | `/api/v1/payments/{id}/{recheck,send-to-director,postpone,resume,cancel}` | A | Lifecycle transitions and approval submission. |
-| `POST` | `/api/v1/payments/import` | A | Import 1C (`utf-8`/`cp1251`/`cp866`) or CSV (`;` / `,`) batch (`application/octet-stream`, `≤ 2 MB`, `≤ 500` docs). |
+| `POST` | `/api/v1/payments/import` | A | Import 1C (`utf-8`/`cp1251`/`cp866`) or CSV (`;` / `,`) batch (`application/octet-stream`, `≤ 2 MB`, `≤ 500` docs; tested on synthetic exports only). |
 | `GET` | `/api/v1/batches` | A, D, N | List recent import batches. |
 | `POST` | `/api/v1/payments/batch/{sign-green,send-to-director}` | A, D / A | Batch-sign verified `green` payments or batch-escalate `yellow`/`red`/`grey` payments. |
 | `GET` | `/api/v1/approvals` | A, D, N | List approvals (`pending` first, excludes `superseded` by default). |
-| `POST` | `/api/v1/approvals/{id}/decision` | D | Director approve/reject with optional `trust_account` (same `422` validation rules as demo). |
+| `POST` | `/api/v1/approvals/{id}/decision` | D | Director approve/reject with optional `trust_account` (allowed on `yellow` account change and on `red` when only `iik_changed` + `bank_changed` with no blocking/other risk signals; comment `≥ 10` non-whitespace chars required). |
 | `GET` | `/api/v1/suppliers`, `/suppliers/{id}` | A, D, N | Confirmed supplier directory, accounts, change chronology, and latest 50 payments. |
 | `POST` | `/api/v1/suppliers/{id}/accounts/{account_id}/untrust` | D | Revoke director account trust with mandatory comment (`≥ 10` meaningful chars). |
 | `GET` | `/api/v1/audit`, `/audit/verify` | D, N / N | Hash-chained SQLite audit trail and chain integrity check (`{ok, checked, broken_at}`). |
 | `GET` | `/api/v1/metrics` | N | Cached evaluation dataset metrics (same schema as demo `/api/metrics`). |
+| `POST` | `/api/invoice/extract`, `/api/explain` | any | Same optional invoice extraction and plain-language explanation helpers as demo mode, mounted behind prod session cookie + `X-Shield-Request: 1` header. Call an external API only when `ANTHROPIC_API_KEY` is set (local fallback otherwise); verdicts never depend on them. |
 
 ### Running Prod Tests
 

@@ -9,12 +9,15 @@ from __future__ import annotations
 import shutil
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.prod.db import connect, migrate, tx
 from app.prod.security import hash_password, utc_now
 from app.prod.seed import seed_database
+from app.prod.signing import SignerKind, SimulatedSigner
 from app.settings import Settings
 
 TEST_PW_ACCOUNTANT = "Acc-Pass-2026!"
@@ -123,3 +126,31 @@ def seeded_db(tmp_path: Path, seeded_template_db: Path) -> Path:
     dst = tmp_path / "prod_test.db"
     shutil.copy2(seeded_template_db, dst)
     return dst
+
+
+def build_sign_payload(
+    client: TestClient,
+    payment_id: str,
+    *,
+    accountant_ack: bool = False,
+    signer: SignerKind = "simulated",
+) -> dict[str, Any]:
+    """Fetch current payment document_digest via GET and compute a simulated signature payload."""
+    resp = client.get(f"/api/v1/payments/{payment_id}")
+    assert resp.status_code == 200, resp.text
+    payment = resp.json()
+    digest = payment.get("document_digest") or ("0" * 64)
+    company_id = str(payment["company_id"])
+    signature = (
+        SimulatedSigner().sign(digest, company_id)
+        if signer == "simulated"
+        else "BASE64CMS=="
+    )
+    payload: dict[str, Any] = {
+        "document_digest": digest,
+        "signature": signature,
+        "signer": signer,
+    }
+    if accountant_ack:
+        payload["accountant_ack"] = True
+    return payload

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
@@ -30,7 +31,8 @@ from app.prod.security import (
     utc_now,
     verify_password,
 )
-from app.settings import Settings
+from app.prod.seed import SEED_USERS
+from app.settings import BACKEND_DIR, Settings
 from tests.prod.conftest import (
     TEST_PW_ACCOUNTANT as PW_ACCOUNTANT,
 )
@@ -517,3 +519,29 @@ class TestAuthFlowAndSecurity:
         assert body["code"] == "validation_error"
         assert isinstance(body["errors"], list) and len(body["errors"]) >= 1
         assert body.get("detail")
+
+    def test_frontend_demo_login_helpers_match_seed_and_never_hardcode_passwords(self) -> None:
+        login_page = (
+            BACKEND_DIR.parent / "frontend" / "src" / "app" / "(prod)" / "login" / "page.tsx"
+        ).read_text(encoding="utf-8")
+        assert 'process.env.NEXT_PUBLIC_DEMO_LOGINS === "1"' in login_page
+
+        preset_block = re.search(
+            r"const DEMO_LOGIN_PRESETS\s*=\s*\[(.*?)\]\s*as const",
+            login_page,
+            re.DOTALL,
+        )
+        assert preset_block is not None
+        preset_logins = re.findall(r'login:\s*"([a-z0-9_]+)"', preset_block.group(1))
+        seed_logins = [login for login, _, _ in SEED_USERS]
+        assert preset_logins == seed_logins
+
+        # Password state must only ever be updated from user input (never hardcoded by helper clicks)
+        set_pw_calls = re.findall(r"setPassword\(([^)]*)\)", login_page)
+        assert set_pw_calls == ["e.target.value"]
+
+        ru_i18n = (BACKEND_DIR.parent / "frontend" / "src" / "i18n" / "ru.ts").read_text(
+            encoding="utf-8"
+        )
+        for label in ("Войти как бухгалтер", "Войти как директор", "Войти как аналитик"):
+            assert label in ru_i18n

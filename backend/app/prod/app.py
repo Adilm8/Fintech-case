@@ -12,10 +12,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.explain import router as explain_router
 from app.i18n import resolve_lang
+from app.invoice_ai.env import load_env_file
+from app.invoice_ai.service import router as invoice_router
 from app.main import _unhandled_exception_handler, _validation_exception_handler
 from app.prod.db import connect, migrate
-from app.prod.deps import require_csrf_header
+from app.prod.deps import current_session, require_csrf_header
 from app.prod.errors import ProdError, localize_prod_error
 from app.prod.routers import approvals as approvals_router
 from app.prod.routers import audit as audit_router
@@ -115,7 +118,12 @@ def create_prod_app(
     api_v1.include_router(audit_router.metrics_router)
     prod_app.include_router(api_v1)
 
+    prod_aux_deps = [Depends(current_session), Depends(require_csrf_header)]
+    prod_app.include_router(invoice_router, dependencies=prod_aux_deps)
+    prod_app.include_router(explain_router, dependencies=prod_aux_deps)
+
     return prod_app
 
 
+load_env_file()
 app: FastAPI = create_prod_app()

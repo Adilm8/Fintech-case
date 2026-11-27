@@ -8,10 +8,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+from app.prod.errors import ProdError
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 MAX_IMPORT_BYTES: int = 2 * 1024 * 1024
+MULTIPART_OVERHEAD_BYTES: int = 64 * 1024
+MAX_IMPORT_BODY_BYTES: int = MAX_IMPORT_BYTES + MULTIPART_OVERHEAD_BYTES
 MAX_IMPORT_DOCUMENTS: int = 500
+MAX_REPORTED_ERRORS: int = 50
 CANDIDATE_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "cp1251", "cp866")
 
 _HINT_TO_ENCODING: dict[str, str] = {
@@ -76,6 +84,52 @@ class ParsedFile:
     docs: list[ParsedDoc]
     errors: list[LineError]
     encoding: str
+    errors_omitted: int = 0
+
+
+def cap_errors(
+    errors: list[LineError],
+    limit: int = MAX_REPORTED_ERRORS,
+) -> tuple[list[LineError], int]:
+    """Keep at most limit error rows and append one Russian summary row if truncated."""
+    if len(errors) <= limit:
+        return list(errors), 0
+    omitted = len(errors) - limit
+    capped = list(errors[:limit])
+    capped.append(
+        LineError(
+            line_no=None,
+            doc_number=None,
+            code="errors_truncated",
+            message=f"Показаны первые {limit} ошибок; ещё {omitted} ошибок не показаны.",
+        )
+    )
+    return capped, omitted
+
+
+async def read_body_limited(request: Request, max_bytes: int) -> bytes:
+    """Read request body incrementally, raising 413 file_too_large as soon as max_bytes is exceeded."""
+    raw_length = request.headers.get("content-length")
+    if raw_length is None:
+        for header_name, header_value in request.headers.items():
+            if header_name.lower() == "content-length":
+                raw_length = header_value
+                break
+    if raw_length is not None:
+        try:
+            if int(raw_length.strip()) > max_bytes:
+                raise ProdError(413, "file_too_large")
+        except ValueError:
+            pass
+
+    buffer = bytearray()
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        if len(buffer) + len(chunk) > max_bytes:
+            raise ProdError(413, "file_too_large")
+        buffer.extend(chunk)
+    return bytes(buffer)
 
 
 def parse_amount(raw: str | None) -> float | None:
@@ -180,4 +234,6 @@ def decode_bytes(
     if fallback_match is not None:
         return fallback_match
 
-    raise UnsupportedFileError("Could not decode file in utf-8, cp1251, or cp866 with valid format markers.")
+    raise UnsupportedFileError(
+        "Could not decode file in utf-8, cp1251, or cp866 with valid format markers."
+    )

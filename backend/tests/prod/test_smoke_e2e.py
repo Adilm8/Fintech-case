@@ -14,7 +14,7 @@ from app.prod.deps import CSRF_HEADER_NAME, CSRF_HEADER_VALUE
 from app.prod.seed import seed_database
 from app.settings import Settings
 from app.store import DEFAULT_DATA_DIR
-from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY
+from tests.prod.conftest import TEST_SEED_PW, TEST_TODAY, build_sign_payload
 
 CSRF: dict[str, str] = {CSRF_HEADER_NAME: CSRF_HEADER_VALUE}
 OCTET_HEADERS: dict[str, str] = {**CSRF, "Content-Type": "application/octet-stream"}
@@ -188,7 +188,7 @@ def test_full_prod_e2e_workflow_and_restart_persistence(
         # 7. Accountant signs approved yellow payment (pay-q-002); trying to sign rejected red -> 409 approval_rejected
         sign_approved = acc.post(
             "/api/v1/payments/pay-q-002/sign",
-            json={},
+            json=build_sign_payload(acc, "pay-q-002"),
             headers=CSRF,
         )
         assert sign_approved.status_code == 200
@@ -196,7 +196,7 @@ def test_full_prod_e2e_workflow_and_restart_persistence(
 
         sign_rejected = acc.post(
             f"/api/v1/payments/{red_imported_id}/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, red_imported_id, accountant_ack=True),
             headers=CSRF,
         )
         assert sign_rejected.status_code == 409
@@ -205,7 +205,7 @@ def test_full_prod_e2e_workflow_and_restart_persistence(
         # 8. Direct API attempt to sign an unapproved red payment (seeded pay-q-003) -> 409 red_requires_approval + sign_denied
         sign_unapproved_red = acc.post(
             "/api/v1/payments/pay-q-003/sign",
-            json={"accountant_ack": True},
+            json=build_sign_payload(acc, "pay-q-003", accountant_ack=True),
             headers=CSRF,
         )
         assert sign_unapproved_red.status_code == 409

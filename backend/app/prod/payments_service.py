@@ -6,7 +6,8 @@ import hashlib
 import json
 import sqlite3
 import uuid
-from datetime import date
+from collections.abc import Iterable
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -55,6 +56,20 @@ from app.prod.schemas import (
 )
 from app.prod.security import utc_now_iso
 from app.prod.serde import dump_full, load_check_result
+from app.prod.signing import (
+    DocumentMismatchError,
+    InvalidSignerError,
+    SignatureVerificationResult,
+    SignatureVerifier,
+    SignerKind,
+    SimulatedSigner,
+    build_payment_document,
+    verify_document_binding,
+    verify_signature,
+)
+from app.prod.signing import (
+    document_digest as compute_document_digest,
+)
 from app.risk.config import RULESET_VERSION
 from app.risk.engine import check_payment, localize_check_result
 from app.schemas import (
@@ -79,6 +94,20 @@ ACTIVE_PAYMENT_STATUSES: tuple[PaymentStatus, ...] = (
     "rejected",
     "postponed",
 )
+AGGREGATE_THRESHOLD_WINDOW_HOURS: int = 72
+AGGREGATE_THRESHOLD_STATUSES: tuple[PaymentStatus, ...] = (
+    "signed",
+    "checked",
+    "pending_approval",
+    "approved",
+    "postponed",
+)
+DUPLICATE_SOURCE_STATUSES: tuple[PaymentStatus, ...] = (
+    "signed",
+    "checked",
+    "pending_approval",
+    "approved",
+)
 
 
 def compute_payment_permissions(
@@ -89,6 +118,7 @@ def compute_payment_permissions(
     payment_request_sha256: str,
     approval_status: ProdApprovalStatus | None = None,
     approval_request_sha256: str | None = None,
+    signal_ids: Iterable[str] | None = None,
 ) -> PaymentPermissions:
     """Delegate permission calculation to policy.permissions_for (single source of truth)."""
     return policy.permissions_for(
@@ -98,6 +128,7 @@ def compute_payment_permissions(
         payment_request_sha256=payment_request_sha256,
         approval_status=approval_status,
         approval_request_sha256=approval_request_sha256,
+        signal_ids=signal_ids,
     )
 
 
@@ -199,7 +230,11 @@ def _find_duplicate_map(
     conn: sqlite3.Connection,
     rows: list[sqlite3.Row],
 ) -> dict[str, str | None]:
-    """Resolve duplicate_of for each active payment against the earliest active match per company."""
+    """Resolve duplicate_of against the earliest signed or active-pending match per company.
+
+    Signed matches take priority over pending matches so an unsigned copy always references
+    an already-signed original. Rejected, cancelled, and postponed rows are excluded as sources.
+    """
     result: dict[str, str | None] = {}
     pairs: set[tuple[str, str]] = set()
     for row in rows:
@@ -209,19 +244,23 @@ def _find_duplicate_map(
         else:
             pairs.add((str(row["company_id"]), str(row["request_sha256"])))
 
+    status_ph = ",".join("?" for _ in DUPLICATE_SOURCE_STATUSES)
     earliest_by_pair: dict[tuple[str, str], str] = {}
     for comp_id, sha in pairs:
         first = conn.execute(
-            """
+            f"""
             SELECT id
             FROM payments
             WHERE company_id = ?
               AND request_sha256 = ?
-              AND status NOT IN ('signed', 'cancelled')
-            ORDER BY created_at ASC, COALESCE(line_no, 0) ASC, rowid ASC
+              AND status IN ({status_ph})
+            ORDER BY CASE WHEN status = 'signed' THEN 0 ELSE 1 END ASC,
+                     created_at ASC,
+                     COALESCE(line_no, 0) ASC,
+                     rowid ASC
             LIMIT 1
             """,
-            (comp_id, sha),
+            (comp_id, sha, *DUPLICATE_SOURCE_STATUSES),
         ).fetchone()
         if first is not None:
             earliest_by_pair[(comp_id, sha)] = str(first["id"])
@@ -233,6 +272,204 @@ def _find_duplicate_map(
         first_id = earliest_by_pair.get((str(row["company_id"]), str(row["request_sha256"])))
         result[pid] = first_id if first_id is not None and first_id != pid else None
     return result
+
+
+def _load_rejected_payment_ids(
+    conn: sqlite3.Connection,
+    payment_ids: Iterable[str],
+) -> set[str]:
+    """Return payment IDs that have at least one director-rejected approval in history."""
+    ids = list(dict.fromkeys(payment_ids))
+    if not ids:
+        return set()
+    ph = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"SELECT DISTINCT payment_id FROM approvals WHERE status = 'rejected' AND payment_id IN ({ph})",
+        ids,
+    ).fetchall()
+    return {str(r["payment_id"]) for r in rows}
+
+
+def _load_rejected_requisites_by_company(
+    conn: sqlite3.Connection,
+    company_ids: Iterable[str],
+) -> set[tuple[str, str, str]]:
+    """Return (company_id, norm_bin, norm_iik) tuples ever rejected by a director.
+
+    Derived strictly from existing approvals (status='rejected') and append-only audit_log
+    ('decision:rejected') without modifying the database schema.
+    """
+    cids = list(dict.fromkeys(company_ids))
+    if not cids:
+        return set()
+    ph = ",".join("?" for _ in cids)
+    rejected: set[tuple[str, str, str]] = set()
+
+    apr_rows = conn.execute(
+        f"""
+        SELECT DISTINCT p.company_id, p.recipient_bin, p.recipient_iik
+        FROM approvals a
+        JOIN payments p ON p.id = a.payment_id
+        WHERE p.company_id IN ({ph})
+          AND a.status = 'rejected'
+          AND a.request_sha256 = p.request_sha256
+        """,
+        cids,
+    ).fetchall()
+    for r in apr_rows:
+        rejected.add(
+            (
+                str(r["company_id"]),
+                normalize_requisite(str(r["recipient_bin"])),
+                normalize_requisite(str(r["recipient_iik"])),
+            )
+        )
+
+    audit_rows = conn.execute(
+        f"""
+        SELECT company_id, details_json
+        FROM audit_log
+        WHERE company_id IN ({ph}) AND action = 'decision:rejected'
+        """,
+        cids,
+    ).fetchall()
+    for r in audit_rows:
+        comp_id = str(r["company_id"]) if r["company_id"] is not None else ""
+        if not comp_id:
+            continue
+        try:
+            details = json.loads(str(r["details_json"]))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(details, dict):
+            continue
+        raw_bin = details.get("recipient_bin")
+        raw_iik = details.get("recipient_iik")
+        if isinstance(raw_bin, str) and isinstance(raw_iik, str) and raw_bin and raw_iik:
+            rejected.add(
+                (comp_id, normalize_requisite(raw_bin), normalize_requisite(raw_iik))
+            )
+
+    return rejected
+
+
+def _has_rejected_payment_history(conn: sqlite3.Connection, payment_id: str) -> bool:
+    """Return True if this payment has ever had an approval with status='rejected'."""
+    row = conn.execute(
+        "SELECT 1 FROM approvals WHERE payment_id = ? AND status = 'rejected' LIMIT 1",
+        (payment_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _is_rejected_requisites(
+    conn: sqlite3.Connection,
+    company_id: str,
+    recipient_bin: str,
+    recipient_iik: str,
+) -> bool:
+    """Return True if (company_id, recipient_bin, recipient_iik) was ever rejected by a director."""
+    key = (
+        company_id,
+        normalize_requisite(recipient_bin),
+        normalize_requisite(recipient_iik),
+    )
+    return key in _load_rejected_requisites_by_company(conn, (company_id,))
+
+
+def _parse_iso_utc(raw: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp or YYYY-MM-DD date string into a UTC-aware datetime."""
+    if not raw:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        if len(text) == 10:
+            parsed_date = date.fromisoformat(text)
+            return datetime(
+                parsed_date.year,
+                parsed_date.month,
+                parsed_date.day,
+                tzinfo=UTC,
+            )
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def sum_supplier_payments_window_tiyn(
+    conn: sqlite3.Connection,
+    *,
+    company_id: str,
+    recipient_bin: str,
+    recipient_iik: str,
+    exclude_payment_id: str | None = None,
+    now: datetime | None = None,
+    window_hours: int = AGGREGATE_THRESHOLD_WINDOW_HOURS,
+) -> int:
+    """Sum amount_tiyn of non-rejected/non-cancelled payments to the same BIN or IIK in the rolling window.
+
+    Includes signed payments (timestamped by signed_at, falling back to updated_at/created_at/paid_at)
+    and active/pending payments (checked, pending_approval, approved, postponed; timestamped by
+    created_at, falling back to updated_at). Excludes rejected, cancelled, and exclude_payment_id.
+    """
+    norm_bin = normalize_requisite(recipient_bin)
+    norm_iik = normalize_requisite(recipient_iik)
+    match_clauses: list[str] = []
+    params: list[Any] = [company_id]
+    if norm_bin:
+        match_clauses.append("recipient_bin = ?")
+        params.append(norm_bin)
+    if norm_iik:
+        match_clauses.append("recipient_iik = ?")
+        params.append(norm_iik)
+    if not match_clauses:
+        return 0
+
+    status_ph = ",".join("?" for _ in AGGREGATE_THRESHOLD_STATUSES)
+    params.extend(AGGREGATE_THRESHOLD_STATUSES)
+
+    exclude_sql = ""
+    if exclude_payment_id is not None:
+        exclude_sql = "AND id != ?"
+        params.append(exclude_payment_id)
+
+    rows = conn.execute(
+        f"""
+        SELECT amount_tiyn, status, signed_at, created_at, updated_at, paid_at
+        FROM payments
+        WHERE company_id = ?
+          AND ({' OR '.join(match_clauses)})
+          AND status IN ({status_ph})
+          {exclude_sql}
+        """,
+        params,
+    ).fetchall()
+
+    if now is not None:
+        ref_dt = now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
+    else:
+        parsed_now = _parse_iso_utc(utc_now_iso())
+        assert parsed_now is not None
+        ref_dt = parsed_now
+    window_start = ref_dt - timedelta(hours=window_hours)
+
+    total_tiyn = 0
+    for row in rows:
+        if row["status"] == "signed":
+            raw_ts = row["signed_at"] or row["updated_at"] or row["created_at"] or row["paid_at"]
+        else:
+            raw_ts = row["created_at"] or row["updated_at"]
+        row_dt = _parse_iso_utc(str(raw_ts) if raw_ts is not None else None)
+        if row_dt is not None and row_dt >= window_start:
+            total_tiyn += int(row["amount_tiyn"])
+    return total_tiyn
 
 
 def _payment_row_to_check_request(row: sqlite3.Row) -> CheckRequest:
@@ -268,7 +505,7 @@ def hydrate_payments(
     if check_ids:
         ph = ",".join("?" for _ in check_ids)
         for crow in conn.execute(
-            f"SELECT id, result_json, verdict FROM checks WHERE id IN ({ph})",
+            f"SELECT id, request_sha256, ruleset_version, verdict, result_json FROM checks WHERE id IN ({ph})",
             check_ids,
         ).fetchall():
             checks_by_id[str(crow["id"])] = crow
@@ -296,7 +533,10 @@ def hydrate_payments(
     users_cache: dict[int, UserBrief] = {}
     _load_users_brief(conn, user_ids, users_cache)
     dup_map = _find_duplicate_map(conn, rows)
-    settings_map = load_company_settings_map(conn, {str(r["company_id"]) for r in rows})
+    company_ids = {str(r["company_id"]) for r in rows}
+    settings_map = load_company_settings_map(conn, company_ids)
+    rejected_payment_ids = _load_rejected_payment_ids(conn, [str(r["id"]) for r in rows])
+    rejected_requisites = _load_rejected_requisites_by_company(conn, company_ids)
 
     payments: list[Payment] = []
     for row in rows:
@@ -315,8 +555,12 @@ def hydrate_payments(
                 lang,
                 include_analyst_details=include_analyst,
             )
+            doc_digest: str | None = compute_document_digest(
+                build_payment_document(row, check_row)
+            )
         else:
             localized_check = _synthesize_seed_check(pid, lang)
+            doc_digest = None
 
         approval_brief: ApprovalBrief | None = None
         appr_status: ProdApprovalStatus | None = None
@@ -357,6 +601,23 @@ def hydrate_payments(
         )
 
         comp_settings = settings_map.get(comp_id)
+        threshold_tiyn = (
+            comp_settings.approval_threshold_tiyn if comp_settings is not None else None
+        )
+        agg_72h_tiyn: int | None = None
+        if threshold_tiyn is not None and threshold_tiyn > 0:
+            agg_72h_tiyn = sum_supplier_payments_window_tiyn(
+                conn,
+                company_id=comp_id,
+                recipient_bin=str(row["recipient_bin"]),
+                recipient_iik=str(row["recipient_iik"]),
+                exclude_payment_id=pid,
+            )
+        req_key = (
+            comp_id,
+            normalize_requisite(str(row["recipient_bin"])),
+            normalize_requisite(str(row["recipient_iik"])),
+        )
         perms = policy.permissions_for(
             role=viewer.role,
             status=status,
@@ -365,9 +626,12 @@ def hydrate_payments(
             approval_status=appr_status,
             approval_request_sha256=appr_sha,
             amount_tiyn=int(row["amount_tiyn"]),
-            approval_threshold_tiyn=(
-                comp_settings.approval_threshold_tiyn if comp_settings is not None else None
-            ),
+            approval_threshold_tiyn=threshold_tiyn,
+            aggregate_72h_tiyn=agg_72h_tiyn,
+            signal_ids=[s.rule_id for s in localized_check.signals],
+            prior_rejection=pid in rejected_payment_ids,
+            prior_rejected_requisites=req_key in rejected_requisites,
+            is_duplicate=dup_map[pid] is not None,
         )
 
         payments.append(
@@ -382,6 +646,7 @@ def hydrate_payments(
                 doc_date=str(row["doc_date"]) if row["doc_date"] is not None else None,
                 request=req,
                 check=localized_check,
+                document_digest=doc_digest,
                 approval=approval_brief,
                 accountant_ack=bool(row["accountant_ack"]),
                 supplier=sup_ref,
@@ -924,6 +1189,9 @@ def edit_payment(
             created_by=user.id,
             created_at=now_iso,
         )
+        edit_details: dict[str, Any] = {"old_request_sha256": old_sha}
+        if status == "rejected":
+            edit_details["previous_status"] = status
         append_audit(
             conn,
             action="payment_edited",
@@ -938,7 +1206,7 @@ def edit_payment(
             ruleset_version=result.ruleset_version,
             verdict=result.verdict,
             signal_ids=signal_ids,
-            details={"old_request_sha256": old_sha},
+            details=edit_details,
         )
         append_audit(
             conn,
@@ -1331,12 +1599,27 @@ def sign_payment(
     today: date,
     lang: Lang = DEFAULT_LANG,
     prod_store: ProdStore | None = None,
+    document_digest: str | None = None,
+    signature: str | None = None,
+    signer: SignerKind | None = None,
+    signature_verifier: SignatureVerifier | SimulatedSigner | None = None,
+    server_simulated: bool = False,
+    now: datetime | None = None,
 ) -> Payment:
     """Enforce the §5 server-side signing gateway inside BEGIN IMMEDIATE and sign if allowed."""
     if user.role not in ("accountant", "director"):
         raise ProdError(403, "forbidden_role")
 
+    if not server_simulated:
+        if document_digest is None or not document_digest.strip():
+            raise ProdError(422, "validation_error")
+        if signer is None or signature is None:
+            raise ProdError(422, "validation_error")
+
     denied_code: str | None = None
+    denied_status: int = 409
+    denied_reason: str | None = None
+    denied_new_signal_ids: list[str] = []
     denied_ctx: dict[str, Any] = {}
     verdict_changed_flag = False
 
@@ -1369,222 +1652,246 @@ def sign_payment(
                 "extra_details": {"accountant_ack": accountant_ack},
             }
         else:
-            approval_status: ProdApprovalStatus | None = None
-            approval_sha: str | None = None
-            ref_check_id: str | None = current_check_id
-
-            if current_approval_id is not None:
-                arow = conn.execute(
-                    "SELECT id, status, check_id, request_sha256 FROM approvals WHERE id = ?",
-                    (current_approval_id,),
+            current_check_row = (
+                conn.execute(
+                    "SELECT id, request_sha256, ruleset_version, verdict FROM checks WHERE id = ?",
+                    (current_check_id,),
                 ).fetchone()
-                if arow is not None and arow["status"] != "superseded":
-                    approval_status = arow["status"]
-                    approval_sha = str(arow["request_sha256"])
-                    if approval_status == "approved":
-                        ref_check_id = str(arow["check_id"])
-
-            previous_verdict: Verdict = "green"
-            if ref_check_id is not None:
-                prev_crow = conn.execute(
-                    "SELECT verdict FROM checks WHERE id = ?",
-                    (ref_check_id,),
-                ).fetchone()
-                if prev_crow is not None:
-                    previous_verdict = prev_crow["verdict"]
-
-            # Row 5: always re-run risk engine at signing time (trigger='sign')
-            req = _payment_row_to_check_request(row)
-            store = prod_store
-            if store is None:
-                company_row = load_company_row(conn, company_id)
-                store = ProdStore(
-                    conn,
-                    company_row,
-                    reference=get_reference_store(),
-                    today=today,
-                    exclude_payment_id=payment_id,
-                )
-            prev_excluded = store.exclude_payment_id
-            store.exclude_payment_id = payment_id
-            try:
-                fresh_result = check_payment(
-                    req,
-                    store,
-                    today=today,
-                    lang="ru",
-                    include_analyst_details=False,
-                    include_recent_memory=True,
-                    record_in_memory=False,
-                )
-            finally:
-                store.exclude_payment_id = prev_excluded
-
-            now_iso = utc_now_iso()
-            fresh_signals = [s.rule_id for s in fresh_result.signals]
-            insert_check_row(
-                conn,
-                payment_id=payment_id,
-                request_sha256=req_sha,
-                result=fresh_result,
-                trigger="sign",
-                created_by=user.id,
-                created_at=now_iso,
+                if current_check_id is not None
+                else None
             )
 
-            comp_settings = get_company_settings(conn, company_id)
-            decision = policy.sign_decision(
-                role=user.role,
-                status=status,
-                previous_verdict=previous_verdict,
-                fresh_verdict=fresh_result.verdict,
-                payment_request_sha256=req_sha,
-                approval_status=approval_status,
-                approval_request_sha256=approval_sha,
-                accountant_ack=accountant_ack,
-                amount_tiyn=int(row["amount_tiyn"]),
-                approval_threshold_tiyn=comp_settings.approval_threshold_tiyn,
-            )
-
-            if not decision.allowed:
-                assert decision.block_code is not None
-                denied_code = decision.block_code
-                if decision.supersede_approval:
-                    verdict_changed_flag = True
-                    active_approvals = conn.execute(
-                        """
-                        SELECT id FROM approvals
-                        WHERE payment_id = ? AND status IN ('pending', 'approved')
-                        """,
-                        (payment_id,),
-                    ).fetchall()
-                    for arow in active_approvals:
-                        apr_id = str(arow["id"])
-                        conn.execute(
-                            "UPDATE approvals SET status = 'superseded' WHERE id = ?",
-                            (apr_id,),
-                        )
-                        append_audit(
-                            conn,
-                            action="approval_superseded",
-                            timestamp=now_iso,
-                            user_id=user.id,
-                            user_login=user.login,
-                            role=user.role,
-                            company_id=company_id,
-                            payment_id=payment_id,
-                            approval_id=apr_id,
-                            check_id=fresh_result.check_id,
-                            request_sha256=req_sha,
-                            ruleset_version=fresh_result.ruleset_version,
-                            verdict=fresh_result.verdict,
-                            signal_ids=fresh_signals,
-                            details={
-                                "reason": "verdict_changed",
-                                "previous_verdict": previous_verdict,
-                                "fresh_verdict": fresh_result.verdict,
-                            },
-                        )
-                    conn.execute(
-                        """
-                        UPDATE payments
-                        SET check_id = ?,
-                            status = 'checked',
-                            approval_id = NULL,
-                            accountant_ack = 0,
-                            updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (fresh_result.check_id, now_iso, payment_id),
+            binding_ok = True
+            effective_digest: str | None = None
+            if server_simulated:
+                if current_check_row is not None:
+                    effective_digest = compute_document_digest(
+                        build_payment_document(row, current_check_row)
                     )
+            elif document_digest is not None:
+                if current_check_row is None:
+                    binding_ok = False
                 else:
-                    conn.execute(
-                        "UPDATE payments SET check_id = ?, updated_at = ? WHERE id = ?",
-                        (fresh_result.check_id, now_iso, payment_id),
-                    )
+                    try:
+                        verify_document_binding(document_digest, row, current_check_row)
+                        effective_digest = document_digest
+                    except DocumentMismatchError:
+                        binding_ok = False
 
-                append_audit(
-                    conn,
-                    action="check",
-                    timestamp=now_iso,
-                    user_id=user.id,
-                    user_login=user.login,
-                    role=user.role,
-                    company_id=company_id,
-                    payment_id=payment_id,
-                    check_id=fresh_result.check_id,
-                    request_sha256=req_sha,
-                    ruleset_version=fresh_result.ruleset_version,
-                    verdict=fresh_result.verdict,
-                    signal_ids=fresh_signals,
-                    details={"trigger": "sign"},
-                )
+            if not binding_ok:
+                denied_code = "document_mismatch"
+                denied_status = 409
                 denied_ctx = {
                     "company_id": company_id,
                     "approval_id": current_approval_id,
-                    "check_id": fresh_result.check_id,
+                    "check_id": current_check_id,
                     "request_sha256": req_sha,
-                    "ruleset_version": fresh_result.ruleset_version,
-                    "verdict": fresh_result.verdict,
-                    "signal_ids": fresh_signals,
-                    "extra_details": (
-                        {
-                            "previous_verdict": previous_verdict,
-                            "fresh_verdict": fresh_result.verdict,
-                            "accountant_ack": accountant_ack,
-                        }
-                        if verdict_changed_flag
-                        else {"accountant_ack": accountant_ack}
+                    "ruleset_version": (
+                        str(current_check_row["ruleset_version"])
+                        if current_check_row is not None
+                        else None
                     ),
+                    "verdict": (
+                        current_check_row["verdict"] if current_check_row is not None else None
+                    ),
+                    "extra_details": {
+                        "accountant_ack": accountant_ack,
+                        **({"signer": signer} if signer is not None else {}),
+                    },
                 }
             else:
-                new_ack = 1 if decision.set_accountant_ack else int(row["accountant_ack"])
-                paid_at_str = today.isoformat()
-                cur = conn.execute(
-                    """
-                    UPDATE payments
-                    SET status = 'signed',
-                        check_id = ?,
-                        accountant_ack = ?,
-                        signed_by = ?,
-                        signed_at = ?,
-                        paid_at = ?,
-                        updated_at = ?
-                    WHERE id = ? AND status IN ('checked', 'approved')
-                    """,
-                    (
-                        fresh_result.check_id,
-                        new_ack,
-                        user.id,
-                        now_iso,
-                        paid_at_str,
-                        now_iso,
-                        payment_id,
-                    ),
+                approval_status: ProdApprovalStatus | None = None
+                approval_sha: str | None = None
+                ref_check_id: str | None = current_check_id
+
+                if current_approval_id is not None:
+                    arow = conn.execute(
+                        "SELECT id, status, check_id, request_sha256 FROM approvals WHERE id = ?",
+                        (current_approval_id,),
+                    ).fetchone()
+                    if arow is not None and arow["status"] != "superseded":
+                        approval_status = arow["status"]
+                        approval_sha = str(arow["request_sha256"])
+                        if approval_status == "approved":
+                            ref_check_id = str(arow["check_id"])
+
+                previous_verdict: Verdict = "green"
+                previous_signal_ids: list[str] = []
+                if ref_check_id is not None:
+                    prev_crow = conn.execute(
+                        "SELECT verdict, signal_ids_json FROM checks WHERE id = ?",
+                        (ref_check_id,),
+                    ).fetchone()
+                    if prev_crow is not None:
+                        previous_verdict = prev_crow["verdict"]
+                        try:
+                            parsed_prev = json.loads(str(prev_crow["signal_ids_json"]))
+                            if isinstance(parsed_prev, list):
+                                previous_signal_ids = [str(s) for s in parsed_prev]
+                        except (TypeError, ValueError):
+                            previous_signal_ids = []
+
+                # Row 5: always re-run risk engine at signing time (trigger='sign')
+                req = _payment_row_to_check_request(row)
+                store = prod_store
+                if store is None:
+                    company_row = load_company_row(conn, company_id)
+                    store = ProdStore(
+                        conn,
+                        company_row,
+                        reference=get_reference_store(),
+                        today=today,
+                        exclude_payment_id=payment_id,
+                    )
+                prev_excluded = store.exclude_payment_id
+                store.exclude_payment_id = payment_id
+                try:
+                    fresh_result = check_payment(
+                        req,
+                        store,
+                        today=today,
+                        lang="ru",
+                        include_analyst_details=False,
+                        include_recent_memory=True,
+                        record_in_memory=False,
+                    )
+                finally:
+                    store.exclude_payment_id = prev_excluded
+
+                now_iso = utc_now_iso()
+                fresh_signals = [s.rule_id for s in fresh_result.signals]
+                new_critical_signals = (
+                    policy.find_new_critical_signals(previous_signal_ids, fresh_result.signals)
+                    if approval_status == "approved"
+                    else []
                 )
-                if cur.rowcount != 1:
-                    denied_code = "already_signed"
-                    denied_ctx = {
-                        "company_id": company_id,
-                        "approval_id": current_approval_id,
-                        "check_id": fresh_result.check_id,
-                        "request_sha256": req_sha,
-                        "ruleset_version": fresh_result.ruleset_version,
-                        "verdict": fresh_result.verdict,
-                        "signal_ids": fresh_signals,
-                    }
-                else:
-                    register_signed_payment(
+                dup_of = _find_duplicate_map(conn, [row]).get(payment_id)
+
+                comp_settings = get_company_settings(conn, company_id)
+                has_prior_rejection = _has_rejected_payment_history(conn, payment_id)
+                has_rejected_requisites = _is_rejected_requisites(
+                    conn,
+                    company_id,
+                    req.recipient_bin,
+                    req.recipient_iik,
+                )
+                agg_72h_tiyn: int | None = None
+                if (
+                    comp_settings.approval_threshold_tiyn is not None
+                    and comp_settings.approval_threshold_tiyn > 0
+                ):
+                    ref_dt = (
+                        now
+                        if now is not None
+                        else (
+                            today
+                            if isinstance(today, datetime)
+                            else _parse_iso_utc(now_iso)
+                        )
+                    )
+                    agg_72h_tiyn = sum_supplier_payments_window_tiyn(
                         conn,
                         company_id=company_id,
                         recipient_bin=req.recipient_bin,
-                        recipient_name=req.recipient_name,
                         recipient_iik=req.recipient_iik,
-                        recipient_bik=req.recipient_bik,
-                        paid_at=paid_at_str,
-                        payment_id=payment_id,
+                        exclude_payment_id=payment_id,
+                        now=ref_dt,
                     )
-                    store.invalidate_history_cache()
+                decision = policy.sign_decision(
+                    role=user.role,
+                    status=status,
+                    previous_verdict=previous_verdict,
+                    fresh_verdict=fresh_result.verdict,
+                    payment_request_sha256=req_sha,
+                    approval_status=approval_status,
+                    approval_request_sha256=approval_sha,
+                    accountant_ack=accountant_ack,
+                    amount_tiyn=int(row["amount_tiyn"]),
+                    approval_threshold_tiyn=comp_settings.approval_threshold_tiyn,
+                    aggregate_72h_tiyn=agg_72h_tiyn,
+                    signal_ids=fresh_signals,
+                    prior_rejection=has_prior_rejection,
+                    prior_rejected_requisites=has_rejected_requisites,
+                    is_duplicate=dup_of is not None,
+                    previous_signal_ids=previous_signal_ids,
+                    fresh_signals=fresh_result.signals,
+                )
+
+                if not decision.allowed:
+                    assert decision.block_code is not None
+                    insert_check_row(
+                        conn,
+                        payment_id=payment_id,
+                        request_sha256=req_sha,
+                        result=fresh_result,
+                        trigger="sign",
+                        created_by=user.id,
+                        created_at=now_iso,
+                    )
+                    denied_code = decision.block_code
+                    denied_reason = decision.block_reason
+                    if decision.supersede_approval:
+                        verdict_changed_flag = True
+                        supersede_reason = (
+                            "new_signals"
+                            if decision.block_reason == "new_signals"
+                            else "verdict_changed"
+                        )
+                        supersede_details: dict[str, Any] = {
+                            "reason": supersede_reason,
+                            "previous_verdict": previous_verdict,
+                            "fresh_verdict": fresh_result.verdict,
+                        }
+                        if supersede_reason == "new_signals":
+                            denied_new_signal_ids = list(new_critical_signals)
+                            supersede_details["new_signal_ids"] = denied_new_signal_ids
+                        active_approvals = conn.execute(
+                            """
+                            SELECT id FROM approvals
+                            WHERE payment_id = ? AND status IN ('pending', 'approved')
+                            """,
+                            (payment_id,),
+                        ).fetchall()
+                        for arow in active_approvals:
+                            apr_id = str(arow["id"])
+                            conn.execute(
+                                "UPDATE approvals SET status = 'superseded' WHERE id = ?",
+                                (apr_id,),
+                            )
+                            append_audit(
+                                conn,
+                                action="approval_superseded",
+                                timestamp=now_iso,
+                                user_id=user.id,
+                                user_login=user.login,
+                                role=user.role,
+                                company_id=company_id,
+                                payment_id=payment_id,
+                                approval_id=apr_id,
+                                check_id=fresh_result.check_id,
+                                request_sha256=req_sha,
+                                ruleset_version=fresh_result.ruleset_version,
+                                verdict=fresh_result.verdict,
+                                signal_ids=fresh_signals,
+                                details=supersede_details,
+                            )
+                        conn.execute(
+                            """
+                            UPDATE payments
+                            SET check_id = ?,
+                                status = 'checked',
+                                approval_id = NULL,
+                                accountant_ack = 0,
+                                updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (fresh_result.check_id, now_iso, payment_id),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE payments SET check_id = ?, updated_at = ? WHERE id = ?",
+                            (fresh_result.check_id, now_iso, payment_id),
+                        )
 
                     append_audit(
                         conn,
@@ -1602,23 +1909,269 @@ def sign_payment(
                         signal_ids=fresh_signals,
                         details={"trigger": "sign"},
                     )
-                    append_audit(
-                        conn,
-                        action="sign",
-                        timestamp=now_iso,
-                        user_id=user.id,
-                        user_login=user.login,
-                        role=user.role,
-                        company_id=company_id,
-                        payment_id=payment_id,
-                        approval_id=current_approval_id,
-                        check_id=fresh_result.check_id,
-                        request_sha256=req_sha,
-                        ruleset_version=fresh_result.ruleset_version,
-                        verdict=fresh_result.verdict,
-                        signal_ids=fresh_signals,
-                        details={"accountant_ack": bool(new_ack)},
+                    denied_extra: dict[str, Any] = (
+                        {
+                            "previous_verdict": previous_verdict,
+                            "fresh_verdict": fresh_result.verdict,
+                            "accountant_ack": accountant_ack,
+                        }
+                        if verdict_changed_flag
+                        else {"accountant_ack": accountant_ack}
                     )
+                    if denied_reason == "new_signals":
+                        denied_extra["reason"] = "new_signals"
+                        denied_extra["new_signal_ids"] = denied_new_signal_ids
+                    elif denied_reason == "threshold_aggregate":
+                        denied_extra["reason"] = "threshold_aggregate"
+                        denied_extra["aggregate_72h_tiyn"] = agg_72h_tiyn or 0
+                        denied_extra["total_72h_tiyn"] = int(row["amount_tiyn"]) + (
+                            agg_72h_tiyn or 0
+                        )
+                        denied_extra["threshold_tiyn"] = comp_settings.approval_threshold_tiyn
+                    if denied_code == "duplicate_requires_approval" and dup_of is not None:
+                        denied_extra["duplicate_of"] = dup_of
+                    denied_ctx = {
+                        "company_id": company_id,
+                        "approval_id": current_approval_id,
+                        "check_id": fresh_result.check_id,
+                        "request_sha256": req_sha,
+                        "ruleset_version": fresh_result.ruleset_version,
+                        "verdict": fresh_result.verdict,
+                        "signal_ids": fresh_signals,
+                        "extra_details": denied_extra,
+                    }
+                else:
+                    # Verify cryptographic / simulated signature BEFORE mutating payment status
+                    sig_result: SignatureVerificationResult | None = None
+                    if server_simulated:
+                        if effective_digest is None:
+                            effective_digest = compute_document_digest(
+                                build_payment_document(row, fresh_result)
+                            )
+                        sim_signer = (
+                            signature_verifier
+                            if isinstance(signature_verifier, SimulatedSigner)
+                            else SimulatedSigner()
+                        )
+                        server_sig = sim_signer.sign(effective_digest, company_id)
+                        sig_result = verify_signature(
+                            "simulated",
+                            effective_digest,
+                            server_sig,
+                            company_id,
+                            verifier=sim_signer,
+                        )
+                    elif signer is not None and signature is not None:
+                        assert effective_digest is not None
+                        if signer == "simulated" and signature == "":
+                            sim_signer = (
+                                signature_verifier
+                                if isinstance(signature_verifier, SimulatedSigner)
+                                else SimulatedSigner()
+                            )
+                            computed_sig = sim_signer.sign(effective_digest, company_id)
+                            sig_result = verify_signature(
+                                "simulated",
+                                effective_digest,
+                                computed_sig,
+                                company_id,
+                                verifier=sim_signer,
+                            )
+                        elif signer == "ncalayer" and not signature.strip():
+                            denied_code = "validation_error"
+                            denied_status = 422
+                            denied_ctx = {
+                                "company_id": company_id,
+                                "approval_id": current_approval_id,
+                                "check_id": current_check_id,
+                                "request_sha256": req_sha,
+                                "ruleset_version": fresh_result.ruleset_version,
+                                "verdict": fresh_result.verdict,
+                                "signal_ids": fresh_signals,
+                                "extra_details": {
+                                    "accountant_ack": accountant_ack,
+                                    "signer": signer,
+                                    "document_digest": effective_digest,
+                                    "reason": "empty_signature",
+                                },
+                            }
+                        else:
+                            try:
+                                sig_result = verify_signature(
+                                    signer,
+                                    effective_digest,
+                                    signature,
+                                    company_id,
+                                    verifier=signature_verifier,
+                                )
+                            except NotImplementedError:
+                                denied_code = "signature_verification_unavailable"
+                                denied_status = 501
+                                denied_ctx = {
+                                    "company_id": company_id,
+                                    "approval_id": current_approval_id,
+                                    "check_id": current_check_id,
+                                    "request_sha256": req_sha,
+                                    "ruleset_version": fresh_result.ruleset_version,
+                                    "verdict": fresh_result.verdict,
+                                    "signal_ids": fresh_signals,
+                                    "extra_details": {
+                                        "accountant_ack": accountant_ack,
+                                        "signer": signer,
+                                        "document_digest": effective_digest,
+                                    },
+                                }
+                            except InvalidSignerError:
+                                denied_code = "validation_error"
+                                denied_status = 422
+                                denied_ctx = {
+                                    "company_id": company_id,
+                                    "approval_id": current_approval_id,
+                                    "check_id": current_check_id,
+                                    "request_sha256": req_sha,
+                                    "ruleset_version": fresh_result.ruleset_version,
+                                    "verdict": fresh_result.verdict,
+                                    "signal_ids": fresh_signals,
+                                    "extra_details": {
+                                        "accountant_ack": accountant_ack,
+                                        "signer": str(signer),
+                                        "document_digest": effective_digest,
+                                    },
+                                }
+                            else:
+                                if not sig_result.verified:
+                                    denied_code = "validation_error"
+                                    denied_status = 422
+                                    denied_ctx = {
+                                        "company_id": company_id,
+                                        "approval_id": current_approval_id,
+                                        "check_id": current_check_id,
+                                        "request_sha256": req_sha,
+                                        "ruleset_version": fresh_result.ruleset_version,
+                                        "verdict": fresh_result.verdict,
+                                        "signal_ids": fresh_signals,
+                                        "extra_details": {
+                                            "accountant_ack": accountant_ack,
+                                            "signer": sig_result.signer,
+                                            "label": sig_result.label,
+                                            "simulated": sig_result.simulated,
+                                            "document_digest": effective_digest,
+                                            "reason": "invalid_signature",
+                                        },
+                                    }
+
+                    if denied_code is None:
+                        insert_check_row(
+                            conn,
+                            payment_id=payment_id,
+                            request_sha256=req_sha,
+                            result=fresh_result,
+                            trigger="sign",
+                            created_by=user.id,
+                            created_at=now_iso,
+                        )
+                        new_ack = 1 if decision.set_accountant_ack else int(row["accountant_ack"])
+                        paid_at_str = today.isoformat()
+                        cur = conn.execute(
+                            """
+                            UPDATE payments
+                            SET status = 'signed',
+                                check_id = ?,
+                                accountant_ack = ?,
+                                signed_by = ?,
+                                signed_at = ?,
+                                paid_at = ?,
+                                updated_at = ?
+                            WHERE id = ? AND status IN ('checked', 'approved')
+                            """,
+                            (
+                                fresh_result.check_id,
+                                new_ack,
+                                user.id,
+                                now_iso,
+                                paid_at_str,
+                                now_iso,
+                                payment_id,
+                            ),
+                        )
+                        if cur.rowcount != 1:
+                            denied_code = "already_signed"
+                            denied_ctx = {
+                                "company_id": company_id,
+                                "approval_id": current_approval_id,
+                                "check_id": fresh_result.check_id,
+                                "request_sha256": req_sha,
+                                "ruleset_version": fresh_result.ruleset_version,
+                                "verdict": fresh_result.verdict,
+                                "signal_ids": fresh_signals,
+                            }
+                        else:
+                            if not has_rejected_requisites:
+                                register_signed_payment(
+                                    conn,
+                                    company_id=company_id,
+                                    recipient_bin=req.recipient_bin,
+                                    recipient_name=req.recipient_name,
+                                    recipient_iik=req.recipient_iik,
+                                    recipient_bik=req.recipient_bik,
+                                    paid_at=paid_at_str,
+                                    payment_id=payment_id,
+                                )
+                            store.invalidate_history_cache()
+
+                            sign_details: dict[str, Any] = {
+                                "accountant_ack": bool(new_ack),
+                            }
+                            if sig_result is not None and effective_digest is not None:
+                                sign_details.update(
+                                    {
+                                        "document_digest": effective_digest,
+                                        "signer": sig_result.signer,
+                                        "label": sig_result.label,
+                                        "simulated": sig_result.simulated,
+                                    }
+                                )
+                                if sig_result.details is not None:
+                                    sign_details["certificate"] = {
+                                        "signer_subject": sig_result.details.signer_subject,
+                                        "signer_iin_bin": sig_result.details.signer_iin_bin,
+                                        "certificate_serial": sig_result.details.certificate_serial,
+                                        "signed_at": sig_result.details.signed_at,
+                                    }
+
+                            append_audit(
+                                conn,
+                                action="check",
+                                timestamp=now_iso,
+                                user_id=user.id,
+                                user_login=user.login,
+                                role=user.role,
+                                company_id=company_id,
+                                payment_id=payment_id,
+                                check_id=fresh_result.check_id,
+                                request_sha256=req_sha,
+                                ruleset_version=fresh_result.ruleset_version,
+                                verdict=fresh_result.verdict,
+                                signal_ids=fresh_signals,
+                                details={"trigger": "sign"},
+                            )
+                            append_audit(
+                                conn,
+                                action="sign",
+                                timestamp=now_iso,
+                                user_id=user.id,
+                                user_login=user.login,
+                                role=user.role,
+                                company_id=company_id,
+                                payment_id=payment_id,
+                                approval_id=current_approval_id,
+                                check_id=fresh_result.check_id,
+                                request_sha256=req_sha,
+                                ruleset_version=fresh_result.ruleset_version,
+                                verdict=fresh_result.verdict,
+                                signal_ids=fresh_signals,
+                                details=sign_details,
+                            )
 
     if denied_code is not None:
         _record_sign_denied(
@@ -1631,12 +2184,23 @@ def sign_payment(
         if verdict_changed_flag:
             refreshed = _get_payment_row_for_user(conn, payment_id, user)
             updated_payment = hydrate_payment(conn, refreshed, viewer=user, today=today, lang=lang)
+            vc_extra: dict[str, Any] = {"payment": updated_payment.model_dump(mode="json")}
+            if denied_reason == "new_signals":
+                vc_extra["reason"] = "new_signals"
+                vc_extra["new_signal_ids"] = denied_new_signal_ids
             raise ProdError(
                 409,
                 "verdict_changed",
-                extra={"payment": updated_payment.model_dump(mode="json")},
+                extra=vc_extra,
             )
-        raise ProdError(409, denied_code)
+        if denied_reason == "threshold_aggregate":
+            raise ProdError(
+                denied_status,
+                denied_code,
+                detail=localize_prod_error("threshold_aggregate", lang),
+                extra={"reason": "threshold_aggregate"},
+            )
+        raise ProdError(denied_status, denied_code)
 
     signed_row = _get_payment_row_for_user(conn, payment_id, user)
     return hydrate_payment(conn, signed_row, viewer=user, today=today, lang=lang)
@@ -1661,6 +2225,9 @@ def _hydrate_approvals(
             user_ids.add(int(r["decided_by"]))
     users_cache: dict[int, UserBrief] = {}
     _load_users_brief(conn, user_ids, users_cache)
+    rejected_requisites = _load_rejected_requisites_by_company(
+        conn, {str(r["company_id"]) for r in rows}
+    )
 
     items: list[ProdApproval] = []
     for r in rows:
@@ -1681,6 +2248,11 @@ def _hydrate_approvals(
             lang,
             include_analyst_details=include_analyst,
         )
+        req_is_rejected = (
+            str(r["company_id"]),
+            normalize_requisite(str(r["recipient_bin"])),
+            normalize_requisite(str(r["recipient_iik"])),
+        ) in rejected_requisites
         items.append(
             ProdApproval(
                 id=str(r["id"]),
@@ -1693,7 +2265,7 @@ def _hydrate_approvals(
                     str(r["director_comment"]) if r["director_comment"] is not None else None
                 ),
                 trust_account=bool(r["trust_account"]),
-                can_trust=policy.can_trust(stored_check),
+                can_trust=policy.can_trust(stored_check) and not req_is_rejected,
                 created_by=users_cache[int(r["created_by"])],
                 created_at=str(r["created_at"]),
                 decided_by=(
@@ -1803,11 +2375,17 @@ def decide_approval(
             raise ProdError(409, "approval_already_decided")
 
         stored_check = load_check_result(str(row["result_json"]))
+        req_bin = normalize_requisite(str(row["recipient_bin"]))
+        req_iik = normalize_requisite(str(row["recipient_iik"]))
+        requisites_previously_rejected = _is_rejected_requisites(
+            conn, company_id, req_bin, req_iik
+        )
         validation_err = policy.validate_director_decision(
             decision=payload.decision,
             check=stored_check,
             director_comment=payload.director_comment,
             trust_account=payload.trust_account,
+            requisites_previously_rejected=requisites_previously_rejected,
         )
         if validation_err is not None:
             raise ProdError(422, validation_err)
@@ -1818,7 +2396,11 @@ def decide_approval(
             else ""
         )
         stored_comment = cleaned_comment if cleaned_comment else None
-        grant_trust = payload.decision == "approved" and payload.trust_account
+        grant_trust = (
+            payload.decision == "approved"
+            and payload.trust_account
+            and not requisites_previously_rejected
+        )
         now_iso = utc_now_iso()
         payment_id = str(row["payment_id"])
         new_payment_status: PaymentStatus = (
@@ -1867,6 +2449,13 @@ def decide_approval(
             )
 
         action_label = f"decision:{payload.decision}" + ("_trusted" if grant_trust else "")
+        decision_details: dict[str, Any] = {
+            "director_comment": stored_comment,
+            "trust_account": grant_trust,
+        }
+        if payload.decision == "rejected":
+            decision_details["recipient_bin"] = req_bin
+            decision_details["recipient_iik"] = req_iik
         append_audit(
             conn,
             action=action_label,
@@ -1882,10 +2471,7 @@ def decide_approval(
             ruleset_version=stored_check.ruleset_version,
             verdict=stored_check.verdict,
             signal_ids=[s.rule_id for s in stored_check.signals],
-            details={
-                "director_comment": stored_comment,
-                "trust_account": grant_trust,
-            },
+            details=decision_details,
         )
 
     refreshed = conn.execute(
@@ -2080,7 +2666,9 @@ def import_payments_file(
             created_ids.append(pay_id)
             verdict_counts[check_res.verdict] += 1
 
-        total = len(created_ids) + len(errors)
+        # The capped list carries one summary row; omitted rows are real failures.
+        failed_total = len(errors) + parsed.errors_omitted - (1 if parsed.errors_omitted else 0)
+        total = len(created_ids) + failed_total
         errors_json = json.dumps([e.model_dump() for e in errors], ensure_ascii=False)
         conn.execute(
             """
@@ -2088,7 +2676,7 @@ def import_payments_file(
             SET total = ?, created_count = ?, failed_count = ?, errors_json = ?
             WHERE id = ?
             """,
-            (total, len(created_ids), len(errors), errors_json, batch_id),
+            (total, len(created_ids), failed_total, errors_json, batch_id),
         )
         append_audit(
             conn,
@@ -2107,7 +2695,7 @@ def import_payments_file(
                 "force": force,
                 "total": total,
                 "created": len(created_ids),
-                "failed": len(errors),
+                "failed": failed_total,
             },
         )
 
@@ -2126,9 +2714,9 @@ def import_payments_file(
         id=batch_id,
         source=parsed.source,
         filename=clean_filename,
-        total=len(created_ids) + len(errors),
+        total=total,
         created_count=len(created_ids),
-        failed_count=len(errors),
+        failed_count=failed_total,
         created_by=UserBrief(
             id=user.id,
             login=user.login,
@@ -2144,7 +2732,7 @@ def import_payments_file(
         summary=ImportSummary(
             total=batch_model.total,
             created=len(items),
-            failed=len(errors),
+            failed=failed_total,
             duplicates=duplicates_count,
             by_verdict=VerdictCounts(**verdict_counts),
         ),
@@ -2311,13 +2899,18 @@ def batch_sign_green(
                 today=today,
                 lang=lang,
                 prod_store=shared_store,
+                server_simulated=True,
             )
         except ProdError as exc:
             skipped.append(
                 BatchSkippedItem(
                     id=pid,
                     code=exc.code,
-                    detail=localize_prod_error(exc.code, lang),
+                    detail=(
+                        exc.detail
+                        if exc.detail is not None
+                        else localize_prod_error(exc.code, lang)
+                    ),
                 )
             )
         else:
@@ -2351,6 +2944,9 @@ def batch_send_to_director(
     )
     comp_settings = get_company_settings(conn, company_id)
     threshold_tiyn = comp_settings.approval_threshold_tiyn
+    rejected_payment_ids = _load_rejected_payment_ids(conn, [str(r["id"]) for r in candidates])
+    rejected_requisites = _load_rejected_requisites_by_company(conn, (company_id,))
+    dup_map = _find_duplicate_map(conn, candidates)
 
     done: list[Payment] = []
     skipped: list[BatchSkippedItem] = [
@@ -2394,8 +2990,34 @@ def batch_send_to_director(
                 )
             )
             continue
-        if verdict == "green" and (
-            threshold_tiyn is None or int(row["amount_tiyn"]) < threshold_tiyn
+        req_key = (
+            company_id,
+            normalize_requisite(str(row["recipient_bin"])),
+            normalize_requisite(str(row["recipient_iik"])),
+        )
+        needs_approval_after_rejection = (
+            pid in rejected_payment_ids or req_key in rejected_requisites
+        )
+        exceeds_threshold = False
+        if threshold_tiyn is not None and threshold_tiyn > 0:
+            row_amt = int(row["amount_tiyn"])
+            if row_amt >= threshold_tiyn:
+                exceeds_threshold = True
+            else:
+                agg_72h = sum_supplier_payments_window_tiyn(
+                    conn,
+                    company_id=company_id,
+                    recipient_bin=str(row["recipient_bin"]),
+                    recipient_iik=str(row["recipient_iik"]),
+                    exclude_payment_id=pid,
+                )
+                exceeds_threshold = (row_amt + agg_72h) >= threshold_tiyn
+        is_duplicate = dup_map.get(pid) is not None
+        if (
+            verdict == "green"
+            and not needs_approval_after_rejection
+            and not exceeds_threshold
+            and not is_duplicate
         ):
             skipped.append(
                 BatchSkippedItem(
@@ -2420,7 +3042,11 @@ def batch_send_to_director(
                 BatchSkippedItem(
                     id=pid,
                     code=exc.code,
-                    detail=localize_prod_error(exc.code, lang),
+                    detail=(
+                        exc.detail
+                        if exc.detail is not None
+                        else localize_prod_error(exc.code, lang)
+                    ),
                 )
             )
         else:
